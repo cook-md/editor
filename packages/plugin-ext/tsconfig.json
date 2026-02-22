@@ -15,22 +15,7 @@
   ],
   "references": [
     {
-      "path": "../ai-mcp"
-    },
-    {
-      "path": "../bulk-edit"
-    },
-    {
-      "path": "../callhierarchy"
-    },
-    {
-      "path": "../console"
-    },
-    {
       "path": "../core"
-    },
-    {
-      "path": "../debug"
     },
     {
       "path": "../editor"
@@ -57,9 +42,6 @@
       "path": "../navigator"
     },
     {
-      "path": "../notebook"
-    },
-    {
       "path": "../output"
     },
     {
@@ -69,25 +51,7 @@
       "path": "../preferences"
     },
     {
-      "path": "../scm"
-    },
-    {
       "path": "../search-in-workspace"
-    },
-    {
-      "path": "../task"
-    },
-    {
-      "path": "../terminal"
-    },
-    {
-      "path": "../test"
-    },
-    {
-      "path": "../timeline"
-    },
-    {
-      "path": "../typehierarchy"
     },
     {
       "path": "../variable-resolver"

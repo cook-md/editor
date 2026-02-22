@@ -19,9 +19,6 @@
     },
     {
       "path": "../plugin-ext"
-    },
-    {
-      "path": "../terminal"
     }
   ]
 }

@@ -15,9 +15,6 @@
   ],
   "references": [
     {
-      "path": "../callhierarchy"
-    },
-    {
       "path": "../core"
     },
     {
@@ -40,15 +37,6 @@
     },
     {
       "path": "../plugin-ext"
-    },
-    {
-      "path": "../scm"
-    },
-    {
-      "path": "../terminal"
-    },
-    {
-      "path": "../typehierarchy"
     },
     {
       "path": "../userstorage"
