@@ -66,3 +66,22 @@ export class TerminalServiceExtImpl implements TerminalServiceExt {
     $setShell(shell: string): void { }
     $reportOutputMatch(observerId: string, groups: string[]): void { }
 }
+
+export class EnvironmentVariableCollectionImpl {
+    readonly persistent: boolean;
+    readonly map: Map<string, any> = new Map();
+    readonly descriptionMap: Map<string, any> = new Map();
+
+    constructor(persistent: boolean) {
+        this.persistent = persistent;
+    }
+
+    get size(): number { return this.map.size; }
+    replace(variable: string, value: string): void { }
+    append(variable: string, value: string): void { }
+    prepend(variable: string, value: string): void { }
+    get(variable: string): any { return undefined; }
+    forEach(callback: (variable: string, mutator: any, collection: any) => void): void { }
+    clear(): void { this.map.clear(); }
+    delete(variable: string): boolean { return this.map.delete(variable); }
+}

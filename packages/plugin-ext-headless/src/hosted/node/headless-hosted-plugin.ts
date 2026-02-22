@@ -29,7 +29,6 @@ import { environment } from '@theia/core/shared/@theia/application-package/lib/e
 import { IPCChannel } from '@theia/core/lib/node';
 import { BackendApplicationConfigProvider } from '@theia/core/lib/node/backend-application-config-provider';
 import { HostedPluginProcess } from '@theia/plugin-ext/lib/hosted/node/hosted-plugin-process';
-import { IShellTerminalServer } from '@theia/terminal/lib/common/shell-terminal-protocol';
 import { HeadlessPluginManagerExt, HEADLESSMAIN_RPC_CONTEXT } from '../../common/headless-plugin-rpc';
 import { AbstractHostedPluginSupport, PluginContributions } from '@theia/plugin-ext/lib/hosted/common/hosted-plugin';
 import { TheiaHeadlessPluginScanner } from './scanners/scanner-theia-headless';
@@ -51,9 +50,6 @@ export class HeadlessHostedPluginSupport extends AbstractHostedPluginSupport<Hea
 
     @inject(HostedPluginProcess)
     protected readonly pluginProcess: HostedPluginProcess;
-
-    @inject(IShellTerminalServer)
-    protected readonly shellTerminalServer: IShellTerminalServer;
 
     @inject(TheiaHeadlessPluginScanner)
     protected readonly scanner: TheiaHeadlessPluginScanner;
@@ -127,7 +123,7 @@ export class HeadlessHostedPluginSupport extends AbstractHostedPluginSupport<Hea
             }
 
             const activationEvents = this.supportedActivationEventsContributions.getContributions().flatMap(array => array);
-            const shell = await this.shellTerminalServer.getDefaultShell();
+            const shell = process.env.SHELL || (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
             const isElectron = environment.electron.is();
 
             await manager.$init({

@@ -24,7 +24,6 @@ import { EditorManager } from '@theia/editor/lib/browser/editor-manager';
 import { GettingStartedWidget } from './getting-started-widget';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
-import { PreviewContribution } from '@theia/preview/lib/browser/preview-contribution';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 
@@ -50,9 +49,6 @@ export class GettingStartedContribution extends AbstractViewContribution<Getting
 
     @inject(PreferenceService)
     protected readonly preferenceService: PreferenceService;
-
-    @inject(PreviewContribution)
-    protected readonly previewContribution: PreviewContribution;
 
     @inject(FrontendApplicationStateService)
     protected readonly stateService: FrontendApplicationStateService;
@@ -121,7 +117,7 @@ export class GettingStartedContribution extends AbstractViewContribution<Getting
         const validReadmes = ArrayUtils.coalesce(readmes);
         if (validReadmes.length) {
             for (const readme of validReadmes) {
-                await this.previewContribution.open(readme);
+                await this.editorManager.open(readme);
             }
         } else {
             // If no readme is found, show the welcome page.
