@@ -23,7 +23,7 @@ import {
     isMcpHttpServerDefinitionDto,
 } from '../../common/lm-protocol';
 import { MAIN_RPC_CONTEXT } from '../../common/plugin-api-rpc';
-import { MCPServerManager, MCPServerDescription, RemoteMCPServerDescription } from '@theia/ai-mcp/lib/common';
+import { MCPServerManager, MCPServerDescription, RemoteMCPServerDescription } from '../../common/deleted-package-stubs';
 import { URI } from '@theia/core';
 
 export class McpServerDefinitionRegistryMainImpl implements McpServerDefinitionRegistryMain {

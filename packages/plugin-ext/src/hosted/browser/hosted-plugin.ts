@@ -41,7 +41,7 @@ import { PluginContributionHandler } from '../../main/browser/plugin-contributio
 import { getQueryParameters } from '../../main/browser/env-main';
 import { getPreferences } from '../../main/browser/preference-registry-main';
 import { Deferred, waitForEvent } from '@theia/core/lib/common/promise-util';
-import { Event, WaitUntilEvent } from '@theia/core/lib/common/event';
+import { Event } from '@theia/core/lib/common/event';
 import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import { PluginViewRegistry } from '../../main/browser/view/plugin-view-registry';
@@ -257,7 +257,7 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
                 }),
                 this.webviewEnvironment.resourceRoot(host),
                 this.webviewEnvironment.cspSource(),
-                this.terminalService.getDefaultShell(),
+                Promise.resolve('/bin/sh'),
                 this.jsonSchemaStore.schemas
             ]);
             if (toDisconnect.disposed) {

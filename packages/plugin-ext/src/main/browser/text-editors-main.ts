@@ -48,7 +48,7 @@ import { IDecorationRenderOptions } from '@theia/monaco-editor-core/esm/vs/edito
 import { StandaloneServices } from '@theia/monaco-editor-core/esm/vs/editor/standalone/browser/standaloneServices';
 import { ICodeEditorService } from '@theia/monaco-editor-core/esm/vs/editor/browser/services/codeEditorService';
 import { type ILineChange } from '@theia/monaco-editor-core/esm/vs/editor/common/diff/legacyLinesDiffComputer';
-import { ArrayUtils, URI } from '@theia/core';
+import { URI } from '@theia/core';
 import { interfaces } from '@theia/core/shared/inversify';
 
 export class TextEditorsMainImpl implements TextEditorsMain, Disposable {

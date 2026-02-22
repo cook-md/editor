@@ -35,7 +35,6 @@ import { DisposableCollection, Emitter, URI } from '@theia/core';
 import { EditorManager, EditorWidget } from '@theia/editor/lib/browser';
 import { SaveableService } from '@theia/core/lib/browser/saveable-service';
 import { TabsMainImpl } from './tabs/tabs-main';
-import { NotebookCellEditorService, NotebookEditorWidgetService } from '@theia/notebook/lib/browser';
 import { SimpleMonacoEditor } from '@theia/monaco/lib/browser/simple-monaco-editor';
 import { EncodingRegistry } from '@theia/core/lib/browser/encoding-registry';
 
@@ -75,8 +74,6 @@ export class EditorsAndDocumentsMain implements Disposable {
 
         this.stateComputer = new EditorAndDocumentStateComputer(d => this.onDelta(d),
             this.editorManager,
-            container.get(NotebookCellEditorService),
-            container.get(NotebookEditorWidgetService),
             this.modelService, tabsMain);
         this.toDispose.push(this.stateComputer);
         this.toDispose.push(this.onTextEditorAddEmitter);
@@ -234,8 +231,6 @@ class EditorAndDocumentStateComputer implements Disposable {
     constructor(
         private callback: (delta: EditorAndDocumentStateDelta) => void,
         private readonly editorService: EditorManager,
-        private readonly cellEditorService: NotebookCellEditorService,
-        private readonly notebookWidgetService: NotebookEditorWidgetService,
         private readonly modelService: EditorModelService,
         private readonly tabsMain: TabsMainImpl
     ) { }
@@ -257,16 +252,6 @@ class EditorAndDocumentStateComputer implements Disposable {
         }));
         this.toDispose.push(this.modelService.onModelAdded(this.onModelAdded, this));
         this.toDispose.push(this.modelService.onModelRemoved(() => this.update()));
-
-        this.toDispose.push(this.cellEditorService.onDidChangeCellEditors(() => this.update()));
-
-        this.toDispose.push(this.notebookWidgetService.onDidChangeCurrentEditor(() => {
-            this.currentState = this.currentState && new EditorAndDocumentState(
-                this.currentState.documents,
-                this.currentState.editors,
-                undefined
-            );
-        }));
 
         for (const widget of this.editorService.all) {
             this.onTextEditorAdd(widget);
@@ -330,7 +315,7 @@ class EditorAndDocumentStateComputer implements Disposable {
         }
 
         let activeId: string | null = null;
-        const activeEditor = MonacoEditor.getCurrent(this.editorService) ?? this.cellEditorService.getActiveCell();
+        const activeEditor = MonacoEditor.getCurrent(this.editorService);
 
         const editors = new Map<string, EditorSnapshot>();
         for (const widget of this.editorService.all) {
@@ -348,16 +333,6 @@ class EditorAndDocumentStateComputer implements Disposable {
                 }
             }
         }
-
-        for (const editor of this.cellEditorService.allCellEditors) {
-            if (editor.getControl()?.getModel()) {
-                const editorSnapshot = new EditorSnapshot(editor);
-                editors.set(editorSnapshot.id, editorSnapshot);
-                if (activeEditor === editor) {
-                    activeId = editorSnapshot.id;
-                }
-            }
-        };
 
         const newState = new EditorAndDocumentState(models, editors, activeId);
         const delta = EditorAndDocumentState.compute(this.currentState, newState);

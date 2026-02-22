@@ -21,12 +21,30 @@ import { RPCProtocol } from '../../../common/rpc-protocol';
 import { EditorPreviewWidget } from '@theia/editor-preview/lib/browser/editor-preview-widget';
 import { Disposable } from '@theia/core/shared/vscode-languageserver-protocol';
 import { MonacoDiffEditor } from '@theia/monaco/lib/browser/monaco-diff-editor';
-import { toUriComponents } from '../hierarchy/hierarchy-types-converters';
-import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
 import { DisposableCollection } from '@theia/core';
-import { NotebookEditorWidget } from '@theia/notebook/lib/browser';
+import { UriComponents } from '../../../common/uri-components';
+import { URI as Uri } from '@theia/core/shared/vscode-uri';
 import { Deferred } from '@theia/core/lib/common/promise-util';
-import { MergeEditor } from '@theia/scm/lib/browser/merge-editor/merge-editor';
+
+function toUriComponents(uri: string | { scheme: string; authority: string; path: string; query: string; fragment: string }): UriComponents {
+    if (typeof uri === 'string') {
+        const parsed = Uri.parse(uri);
+        return {
+            scheme: parsed.scheme,
+            authority: parsed.authority,
+            path: parsed.path,
+            query: parsed.query,
+            fragment: parsed.fragment
+        };
+    }
+    return {
+        scheme: uri.scheme,
+        authority: uri.authority,
+        path: uri.path,
+        query: uri.query,
+        fragment: uri.fragment
+    };
+}
 
 interface TabInfo {
     tab: TabDto;
@@ -227,24 +245,6 @@ export class TabsMainImpl implements TabsMain, Disposable {
             return {
                 kind: TabInputKind.WebviewEditorInput,
                 viewType: widget.id
-            };
-        } else if (widget instanceof TerminalWidget) {
-            return {
-                kind: TabInputKind.TerminalEditorInput
-            };
-        } else if (widget instanceof NotebookEditorWidget) {
-            return {
-                kind: TabInputKind.NotebookInput,
-                notebookType: widget.notebookType,
-                uri: toUriComponents(widget.model?.uri.toString() ?? '')
-            };
-        } else if (widget instanceof MergeEditor) {
-            return {
-                kind: TabInputKind.TextMergeInput,
-                base: toUriComponents(widget.baseUri.toString()),
-                input1: toUriComponents(widget.side1Uri.toString()),
-                input2: toUriComponents(widget.side1Uri.toString()),
-                result: toUriComponents(widget.resultUri.toString())
             };
         }
 

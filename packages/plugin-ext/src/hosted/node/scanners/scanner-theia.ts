@@ -76,7 +76,7 @@ import * as jsoncparser from 'jsonc-parser';
 import { IJSONSchema } from '@theia/core/lib/common/json-schema';
 import { deepClone } from '@theia/core/lib/common/objects';
 import { PreferenceSchema, PreferenceDataProperty } from '@theia/core/lib/common/preferences/preference-schema';
-import { TaskDefinition } from '@theia/task/lib/common/task-protocol';
+import { TaskDefinition } from '../../../common/deleted-package-stubs';
 import { ColorDefinition } from '@theia/core/lib/common/color';
 import { CSSIcon } from '@theia/core/lib/common/markdown-rendering/icon-utilities';
 import { PluginUriFactory } from './plugin-uri-factory';

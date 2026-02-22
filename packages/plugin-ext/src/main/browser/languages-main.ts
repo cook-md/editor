@@ -55,10 +55,7 @@ import * as vst from '@theia/core/shared/vscode-languageserver-protocol';
 import * as theia from '@theia/plugin';
 import { UriComponents } from '../../common/uri-components';
 import { CancellationToken } from '@theia/core/lib/common';
-import { CallHierarchyService, CallHierarchyServiceProvider, CallHierarchyItem } from '@theia/callhierarchy/lib/browser';
-import { toItemHierarchyDefinition, toUriComponents, fromItemHierarchyDefinition, fromPosition, toCaller, toCallee } from './hierarchy/hierarchy-types-converters';
-import { TypeHierarchyService, TypeHierarchyServiceProvider } from '@theia/typehierarchy/lib/browser';
-import { Position, DocumentUri, DiagnosticTag } from '@theia/core/shared/vscode-languageserver-protocol';
+import { DiagnosticTag } from '@theia/core/shared/vscode-languageserver-protocol';
 import { ObjectIdentifier } from '../../common/object-identifier';
 import { mixin } from '../../common/types';
 import { relative } from '../../common/paths-util';
@@ -104,12 +101,6 @@ export class LanguagesMainImpl implements LanguagesMain, Disposable {
 
     @inject(ProblemManager)
     private readonly problemManager: ProblemManager;
-
-    @inject(CallHierarchyServiceProvider)
-    private readonly callHierarchyServiceContributionRegistry: CallHierarchyServiceProvider;
-
-    @inject(TypeHierarchyServiceProvider)
-    private readonly typeHierarchyServiceContributionRegistry: TypeHierarchyServiceProvider;
 
     @inject(EditorLanguageStatusService)
     protected readonly languageStatusService: EditorLanguageStatusService;
@@ -1024,109 +1015,19 @@ export class LanguagesMainImpl implements LanguagesMain, Disposable {
         return this.proxy.$provideRenameEdits(handle, model.uri, position, newName, token).then(toMonacoWorkspaceEdit);
     }
 
-    $registerCallHierarchyProvider(handle: number, selector: SerializedDocumentFilter[]): void {
-        const languageSelector = this.toLanguageSelector(selector);
-        const callHierarchyService = this.createCallHierarchyService(handle, languageSelector);
-        this.register(handle, this.callHierarchyServiceContributionRegistry.add(callHierarchyService));
-    }
-
-    protected createCallHierarchyService(handle: number, language: LanguageSelector): CallHierarchyService {
-        return {
-            selector: language,
-            getRootDefinition: (uri: DocumentUri, position: Position, cancellationToken: CancellationToken) =>
-                this.proxy.$provideRootDefinition(handle, toUriComponents(uri), fromPosition(position), cancellationToken)
-                    .then(def => {
-                        if (!def) { return undefined; }
-                        const defs = Array.isArray(def) ? def : [def];
-                        return { dispose: () => this.proxy.$releaseCallHierarchy(handle, defs[0]?._sessionId), items: defs.map(item => toItemHierarchyDefinition(item)) };
-                    }),
-            getCallers:
-                (
-                    definition: CallHierarchyItem,
-                    cancellationToken: CancellationToken
-                ) => this.proxy.$provideCallers(handle, fromItemHierarchyDefinition(definition), cancellationToken)
-                    .then(result => {
-                        if (!result) {
-                            return undefined!;
-                        }
-
-                        if (Array.isArray(result)) {
-                            return result.map(toCaller);
-                        }
-
-                        return undefined!;
-                    }),
-
-            getCallees:
-                (
-                    definition: CallHierarchyItem,
-                    cancellationToken: CancellationToken
-                ) => this.proxy.$provideCallees(handle, fromItemHierarchyDefinition(definition), cancellationToken)
-                    .then(result => {
-                        if (!result) {
-                            return undefined;
-                        }
-                        if (Array.isArray(result)) {
-                            return result.map(toCallee);
-                        }
-
-                        return undefined;
-                    })
-        };
-    }
-
     protected resolveRenameLocation(handle: number, model: monaco.editor.ITextModel,
         position: monaco.Position, token: monaco.CancellationToken): monaco.languages.ProviderResult<monaco.languages.RenameLocation> {
         return this.proxy.$resolveRenameLocation(handle, model.uri, position, token);
     }
 
-    // --- type hierarchy
-    $registerTypeHierarchyProvider(handle: number, selector: SerializedDocumentFilter[]): void {
-        const languageSelector = this.toLanguageSelector(selector);
-        const typeHierarchyService = this.createTypeHierarchyService(handle, languageSelector);
-        this.register(handle, this.typeHierarchyServiceContributionRegistry.add(typeHierarchyService));
+    // --- call hierarchy (removed - package deleted)
+    $registerCallHierarchyProvider(_handle: number, _selector: SerializedDocumentFilter[]): void {
+        console.warn('Call hierarchy support has been removed');
     }
 
-    protected createTypeHierarchyService(handle: number, language: LanguageSelector): TypeHierarchyService {
-        return {
-            selector: language,
-            prepareSession: (uri: DocumentUri, position: Position, cancellationToken: CancellationToken) =>
-                this.proxy.$prepareTypeHierarchy(handle, toUriComponents(uri), fromPosition(position), cancellationToken)
-                    .then(result => {
-                        if (!result) {
-                            return undefined;
-                        }
-                        const items = Array.isArray(result) ? result : [result];
-                        return {
-                            dispose: () => this.proxy.$releaseTypeHierarchy(handle, items[0]?._sessionId),
-                            items: items.map(item => toItemHierarchyDefinition(item))
-                        };
-                    }),
-            provideSuperTypes: (sessionId, itemId, cancellationToken: CancellationToken) => this.proxy.$provideSuperTypes(handle, sessionId, itemId, cancellationToken)
-                .then(results => {
-                    if (!results) {
-                        return undefined;
-                    }
-
-                    if (Array.isArray(results)) {
-                        return results.map(toItemHierarchyDefinition);
-                    }
-
-                    return undefined;
-                }),
-            provideSubTypes: async (sessionId, itemId, cancellationToken: CancellationToken) => this.proxy.$provideSubTypes(handle, sessionId, itemId, cancellationToken)
-                .then(results => {
-                    if (!results) {
-                        return undefined;
-                    }
-
-                    if (Array.isArray(results)) {
-                        return results.map(toItemHierarchyDefinition);
-                    }
-
-                    return undefined;
-                })
-        };
+    // --- type hierarchy (removed - package deleted)
+    $registerTypeHierarchyProvider(_handle: number, _selector: SerializedDocumentFilter[]): void {
+        console.warn('Type hierarchy support has been removed');
     }
 
     // --- semantic tokens

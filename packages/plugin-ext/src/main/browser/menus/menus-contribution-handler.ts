@@ -21,11 +21,10 @@ import { MenuPath, CommandRegistry, Disposable, DisposableCollection, nls, Comma
 import { MenuModelRegistry } from '@theia/core/lib/common';
 import { TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { DeployedPlugin, IconUrl, Menu } from '../../../common';
-import { ScmWidget } from '@theia/scm/lib/browser/scm-widget';
 import { KeybindingRegistry, QuickCommandService, codicon } from '@theia/core/lib/browser';
 import {
     CodeEditorWidgetUtil, codeToTheiaMappings, ContributionPoint,
-    PLUGIN_EDITOR_TITLE_MENU, PLUGIN_EDITOR_TITLE_RUN_MENU, PLUGIN_SCM_TITLE_MENU, PLUGIN_VIEW_TITLE_MENU
+    PLUGIN_EDITOR_TITLE_MENU, PLUGIN_EDITOR_TITLE_RUN_MENU, PLUGIN_VIEW_TITLE_MENU
 } from './vscode-theia-menu-mappings';
 import { PluginMenuCommandAdapter } from './plugin-menu-command-adapter';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
@@ -60,7 +59,6 @@ export class MenusContributionPointHandler {
             group: 'navigation',
             isVisible: widget => CodeEditorWidgetUtil.is(widget)
         });
-        this.tabBarToolbar.registerMenuDelegate(PLUGIN_SCM_TITLE_MENU, widget => widget instanceof ScmWidget);
         this.tabBarToolbar.registerMenuDelegate(PLUGIN_VIEW_TITLE_MENU, widget => !CodeEditorWidgetUtil.is(widget));
     }
 

@@ -350,6 +350,47 @@ export function createAPIFactory(
     const lmExt = rpc.set(MAIN_RPC_CONTEXT.MCP_SERVER_DEFINITION_REGISTRY_EXT, new LmExtImpl(rpc));
     rpc.set(MAIN_RPC_CONTEXT.DEBUG_EXT, debugExt);
 
+    // Stub objects for removed packages (notebook, timeline, testing)
+    const noopEvent: theia.Event<any> = () => Disposable.NULL;
+    const notebooksExt: any = {
+        visibleApiNotebookEditors: [],
+        activeApiNotebookEditor: undefined,
+        onDidChangeVisibleNotebookEditors: noopEvent,
+        onDidChangeActiveNotebookEditor: noopEvent,
+        showNotebookDocument: () => Promise.resolve(undefined),
+        getAllApiDocuments: () => [],
+        onDidOpenNotebookDocument: noopEvent,
+        onDidCloseNotebookDocument: noopEvent,
+        openNotebookDocument: () => Promise.resolve(undefined),
+        createNotebookDocument: () => Promise.resolve(undefined),
+        getNotebookDocument: () => ({ apiNotebook: undefined }),
+        registerNotebookSerializer: () => Disposable.NULL,
+        registerNotebookCellStatusBarItemProvider: () => Disposable.NULL,
+    };
+    const notebookEditors: any = {
+        onDidChangeNotebookEditorSelection: noopEvent,
+        onDidChangeNotebookEditorVisibleRanges: noopEvent,
+    };
+    const notebookDocuments: any = {
+        onDidSaveNotebookDocument: noopEvent,
+        onDidChangeNotebookDocument: noopEvent,
+    };
+    const notebookKernels: any = {
+        createNotebookController: () => { throw new Error('Notebook support has been removed'); },
+        onDidChangeNotebookCellExecutionState: noopEvent,
+        createNotebookControllerDetectionTask: () => { throw new Error('Notebook support has been removed'); },
+        registerKernelSourceActionProvider: () => Disposable.NULL,
+    };
+    const notebookRenderers: any = {
+        createRendererMessaging: () => { throw new Error('Notebook support has been removed'); },
+    };
+    const timelineExt: any = {
+        registerTimelineProvider: () => Disposable.NULL,
+    };
+    const testingExt: any = {
+        createTestController: () => { throw new Error('Test support has been removed'); },
+    };
+
     const commandLogger = new PluginLogger(rpc, 'commands-plugin');
 
     return function (plugin: InternalPlugin): typeof theia {
@@ -619,7 +660,8 @@ export function createAPIFactory(
             createTerminal(nameOrOptions: theia.TerminalOptions | theia.ExtensionTerminalOptions | theia.ExtensionTerminalOptions | (string | undefined),
                 shellPath?: string,
                 shellArgs?: string[] | string): theia.Terminal {
-                return createAPIObject(terminalExt.createTerminal(plugin, nameOrOptions, shellPath, shellArgs));
+                const args = typeof shellArgs === 'string' ? [shellArgs] : shellArgs;
+                return createAPIObject(terminalExt.createTerminal(plugin, nameOrOptions, shellPath, args));
             },
             onDidChangeTerminalState,
             onDidCloseTerminal,
@@ -1554,7 +1596,6 @@ export function createAPIFactory(
             NotebookControllerAffinity,
             NotebookData,
             NotebookEditorRevealType,
-            NotebookDocument,
             NotebookRange,
             NotebookEdit,
             NotebookKernelSourceAction,

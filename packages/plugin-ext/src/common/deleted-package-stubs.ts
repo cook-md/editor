@@ -137,13 +137,15 @@ export namespace notebookCommon {
     export interface NotebookCellStatusBarItem {
         text: string;
         alignment: CellStatusbarAlignment;
+        command?: any;
+        tooltip?: any;
         priority?: number;
     }
 
     export interface TransientOptions {
         transientOutputs: boolean;
-        transientCellMetadata: Record<string, boolean>;
-        transientDocumentMetadata: Record<string, boolean>;
+        transientCellMetadata: Record<string, boolean | undefined>;
+        transientDocumentMetadata: Record<string, boolean | undefined>;
     }
 
     export interface NotebookCellsChangeLanguageEvent {

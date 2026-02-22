@@ -44,10 +44,6 @@ import { TextContentResourceResolver } from './workspace-main';
 import { MainPluginApiProvider } from '../../common/plugin-ext-api-contribution';
 import { PluginPathsService, pluginPathsServicePath } from '../common/plugin-paths-protocol';
 import { KeybindingsContributionPointHandler } from './keybindings/keybindings-contribution-handler';
-import { DebugSessionContributionRegistry } from '@theia/debug/lib/browser/debug-session-contribution';
-import { PluginDebugSessionContributionRegistry } from './debug/plugin-debug-session-contribution-registry';
-import { PluginDebugService } from './debug/plugin-debug-service';
-import { DebugService } from '@theia/debug/lib/common/debug-service';
 import { PluginSharedStyle } from './plugin-shared-style';
 import { SelectionProviderCommandContribution } from './selection-provider-command';
 import { ViewContextKeyService } from './view/view-context-key-service';
@@ -84,8 +80,6 @@ import { DnDFileContentStore } from './view/dnd-file-content-store';
 import { WebviewContextKeys } from './webview/webview-context-keys';
 import { LanguagePackService, languagePackServicePath } from '../../common/language-pack-service';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
-import { CellOutputWebviewFactory } from '@theia/notebook/lib/browser';
-import { CellOutputWebviewImpl, createCellOutputWebviewContainer } from './notebooks/renderers/cell-output-webview';
 import { ArgumentProcessorContribution } from './command-registry-main';
 import { WebviewSecondaryWindowSupport } from './webview/webview-secondary-window-support';
 import { CustomEditorUndoRedoHandler } from './custom-editors/custom-editor-undo-redo-handler';
@@ -264,11 +258,6 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     bind(ResourceResolver).toService(TextContentResourceResolver);
     bindContributionProvider(bind, MainPluginApiProvider);
 
-    bind(PluginDebugService).toSelf().inSingletonScope();
-    rebind(DebugService).toService(PluginDebugService);
-    bind(PluginDebugSessionContributionRegistry).toSelf().inSingletonScope();
-    rebind(DebugSessionContributionRegistry).toService(PluginDebugSessionContributionRegistry);
-
     bind(CommentsService).to(PluginCommentService).inSingletonScope();
     bind(CommentingRangeDecorator).toSelf().inSingletonScope();
     bind(CommentsContribution).toSelf().inSingletonScope();
@@ -290,9 +279,6 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
         return provider.createProxy<LanguagePackService>(languagePackServicePath);
     }).inSingletonScope();
 
-    bind(CellOutputWebviewFactory).toFactory(ctx => () =>
-        createCellOutputWebviewContainer(ctx.container).get(CellOutputWebviewImpl)
-    );
     bindContributionProvider(bind, ArgumentProcessorContribution);
 
     bind(PluginExtToolbarItemArgumentProcessor).toSelf().inSingletonScope();

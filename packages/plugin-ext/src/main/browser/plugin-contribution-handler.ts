@@ -22,7 +22,7 @@ import { PluginViewRegistry } from './view/plugin-view-registry';
 import { PluginCustomEditorRegistry } from './custom-editors/plugin-custom-editor-registry';
 import {
     PluginContribution, IndentationRules, FoldingRules, ScopeMap, DeployedPlugin,
-    GrammarsContribution, EnterAction, OnEnterRule, RegExpOptions, IconContribution, PluginPackage
+    GrammarsContribution, EnterAction, OnEnterRule, RegExpOptions, IconContribution
 } from '../../common';
 import {
     DefaultUriLabelProviderContribution,
@@ -34,20 +34,12 @@ import { PluginSharedStyle } from './plugin-shared-style';
 import { CommandRegistry, Command, CommandHandler } from '@theia/core/lib/common/command';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Emitter } from '@theia/core/lib/common/event';
-import { TaskDefinitionRegistry, ProblemMatcherRegistry, ProblemPatternRegistry } from '@theia/task/lib/browser';
-import { NotebookRendererRegistry, NotebookTypeRegistry } from '@theia/notebook/lib/browser';
-import { PluginDebugService } from './debug/plugin-debug-service';
-import { DebugSchemaUpdater } from '@theia/debug/lib/browser/debug-schema-updater';
 import { MonacoThemingService } from '@theia/monaco/lib/browser/monaco-theming-service';
 import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
 import { PluginIconService } from './plugin-icon-service';
 import { PluginIconThemeService } from './plugin-icon-theme-service';
 import { ContributionProvider, isObject, OVERRIDE_PROPERTY_PATTERN, PreferenceSchemaService } from '@theia/core/lib/common';
 import * as monaco from '@theia/monaco-editor-core';
-import { ContributedTerminalProfileStore, TerminalProfileStore } from '@theia/terminal/lib/browser/terminal-profile-service';
-import { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-widget';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
-import { PluginTerminalRegistry } from './plugin-terminal-registry';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { LanguageService } from '@theia/core/lib/browser/language-service';
 import { ThemeIcon } from '@theia/monaco-editor-core/esm/vs/base/common/themables';
@@ -99,21 +91,6 @@ export class PluginContributionHandler {
     @inject(PluginSharedStyle)
     protected readonly style: PluginSharedStyle;
 
-    @inject(TaskDefinitionRegistry)
-    protected readonly taskDefinitionRegistry: TaskDefinitionRegistry;
-
-    @inject(ProblemMatcherRegistry)
-    protected readonly problemMatcherRegistry: ProblemMatcherRegistry;
-
-    @inject(ProblemPatternRegistry)
-    protected readonly problemPatternRegistry: ProblemPatternRegistry;
-
-    @inject(PluginDebugService)
-    protected readonly debugService: PluginDebugService;
-
-    @inject(DebugSchemaUpdater)
-    protected readonly debugSchema: DebugSchemaUpdater;
-
     @inject(MonacoThemingService)
     protected readonly monacoThemingService: MonacoThemingService;
 
@@ -125,21 +102,6 @@ export class PluginContributionHandler {
 
     @inject(PluginIconThemeService)
     protected readonly iconThemeService: PluginIconThemeService;
-
-    @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
-
-    @inject(PluginTerminalRegistry)
-    protected readonly pluginTerminalRegistry: PluginTerminalRegistry;
-
-    @inject(ContributedTerminalProfileStore)
-    protected readonly contributedProfileStore: TerminalProfileStore;
-
-    @inject(NotebookTypeRegistry)
-    protected readonly notebookTypeRegistry: NotebookTypeRegistry;
-
-    @inject(NotebookRendererRegistry)
-    protected readonly notebookRendererRegistry: NotebookRendererRegistry;
 
     @inject(ContributionProvider) @named(LabelProviderContribution)
     protected readonly contributionProvider: ContributionProvider<LabelProviderContribution>;
@@ -366,69 +328,6 @@ export class PluginContributionHandler {
             pushContribution('colors', () => this.colors.register(...colors));
         }
 
-        if (contributions.taskDefinitions) {
-            for (const taskDefinition of contributions.taskDefinitions) {
-                pushContribution(`taskDefinitions.${taskDefinition.taskType}`,
-                    () => this.taskDefinitionRegistry.register(taskDefinition)
-                );
-            }
-        }
-
-        if (contributions.problemPatterns) {
-            for (const problemPattern of contributions.problemPatterns) {
-                pushContribution(`problemPatterns.${problemPattern.name || problemPattern.regexp}`,
-                    () => this.problemPatternRegistry.register(problemPattern)
-                );
-            }
-        }
-
-        if (contributions.problemMatchers) {
-            for (const problemMatcher of contributions.problemMatchers) {
-                pushContribution(`problemMatchers.${problemMatcher.label}`,
-                    () => this.problemMatcherRegistry.register(problemMatcher)
-                );
-            }
-        }
-
-        if (contributions.debuggers && contributions.debuggers.length) {
-            toDispose.push(Disposable.create(() => this.debugSchema.update()));
-            for (const contribution of contributions.debuggers) {
-                pushContribution(`debuggers.${contribution.type}`,
-                    () => this.debugService.registerDebugger(contribution)
-                );
-            }
-            this.debugSchema.update();
-        }
-
-        // Register dynamic debug configuration types discovered from activation events.
-        // This allows the debug dropdown to show provider types before the extension has activated.
-        if (contributions.activationEvents) {
-            for (const event of contributions.activationEvents) {
-                if (event.startsWith('onDebugDynamicConfigurations:')) {
-                    // Explicit type declaration: onDebugDynamicConfigurations:python
-                    // Try to find a matching debugger to get the label
-                    const debugType = event.slice('onDebugDynamicConfigurations:'.length);
-                    const debuggerContrib = contributions.debuggers?.find(d => d.type === debugType);
-                    const label = debuggerContrib?.label ?? debugType;
-                    pushContribution(`dynamicDebugType.${debugType}`,
-                        () => this.debugService.registerDynamicDebugConfigurationType(debugType, label)
-                    );
-                } else if (event === 'onDebugDynamicConfigurations' && contributions.debuggers?.length) {
-                    // Generic event - register all unique debugger types from this extension
-                    const registeredTypes = new Set<string>();
-                    for (const contrib of contributions.debuggers) {
-                        if (!registeredTypes.has(contrib.type)) {
-                            registeredTypes.add(contrib.type);
-                            const label = contrib.label ?? contrib.type;
-                            pushContribution(`dynamicDebugType.${contrib.type}`,
-                                () => this.debugService.registerDynamicDebugConfigurationType(contrib.type, label)
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
         if (contributions.resourceLabelFormatters) {
             for (const formatter of contributions.resourceLabelFormatters) {
                 for (const contribution of this.contributionProvider.getContributions()) {
@@ -438,52 +337,6 @@ export class PluginContributionHandler {
                         );
                     }
                 }
-            }
-        }
-
-        const self = this;
-        if (contributions.terminalProfiles) {
-            for (const profile of contributions.terminalProfiles) {
-                pushContribution(`terminalProfiles.${profile.id}`, () => {
-                    this.contributedProfileStore.registerTerminalProfile(profile.title, {
-                        async start(): Promise<TerminalWidget> {
-                            const terminalId = await self.pluginTerminalRegistry.start(profile.id);
-                            const result = self.terminalService.getById(terminalId);
-                            if (!result) {
-                                throw new Error(`Error starting terminal from profile ${profile.id}`);
-                            }
-                            return result;
-
-                        }
-                    });
-                    return Disposable.create(() => {
-                        this.contributedProfileStore.unregisterTerminalProfile(profile.id);
-                    });
-                });
-            }
-        }
-
-        if (contributions.notebooks) {
-            for (const notebook of contributions.notebooks) {
-                pushContribution(`notebook.${notebook.type}`,
-                    () => this.notebookTypeRegistry.registerNotebookType(notebook, plugin.metadata.model.displayName)
-                );
-            }
-        }
-
-        if (contributions.notebookRenderer) {
-            for (const renderer of contributions.notebookRenderer) {
-                pushContribution(`notebookRenderer.${renderer.id}`,
-                    () => this.notebookRendererRegistry.registerNotebookRenderer(renderer, PluginPackage.toPluginUrl(plugin.metadata.model, ''))
-                );
-            }
-        }
-
-        if (contributions.notebookPreload) {
-            for (const preload of contributions.notebookPreload) {
-                pushContribution(`notebookPreloads.${preload.type}:${preload.entrypoint}`,
-                    () => this.notebookRendererRegistry.registerStaticNotebookPreload(preload.type, preload.entrypoint, PluginPackage.toPluginUrl(plugin.metadata.model, ''))
-                );
             }
         }
 
