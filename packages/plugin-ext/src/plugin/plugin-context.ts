@@ -275,7 +275,6 @@ import { ClipboardExt } from './clipboard-ext';
 import { WebviewsExtImpl } from './webviews';
 import { ExtHostFileSystemEventService } from './file-system-event-service-ext-impl';
 import { LabelServiceExtImpl } from '../plugin/label-service';
-import { TimelineExtImpl } from './timeline';
 import { ThemingExtImpl } from './theming';
 import { CommentsExtImpl } from './comments';
 import { CustomEditorsExtImpl } from './custom-editors';
@@ -285,14 +284,7 @@ import { Endpoint } from '@theia/core/lib/browser/endpoint';
 import { FilePermission } from '@theia/filesystem/lib/common/files';
 import { TabsExtImpl } from './tabs';
 import { LocalizationExtImpl } from './localization-ext';
-import { NotebooksExtImpl } from './notebook/notebooks';
 import { TelemetryExtImpl } from './telemetry-ext';
-import { NotebookDocument } from './notebook/notebook-document';
-import { NotebookRenderersExtImpl } from './notebook/notebook-renderers';
-import { NotebookKernelsExtImpl } from './notebook/notebook-kernels';
-import { NotebookDocumentsExtImpl } from './notebook/notebook-documents';
-import { NotebookEditorsExtImpl } from './notebook/notebook-editors';
-import { TestingExtImpl } from './tests';
 import { UriExtImpl } from './uri-ext';
 import { PluginLogger } from './logger';
 import { LmExtImpl } from './lm-ext';
@@ -334,13 +326,10 @@ export function createAPIFactory(
     const notificationExt = rpc.set(MAIN_RPC_CONTEXT.NOTIFICATION_EXT, new NotificationExtImpl(rpc));
     const editors = rpc.set(MAIN_RPC_CONTEXT.TEXT_EDITORS_EXT, new TextEditorsExtImpl(rpc, editorsAndDocumentsExt));
     const documents = rpc.set(MAIN_RPC_CONTEXT.DOCUMENTS_EXT, new DocumentsExtImpl(rpc, editorsAndDocumentsExt));
-    const notebooksExt = rpc.set(MAIN_RPC_CONTEXT.NOTEBOOKS_EXT, new NotebooksExtImpl(rpc, commandRegistry, editorsAndDocumentsExt, documents));
-    const notebookEditors = rpc.set(MAIN_RPC_CONTEXT.NOTEBOOK_EDITORS_EXT, new NotebookEditorsExtImpl(notebooksExt));
-    const notebookRenderers = rpc.set(MAIN_RPC_CONTEXT.NOTEBOOK_RENDERERS_EXT, new NotebookRenderersExtImpl(rpc, notebooksExt));
-    const notebookKernels = rpc.set(MAIN_RPC_CONTEXT.NOTEBOOK_KERNELS_EXT, new NotebookKernelsExtImpl(rpc, notebooksExt, commandRegistry, webviewExt, workspaceExt));
-    const notebookDocuments = rpc.set(MAIN_RPC_CONTEXT.NOTEBOOK_DOCUMENTS_EXT, new NotebookDocumentsExtImpl(notebooksExt));
     const statusBarMessageRegistryExt = rpc.set(MAIN_RPC_CONTEXT.STATUS_BAR_MESSAGE_REGISTRY_EXT, new StatusBarMessageRegistryExtImpl(rpc, commandRegistry));
-    const terminalExt = rpc.set(MAIN_RPC_CONTEXT.TERMINAL_EXT, new TerminalServiceExtImpl(rpc));
+    const terminalExtImpl = new TerminalServiceExtImpl(rpc);
+    rpc.set(MAIN_RPC_CONTEXT.TERMINAL_EXT, terminalExtImpl);
+    const terminalExt = terminalExtImpl;
     const outputChannelRegistryExt = rpc.set(MAIN_RPC_CONTEXT.OUTPUT_CHANNEL_REGISTRY_EXT, new OutputChannelRegistryExtImpl(rpc));
     const treeViewsExt = rpc.set(MAIN_RPC_CONTEXT.TREE_VIEWS_EXT, new TreeViewsExtImpl(rpc, commandRegistry));
     const tasksExt = rpc.set(MAIN_RPC_CONTEXT.TASKS_EXT, new TasksExtImpl(rpc, terminalExt));
@@ -351,14 +340,12 @@ export function createAPIFactory(
     const scmExt = rpc.set(MAIN_RPC_CONTEXT.SCM_EXT, new ScmExtImpl(rpc, commandRegistry));
     const decorationsExt = rpc.set(MAIN_RPC_CONTEXT.DECORATIONS_EXT, new DecorationsExtImpl(rpc));
     const labelServiceExt = rpc.set(MAIN_RPC_CONTEXT.LABEL_SERVICE_EXT, new LabelServiceExtImpl(rpc));
-    const timelineExt = rpc.set(MAIN_RPC_CONTEXT.TIMELINE_EXT, new TimelineExtImpl(rpc, commandRegistry));
     const themingExt = rpc.set(MAIN_RPC_CONTEXT.THEMING_EXT, new ThemingExtImpl(rpc));
     const commentsExt = rpc.set(MAIN_RPC_CONTEXT.COMMENTS_EXT, new CommentsExtImpl(rpc, commandRegistry, documents));
     const tabsExt = rpc.set(MAIN_RPC_CONTEXT.TABS_EXT, new TabsExtImpl(rpc));
     const customEditorExt = rpc.set(MAIN_RPC_CONTEXT.CUSTOM_EDITORS_EXT, new CustomEditorsExtImpl(rpc, documents, webviewExt));
     const webviewViewsExt = rpc.set(MAIN_RPC_CONTEXT.WEBVIEW_VIEWS_EXT, new WebviewViewsExtImpl(rpc, webviewExt));
     const telemetryExt = rpc.set(MAIN_RPC_CONTEXT.TELEMETRY_EXT, new TelemetryExtImpl());
-    const testingExt = rpc.set(MAIN_RPC_CONTEXT.TESTING_EXT, new TestingExtImpl(rpc, commandRegistry));
     const uriExt = rpc.set(MAIN_RPC_CONTEXT.URI_EXT, new UriExtImpl(rpc));
     const lmExt = rpc.set(MAIN_RPC_CONTEXT.MCP_SERVER_DEFINITION_REGISTRY_EXT, new LmExtImpl(rpc));
     rpc.set(MAIN_RPC_CONTEXT.DEBUG_EXT, debugExt);
@@ -1230,10 +1217,10 @@ export function createAPIFactory(
                 return debugExt.stopDebugging(session);
             },
             addBreakpoints(breakpoints: readonly theia.Breakpoint[]): void {
-                debugExt.addBreakpoints(breakpoints);
+                debugExt.addBreakpoints([...breakpoints]);
             },
             removeBreakpoints(breakpoints: readonly theia.Breakpoint[]): void {
-                debugExt.removeBreakpoints(breakpoints);
+                debugExt.removeBreakpoints([...breakpoints]);
             },
             asDebugSourceUri(source: theia.DebugProtocolSource, session?: theia.DebugSession): theia.Uri {
                 return debugExt.asDebugSourceUri(source, session);

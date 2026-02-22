@@ -20,7 +20,7 @@ import { LogPart, KeysToAnyValues, KeysToKeysToAnyValue } from './types';
 import { CharacterPair, CommentRule, PluginAPIFactory, Plugin, ThemeIcon } from './plugin-api-rpc';
 import { ExtPluginApi } from './plugin-ext-api-contribution';
 import { IJSONSchema, IJSONSchemaSnippet } from '@theia/core/lib/common/json-schema';
-import { ProblemMatcherContribution, ProblemPatternContribution, TaskDefinition } from '@theia/task/lib/common';
+import { ProblemMatcherContribution, ProblemPatternContribution, TaskDefinition } from './deleted-package-stubs';
 import { ColorDefinition } from '@theia/core/lib/common/color';
 import { ResourceLabelFormatter } from '@theia/core/lib/common/label-protocol';
 import { PluginIdentifiers } from './plugin-identifiers';

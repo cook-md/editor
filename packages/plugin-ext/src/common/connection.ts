@@ -13,9 +13,20 @@
 //
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
-import { DebugChannel } from '@theia/debug/lib/common/debug-service';
 import { ConnectionExt, ConnectionMain } from './plugin-api-rpc';
 import { Emitter } from '@theia/core/lib/common/event';
+
+/**
+ * Minimal interface for a debug channel (previously from @theia/debug).
+ */
+export interface DebugChannel {
+    send(content: string): void;
+    onMessage(cb: (message: string) => void): void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    onError(cb: (reason: any) => void): void;
+    onClose(cb: (code: number, reason: string) => void): void;
+    close(): void;
+}
 
 /**
  * A channel communicating with a counterpart in a plugin host.

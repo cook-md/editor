@@ -28,10 +28,9 @@ import * as types from './types-impl';
 import { UriComponents } from '../common/uri-components';
 import { isReadonlyArray } from '../common/arrays';
 import { DisposableCollection, Mutable, isEmptyObject, isObject } from '@theia/core/lib/common';
-import * as notebooks from '@theia/notebook/lib/common';
+import { notebookCommon as notebooks, CellRange, isTextStreamMime } from '../common/deleted-package-stubs';
 import { CommandsConverter } from './command-registry';
 import { BinaryBuffer } from '@theia/core/lib/common/buffer';
-import { CellRange, isTextStreamMime } from '@theia/notebook/lib/common';
 import { MarkdownString as MarkdownStringDTO } from '@theia/core/lib/common/markdown-rendering';
 
 import { TestItemDTO, TestMessageDTO, TestMessageStackFrameDTO } from '../common/test-types';

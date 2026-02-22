@@ -19,7 +19,6 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { UriComponents } from '@theia/core/lib/common/uri';
-import { CellUri } from '@theia/notebook/lib/common';
 
 export { UriComponents };
 
@@ -78,7 +77,7 @@ export namespace Schemes {
 
     export const vscodeSettings = 'vscode-settings';
 
-    export const vscodeNotebookCell = CellUri.cellUriScheme;
+    export const vscodeNotebookCell = 'vscode-notebook-cell';
 
     export const webviewPanel = 'webview-panel';
 }

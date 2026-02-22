@@ -32,7 +32,7 @@ import { FileSystemProviderErrorCode, markAsFileSystemProviderError } from '@the
 import * as paths from 'path';
 import { es5ClassCompat } from '../common/types';
 import { isObject, isStringArray } from '@theia/core/lib/common';
-import { CellEditType, CellMetadataEdit, NotebookDocumentMetadataEdit } from '@theia/notebook/lib/common';
+import { CellEditType, CellMetadataEdit, NotebookDocumentMetadataEdit } from '../common/deleted-package-stubs';
 import { BinaryBuffer } from '@theia/core/lib/common/buffer';
 
 /**

@@ -32,7 +32,6 @@ import { dispose } from '../../common/disposable-util';
 import { MonacoLanguages } from '@theia/monaco/lib/browser/monaco-languages';
 import * as monaco from '@theia/monaco-editor-core';
 import { TextDocumentChangeReason } from '../../plugin/types-impl';
-import { NotebookDocumentsMainImpl } from './notebooks/notebook-documents-main';
 
 /*---------------------------------------------------------------------------------------------
  *  Copyright (c) Microsoft Corporation. All rights reserved.
@@ -91,7 +90,6 @@ export class DocumentsMainImpl implements DocumentsMain, Disposable {
 
     constructor(
         editorsAndDocuments: EditorsAndDocumentsMain,
-        notebookDocuments: NotebookDocumentsMainImpl,
         private readonly modelService: EditorModelService,
         rpc: RPCProtocol,
         private openerService: OpenerService,
@@ -105,8 +103,6 @@ export class DocumentsMainImpl implements DocumentsMain, Disposable {
         this.toDispose.push(editorsAndDocuments.onDocumentAdd(documents => documents.forEach(this.onModelAdded, this)));
         this.toDispose.push(editorsAndDocuments.onDocumentRemove(documents => documents.forEach(this.onModelRemoved, this)));
         this.toDispose.push(modelService.onModelModeChanged(this.onModelChanged, this));
-
-        this.toDispose.push(notebookDocuments.onDidAddNotebookCellModel(this.onModelAdded, this));
 
         this.toDispose.push(modelService.onModelSaved(m => {
             this.proxy.$acceptModelSaved(m.textEditorModel.uri);

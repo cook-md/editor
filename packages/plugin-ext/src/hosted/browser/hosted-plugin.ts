@@ -41,18 +41,13 @@ import { PluginContributionHandler } from '../../main/browser/plugin-contributio
 import { getQueryParameters } from '../../main/browser/env-main';
 import { getPreferences } from '../../main/browser/preference-registry-main';
 import { Deferred, waitForEvent } from '@theia/core/lib/common/promise-util';
-import { DebugSessionManager } from '@theia/debug/lib/browser/debug-session-manager';
-import { DebugConfigurationManager } from '@theia/debug/lib/browser/debug-configuration-manager';
 import { Event, WaitUntilEvent } from '@theia/core/lib/common/event';
 import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import { FrontendApplicationStateService } from '@theia/core/lib/browser/frontend-application-state';
 import { PluginViewRegistry } from '../../main/browser/view/plugin-view-registry';
-import { WillResolveTaskProvider, TaskProviderRegistry, TaskResolverRegistry } from '@theia/task/lib/browser/task-contribution';
-import { TaskDefinitionRegistry } from '@theia/task/lib/browser/task-definition-registry';
 import { WebviewEnvironment } from '../../main/browser/webview/webview-environment';
 import { WebviewWidget } from '../../main/browser/webview/webview';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import URI from '@theia/core/lib/common/uri';
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 import { environment } from '@theia/core/shared/@theia/application-package/lib/environment';
@@ -65,7 +60,6 @@ import { ILanguageService } from '@theia/monaco-editor-core/esm/vs/editor/common
 import { LanguageService } from '@theia/monaco-editor-core/esm/vs/editor/common/services/languageService';
 import { Uint8ArrayReadBuffer, Uint8ArrayWriteBuffer } from '@theia/core/lib/common/message-rpc/uint8-array-message-buffer';
 import { BasicChannel } from '@theia/core/lib/common/message-rpc/channel';
-import { NotebookTypeRegistry, NotebookService, NotebookRendererMessagingService } from '@theia/notebook/lib/browser';
 import { ApplicationServer } from '@theia/core/lib/common/application-protocol';
 import {
     AbstractHostedPluginSupport, PluginContributions, PluginHost,
@@ -73,7 +67,7 @@ import {
 } from '../common/hosted-plugin';
 import { isRemote } from '@theia/core/lib/browser/browser';
 
-export type DebugActivationEvent = 'onDebugResolve' | 'onDebugInitialConfigurations' | 'onDebugAdapterProtocolTracker' | 'onDebugDynamicConfigurations';
+// Debug activation events removed - debug package deleted
 
 export const PluginProgressLocation = 'plugin';
 
@@ -119,20 +113,8 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
 
-    @inject(NotebookService)
-    protected readonly notebookService: NotebookService;
-
-    @inject(NotebookRendererMessagingService)
-    protected readonly notebookRendererMessagingService: NotebookRendererMessagingService;
-
     @inject(CommandRegistry)
     protected readonly commands: CommandRegistry;
-
-    @inject(DebugSessionManager)
-    protected readonly debugSessionManager: DebugSessionManager;
-
-    @inject(DebugConfigurationManager)
-    protected readonly debugConfigurationManager: DebugConfigurationManager;
 
     @inject(FileService)
     protected readonly fileService: FileService;
@@ -143,20 +125,8 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
     @inject(FrontendApplicationStateService)
     protected readonly appState: FrontendApplicationStateService;
 
-    @inject(NotebookTypeRegistry)
-    protected readonly notebookTypeRegistry: NotebookTypeRegistry;
-
     @inject(PluginViewRegistry)
     protected readonly viewRegistry: PluginViewRegistry;
-
-    @inject(TaskProviderRegistry)
-    protected readonly taskProviderRegistry: TaskProviderRegistry;
-
-    @inject(TaskResolverRegistry)
-    protected readonly taskResolverRegistry: TaskResolverRegistry;
-
-    @inject(TaskDefinitionRegistry)
-    protected readonly taskDefinitionRegistry: TaskDefinitionRegistry;
 
     @inject(ProgressService)
     protected readonly progressService: ProgressService;
@@ -166,9 +136,6 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
 
     @inject(WidgetManager)
     protected readonly widgets: WidgetManager;
-
-    @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
 
     @inject(JsonSchemaStore)
     protected readonly jsonSchemaStore: JsonSchemaStore;
@@ -195,22 +162,9 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
         }
         languageService.onDidRequestBasicLanguageFeatures(language => this.activateByLanguage(language));
         this.commands.onWillExecuteCommand(event => this.ensureCommandHandlerRegistration(event));
-        this.debugSessionManager.onWillStartDebugSession(event => this.ensureDebugActivation(event));
-        this.debugSessionManager.onWillResolveDebugConfiguration(event => this.ensureDebugActivation(event, 'onDebugResolve', event.debugType));
-        this.debugConfigurationManager.onWillProvideDebugConfiguration(event => this.ensureDebugActivation(event, 'onDebugInitialConfigurations'));
-        // Activate providers of dynamic configurations. When a specific debugType is provided,
-        // only activate that type's extension. Otherwise, activate all providers.
-        this.debugConfigurationManager.onWillProvideDynamicDebugConfiguration(event => {
-            const debugType = 'debugType' in event ? event.debugType : undefined;
-            this.ensureDebugActivation(event, 'onDebugDynamicConfigurations', debugType ?? ALL_ACTIVATION_EVENT);
-        });
         this.viewRegistry.onDidExpandView(id => this.activateByView(id));
-        this.taskProviderRegistry.onWillProvideTaskProvider(event => this.ensureTaskActivation(event));
-        this.taskResolverRegistry.onWillProvideTaskResolver(event => this.ensureTaskActivation(event));
         this.fileService.onWillActivateFileSystemProvider(event => this.ensureFileSystemActivation(event));
         this.customEditorRegistry.onWillOpenCustomEditor(event => this.activateByCustomEditor(event));
-        this.notebookService.onWillOpenNotebook(async event => this.activateByNotebook(event));
-        this.notebookRendererMessagingService.onWillActivateRenderer(rendererId => this.activateByNotebookRenderer(rendererId));
 
         this.widgets.onDidCreateWidget(({ factoryId, widget }) => {
             // note: state restoration of custom editors is handled in `PluginCustomEditorRegistry.init`
@@ -486,37 +440,6 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
         ]);
         p.then(() => listener.dispose(), () => listener.dispose());
         event.waitUntil(p);
-    }
-
-    protected ensureTaskActivation(event: WillResolveTaskProvider): void {
-        const promises = [this.activateByCommand('workbench.action.tasks.runTask')];
-        const taskType = event.taskType;
-        if (taskType) {
-            if (taskType === ALL_ACTIVATION_EVENT) {
-                for (const taskDefinition of this.taskDefinitionRegistry.getAll()) {
-                    promises.push(this.activateByTaskType(taskDefinition.taskType));
-                }
-            } else {
-                promises.push(this.activateByTaskType(taskType));
-            }
-        }
-
-        event.waitUntil(Promise.all(promises));
-    }
-
-    protected ensureDebugActivation(event: WaitUntilEvent, activationEvent?: DebugActivationEvent, debugType?: string): void {
-        event.waitUntil(this.activateByDebug(activationEvent, debugType));
-    }
-
-    async activateByDebug(activationEvent?: DebugActivationEvent, debugType?: string): Promise<void> {
-        const promises = [this.activateByEvent('onDebug')];
-        if (activationEvent) {
-            promises.push(this.activateByEvent(activationEvent));
-            if (debugType) {
-                promises.push(this.activateByEvent(activationEvent + ':' + debugType));
-            }
-        }
-        await Promise.all(promises);
     }
 
     protected async activateByWorkspaceContains(manager: PluginManagerExt, plugin: DeployedPlugin): Promise<void> {

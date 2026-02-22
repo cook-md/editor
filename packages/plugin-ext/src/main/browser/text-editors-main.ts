@@ -49,9 +49,7 @@ import { StandaloneServices } from '@theia/monaco-editor-core/esm/vs/editor/stan
 import { ICodeEditorService } from '@theia/monaco-editor-core/esm/vs/editor/browser/services/codeEditorService';
 import { type ILineChange } from '@theia/monaco-editor-core/esm/vs/editor/common/diff/legacyLinesDiffComputer';
 import { ArrayUtils, URI } from '@theia/core';
-import { toNotebookWorspaceEdit } from './notebooks/notebooks-main';
 import { interfaces } from '@theia/core/shared/inversify';
-import { NotebookService } from '@theia/notebook/lib/browser';
 
 export class TextEditorsMainImpl implements TextEditorsMain, Disposable {
 
@@ -61,7 +59,6 @@ export class TextEditorsMainImpl implements TextEditorsMain, Disposable {
     private readonly fileEndpoint = new Endpoint({ path: 'file' }).getRestUrl();
 
     private readonly bulkEditService: MonacoBulkEditService;
-    private readonly notebookService: NotebookService;
 
     constructor(
         private readonly editorsAndDocuments: EditorsAndDocumentsMain,
@@ -72,7 +69,6 @@ export class TextEditorsMainImpl implements TextEditorsMain, Disposable {
         this.proxy = rpc.getProxy(MAIN_RPC_CONTEXT.TEXT_EDITORS_EXT);
 
         this.bulkEditService = container.get(MonacoBulkEditService);
-        this.notebookService = container.get(NotebookService);
 
         this.toDispose.push(editorsAndDocuments);
         this.toDispose.push(editorsAndDocuments.onTextEditorAdd(editors => editors.forEach(this.onTextEditorAdd, this)));
@@ -140,12 +136,8 @@ export class TextEditorsMainImpl implements TextEditorsMain, Disposable {
     }
 
     async $tryApplyWorkspaceEdit(dto: WorkspaceEditDto, metadata?: WorkspaceEditMetadataDto): Promise<boolean> {
-        const [notebookEdits, monacoEdits] = ArrayUtils.partition(dto.edits, edit => WorkspaceNotebookCellEditDto.is(edit));
         try {
-            if (notebookEdits.length > 0) {
-                const workspaceEdit = toNotebookWorspaceEdit({ edits: notebookEdits });
-                return this.notebookService.applyWorkspaceEdit(workspaceEdit);
-            }
+            const monacoEdits = dto.edits.filter(edit => !WorkspaceNotebookCellEditDto.is(edit));
             if (monacoEdits.length > 0) {
                 const workspaceEdit = toMonacoWorkspaceEdit({ edits: monacoEdits });
                 const edits = ResourceEdit.convert(workspaceEdit);

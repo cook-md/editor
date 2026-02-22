@@ -102,33 +102,35 @@ import {
     Progress,
     ProgressOptions,
 } from '@theia/plugin';
-import { DebuggerDescription } from '@theia/debug/lib/common/debug-service';
 import { DebugProtocol } from '@vscode/debugprotocol';
 import { SymbolInformation } from '@theia/core/shared/vscode-languageserver-protocol';
 import * as files from '@theia/filesystem/lib/common/files';
 import { BinaryBuffer } from '@theia/core/lib/common/buffer';
 import { ResourceLabelFormatter } from '@theia/core/lib/common/label-protocol';
-import type {
-    InternalTimelineOptions,
-    Timeline,
-    TimelineChangeEvent,
-    TimelineProviderDescriptor
-} from '@theia/timeline/lib/common/timeline-model';
-import { SerializableEnvironmentVariableCollection } from '@theia/terminal/lib/common/shell-terminal-protocol';
 import { ThemeType } from '@theia/core/lib/common/theme';
 import { Disposable } from '@theia/core/lib/common/disposable';
 import { isString, isObject, QuickInputButtonHandle } from '@theia/core/lib/common';
 import { Severity } from '@theia/core/lib/common/severity';
-import { DebugConfiguration, DebugSessionOptions } from '@theia/debug/lib/common/debug-configuration';
-import * as notebookCommon from '@theia/notebook/lib/common';
-import { CellExecutionUpdateType, CellRange, NotebookCellExecutionState } from '@theia/notebook/lib/common';
 import { LanguagePackBundle } from './language-pack-service';
 import { AccessibilityInformation } from '@theia/core/lib/common/accessibility';
-
-import { TreeDelta } from '@theia/test/lib/common/tree-delta';
 import { TestItemDTO, TestOutputDTO, TestRunDTO, TestRunProfileDTO, TestRunRequestDTO, TestStateChangeDTO } from './test-types';
 import { ArgumentProcessor } from './commands';
 import { McpServerDefinitionRegistryMain, McpServerDefinitionRegistryExt } from './lm-protocol';
+import {
+    DebuggerDescription,
+    DebugConfiguration,
+    DebugSessionOptions,
+    InternalTimelineOptions,
+    Timeline,
+    TimelineChangeEvent,
+    TimelineProviderDescriptor,
+    SerializableEnvironmentVariableCollection,
+    notebookCommon,
+    CellExecutionUpdateType,
+    CellRange,
+    NotebookCellExecutionState,
+    TreeDelta,
+} from './deleted-package-stubs';
 
 export interface PreferenceData {
     [scope: number]: any;
