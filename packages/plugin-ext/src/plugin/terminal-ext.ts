@@ -71,6 +71,7 @@ export class EnvironmentVariableCollectionImpl {
     readonly persistent: boolean;
     readonly map: Map<string, any> = new Map();
     readonly descriptionMap: Map<string, any> = new Map();
+    description: string | any | undefined;
 
     constructor(persistent: boolean) {
         this.persistent = persistent;
@@ -84,4 +85,5 @@ export class EnvironmentVariableCollectionImpl {
     forEach(callback: (variable: string, mutator: any, collection: any) => void): void { }
     clear(): void { this.map.clear(); }
     delete(variable: string): boolean { return this.map.delete(variable); }
+    getScoped(scope: any): any { return new EnvironmentVariableCollectionImpl(this.persistent); }
 }
