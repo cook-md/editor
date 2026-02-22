@@ -19,7 +19,6 @@ import {
     ApplicationShell,
     CommonCommands,
     NavigatableWidget,
-    open,
     OpenerService, OpenHandler,
     QuickInputService,
     Saveable,
@@ -35,17 +34,13 @@ import { EditorManager, EditorCommands } from '@theia/editor/lib/browser';
 import {
     TextDocumentShowOptions,
     Location,
-    CallHierarchyItem,
-    CallHierarchyIncomingCall,
-    CallHierarchyOutgoingCall,
-    TypeHierarchyItem,
     Hover,
     TextEdit,
     FormattingOptions,
     DocumentHighlight
 } from '@theia/plugin-ext/lib/common/plugin-api-rpc-model';
 import { DocumentsMainImpl } from '@theia/plugin-ext/lib/main/browser/documents-main';
-import { isUriComponents, toMergedSymbol, toPosition } from '@theia/plugin-ext/lib/plugin/type-converters';
+import { isUriComponents, toMergedSymbol } from '@theia/plugin-ext/lib/plugin/type-converters';
 import { ViewColumn } from '@theia/plugin-ext/lib/plugin/types-impl';
 import { WorkspaceCommands } from '@theia/workspace/lib/browser';
 import { WorkspaceService, WorkspaceInput } from '@theia/workspace/lib/browser/workspace-service';
@@ -54,9 +49,7 @@ import { inject, injectable, optional } from '@theia/core/shared/inversify';
 import { Position } from '@theia/plugin-ext/lib/common/plugin-api-rpc';
 import { URI } from '@theia/core/shared/vscode-uri';
 import { PluginDeployOptions, PluginIdentifiers, PluginServer } from '@theia/plugin-ext/lib/common/plugin-protocol';
-import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import { QuickOpenWorkspace } from '@theia/workspace/lib/browser/quick-open-workspace';
-import { TerminalService } from '@theia/terminal/lib/browser/base/terminal-service';
 import {
     FileNavigatorCommands,
     FILE_NAVIGATOR_TOGGLE_COMMAND_ID
@@ -65,15 +58,6 @@ import { FILE_NAVIGATOR_ID, FileNavigatorWidget } from '@theia/navigator/lib/bro
 import { SelectableTreeNode } from '@theia/core/lib/browser/tree/tree-selection';
 import { UriComponents } from '@theia/plugin-ext/lib/common/uri-components';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { CallHierarchyServiceProvider, CallHierarchyService } from '@theia/callhierarchy/lib/browser';
-import { TypeHierarchyServiceProvider, TypeHierarchyService } from '@theia/typehierarchy/lib/browser';
-import { MonacoTextModelService } from '@theia/monaco/lib/browser/monaco-text-model-service';
-import {
-    fromCallHierarchyCalleeToModelCallHierarchyOutgoingCall,
-    fromCallHierarchyCallerToModelCallHierarchyIncomingCall,
-    fromItemHierarchyDefinition,
-    toItemHierarchyDefinition
-} from '@theia/plugin-ext/lib/main/browser/hierarchy/hierarchy-types-converters';
 import { CustomEditorOpener } from '@theia/plugin-ext/lib/main/browser/custom-editors/custom-editor-opener';
 import { nls } from '@theia/core/lib/common/nls';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
@@ -83,8 +67,6 @@ import { CodeEditorWidgetUtil } from '@theia/plugin-ext/lib/main/browser/menus/v
 import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { CompletionList, Range, Position as PluginPosition } from '@theia/plugin';
 import { MonacoLanguages } from '@theia/monaco/lib/browser/monaco-languages';
-import { ScmContribution } from '@theia/scm/lib/browser/scm-contribution';
-import { MergeEditorOpenerOptions, MergeEditorUri } from '@theia/scm/lib/browser/merge-editor/merge-editor';
 
 export namespace VscodeCommands {
 
@@ -179,22 +161,12 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
     protected readonly quickInput: QuickInputService;
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
-    @inject(TerminalFrontendContribution)
-    protected readonly terminalContribution: TerminalFrontendContribution;
     @inject(QuickOpenWorkspace)
     protected readonly quickOpenWorkspace: QuickOpenWorkspace;
-    @inject(TerminalService)
-    protected readonly terminalService: TerminalService;
     @inject(PluginServer)
     protected readonly pluginServer: PluginServer;
     @inject(FileService)
     protected readonly fileService: FileService;
-    @inject(CallHierarchyServiceProvider)
-    protected readonly callHierarchyProvider: CallHierarchyServiceProvider;
-    @inject(TypeHierarchyServiceProvider)
-    protected readonly typeHierarchyProvider: TypeHierarchyServiceProvider;
-    @inject(MonacoTextModelService)
-    protected readonly textModelService: MonacoTextModelService;
     @inject(WindowService)
     protected readonly windowService: WindowService;
     @inject(MessageService)
@@ -203,8 +175,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
     protected outlineViewContribution: OutlineViewContribution;
     @inject(MonacoLanguages)
     protected monacoLanguages: MonacoLanguages;
-    @inject(ScmContribution)
-    protected scmContribution: ScmContribution;
 
     private async openWith(commandId: string, resource: URI, columnOrOptions?: ViewColumn | TextDocumentShowOptions, openerId?: string): Promise<boolean> {
         if (!resource) {
@@ -570,10 +540,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             execute: () => commands.executeCommand(EditorCommands.GO_LAST_EDIT.id)
         });
 
-        commands.registerCommand({ id: 'openInTerminal' }, {
-            execute: (resource: URI) => this.terminalContribution.openInTerminal(new TheiaURI(resource.toString()))
-        });
-
         commands.registerCommand({ id: 'workbench.action.reloadWindow' }, {
             execute: () => {
                 this.windowService.reload();
@@ -748,120 +714,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             }
         );
 
-        commands.registerCommand(
-            {
-                id: 'vscode.prepareCallHierarchy'
-            },
-            {
-                execute: async (resource: URI, position: Position): Promise<CallHierarchyItem[]> => {
-                    const provider = await this.getCallHierarchyServiceForUri(resource);
-                    const definition = await provider?.getRootDefinition(
-                        resource.path,
-                        toPosition(position),
-                        new CancellationTokenSource().token
-                    );
-                    if (definition) {
-                        return definition.items.map(item => fromItemHierarchyDefinition(item));
-                    };
-                    return [];
-                }
-            }
-        );
-        commands.registerCommand(
-            {
-                id: 'vscode.provideIncomingCalls'
-            },
-            {
-                execute: async (item: CallHierarchyItem): Promise<CallHierarchyIncomingCall[]> => {
-                    const resource = URI.from(item.uri);
-                    const provider = await this.getCallHierarchyServiceForUri(resource);
-                    const incomingCalls = await provider?.getCallers(
-                        toItemHierarchyDefinition(item),
-                        new CancellationTokenSource().token,
-                    );
-                    if (incomingCalls) {
-                        return incomingCalls.map(fromCallHierarchyCallerToModelCallHierarchyIncomingCall);
-                    }
-                    return [];
-                },
-            },
-        );
-        commands.registerCommand(
-            {
-                id: 'vscode.provideOutgoingCalls'
-            },
-            {
-                execute: async (item: CallHierarchyItem): Promise<CallHierarchyOutgoingCall[]> => {
-                    const resource = URI.from(item.uri);
-                    const provider = await this.getCallHierarchyServiceForUri(resource);
-                    const outgoingCalls = await provider?.getCallees?.(
-                        toItemHierarchyDefinition(item),
-                        new CancellationTokenSource().token,
-                    );
-                    if (outgoingCalls) {
-                        return outgoingCalls.map(fromCallHierarchyCalleeToModelCallHierarchyOutgoingCall);
-                    }
-                    return [];
-                }
-            }
-        );
-        commands.registerCommand(
-            {
-                id: 'vscode.prepareTypeHierarchy'
-            },
-            {
-                execute: async (resource: URI, position: Position): Promise<TypeHierarchyItem[]> => {
-                    const provider = await this.getTypeHierarchyServiceForUri(resource);
-                    const session = await provider?.prepareSession(
-                        resource.path,
-                        toPosition(position),
-                        new CancellationTokenSource().token
-                    );
-                    return session ? session.items.map(item => fromItemHierarchyDefinition(item)) : [];
-                }
-            }
-        );
-        commands.registerCommand(
-            {
-                id: 'vscode.provideSupertypes'
-            },
-            {
-                execute: async (item: TypeHierarchyItem): Promise<TypeHierarchyItem[]> => {
-                    if (!item._sessionId || !item._itemId) {
-                        return [];
-                    }
-                    const resource = URI.from(item.uri);
-                    const provider = await this.getTypeHierarchyServiceForUri(resource);
-                    const items = await provider?.provideSuperTypes(
-                        item._sessionId,
-                        item._itemId,
-                        new CancellationTokenSource().token
-                    );
-                    return (items ? items : []).map(typeItem => fromItemHierarchyDefinition(typeItem));
-                }
-            }
-        );
-        commands.registerCommand(
-            {
-                id: 'vscode.provideSubtypes'
-            },
-            {
-                execute: async (item: TypeHierarchyItem): Promise<TypeHierarchyItem[]> => {
-                    if (!item._sessionId || !item._itemId) {
-                        return [];
-                    }
-                    const resource = URI.from(item.uri);
-                    const provider = await this.getTypeHierarchyServiceForUri(resource);
-                    const items = await provider?.provideSubTypes(
-                        item._sessionId, item._itemId,
-                        new CancellationTokenSource().token
-                    );
-                    return (items ? items : []).map(typeItem => fromItemHierarchyDefinition(typeItem));
-
-                }
-            }
-        );
-
         commands.registerCommand({
             id: 'workbench.action.openRecent'
         }, {
@@ -871,36 +723,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             id: 'explorer.newFolder'
         }, {
             execute: () => commands.executeCommand(WorkspaceCommands.NEW_FOLDER.id)
-        });
-        commands.registerCommand({
-            id: 'workbench.action.terminal.sendSequence'
-        }, {
-            execute: (args?: { text?: string }) => {
-                if (args === undefined || args.text === undefined) {
-                    return;
-                }
-
-                const currentTerminal = this.terminalService.currentTerminal;
-
-                if (currentTerminal === undefined) {
-                    return;
-                }
-
-                currentTerminal.sendText(args.text);
-            }
-        });
-        commands.registerCommand({
-            id: 'workbench.action.terminal.kill'
-        }, {
-            execute: () => {
-                const currentTerminal = this.terminalService.currentTerminal;
-
-                if (currentTerminal === undefined) {
-                    return;
-                }
-
-                currentTerminal.dispose();
-            }
         });
         commands.registerCommand({
             id: 'workbench.view.explorer'
@@ -1024,57 +846,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             execute: () => this.outlineViewContribution.openView({ activate: true })
         });
 
-        // required by vscode.git
-        commands.registerCommand({ id: 'workbench.view.scm' }, {
-            execute: async (): Promise<void> => { // no return value: attempting to return an ScmWidget would fail serialization when transferring the result
-                await this.scmContribution.openView({ activate: true });
-            }
-        });
-
-        interface OpenMergeEditorCommandArg {
-            base: UriComponents | string;
-            input1: MergeSideInputData | string;
-            input2: MergeSideInputData | string;
-            output: UriComponents | string;
-        }
-
-        interface MergeSideInputData {
-            uri: UriComponents;
-            title?: string;
-            description?: string;
-            detail?: string;
-        }
-
-        commands.registerCommand({ id: '_open.mergeEditor' }, {
-            execute: async (arg: OpenMergeEditorCommandArg): Promise<void> => {
-                const toTheiaUri = (o: UriComponents | string): TheiaURI => {
-                    if (typeof o === 'string') {
-                        return new TheiaURI(o);
-                    }
-                    return TheiaURI.fromComponents(o);
-                };
-
-                const baseUri = toTheiaUri(arg.base);
-                const resultUri = toTheiaUri(arg.output);
-                const side1Uri = typeof arg.input1 === 'string' ? toTheiaUri(arg.input1) : toTheiaUri(arg.input1.uri);
-                const side2Uri = typeof arg.input2 === 'string' ? toTheiaUri(arg.input2) : toTheiaUri(arg.input2.uri);
-                const uri = MergeEditorUri.encode({ baseUri, side1Uri, side2Uri, resultUri });
-
-                let side1State = undefined;
-                if (typeof arg.input1 !== 'string') {
-                    const { title, description, detail } = arg.input1;
-                    side1State = { title, description, detail };
-                }
-                let side2State = undefined;
-                if (typeof arg.input2 !== 'string') {
-                    const { title, description, detail } = arg.input2;
-                    side2State = { title, description, detail };
-                }
-                const options: MergeEditorOpenerOptions = { widgetState: { side1State, side2State } };
-
-                await open(this.openerService, uri, options);
-            }
-        });
     }
 
     private async deployPlugin(uri: TheiaURI | UriComponents): Promise<void> {
@@ -1082,20 +853,4 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
         return this.pluginServer.install(`local-file:${uriPath}`);
     }
 
-    private async resolveLanguageId(resource: URI): Promise<string> {
-        const reference = await this.textModelService.createModelReference(resource);
-        const languageId = reference.object.languageId;
-        reference.dispose();
-        return languageId;
-    }
-
-    protected async getCallHierarchyServiceForUri(resource: URI): Promise<CallHierarchyService | undefined> {
-        const languageId = await this.resolveLanguageId(resource);
-        return this.callHierarchyProvider.get(languageId, new TheiaURI(resource));
-    }
-
-    protected async getTypeHierarchyServiceForUri(resource: URI): Promise<TypeHierarchyService | undefined> {
-        const languageId = await this.resolveLanguageId(resource);
-        return this.typeHierarchyProvider.get(languageId, new TheiaURI(resource));
-    }
 }
