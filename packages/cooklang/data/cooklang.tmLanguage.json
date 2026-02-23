@@ -553,8 +553,6 @@
     "comments": {
       "patterns": [
         {
-          "match": "(?<!-)--(?!-)",
-          "name": "punctuation.definition.comment.cooklang",
           "beginCaptures": {
             "0": {
               "name": "punctuation.definition.comment.cooklang"
@@ -565,26 +563,26 @@
           "contentName": "comment.line.double-dash.cooklang"
         },
         {
-					"name": "comment.block.cooklang",
-					"begin": "(\\[-)(?:\\s*((@)internal)(?=\\s|(-])))?",
-					"beginCaptures": {
-						"1": {
-							"name": "punctuation.definition.comment.cooklang"
-						},
-						"2": {
-							"name": "storage.type.internaldeclaration.cooklang"
-						},
-						"3": {
-							"name": "punctuation.decorator.internaldeclaration.cooklang"
-						}
-					},
-					"end": "-]",
-					"endCaptures": {
-						"0": {
-							"name": "punctuation.definition.comment.cooklang"
-						}
-					}
-				}
+          "name": "comment.block.cooklang",
+          "begin": "(\\[-)(?:\\s*((@)internal)(?=\\s|(-])))?",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.comment.cooklang"
+            },
+            "2": {
+              "name": "storage.type.internaldeclaration.cooklang"
+            },
+            "3": {
+              "name": "punctuation.decorator.internaldeclaration.cooklang"
+            }
+          },
+          "end": "-]",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.cooklang"
+            }
+          }
+        }
       ]
     }
   }

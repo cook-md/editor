@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Cooklang contributors
+// SPDX-License-Identifier: MIT
+
 import { injectable } from '@theia/core/shared/inversify';
 import {
     GrammarDefinition,

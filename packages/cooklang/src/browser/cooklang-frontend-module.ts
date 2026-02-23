@@ -1,3 +1,6 @@
+// Copyright (C) 2026 Cooklang contributors
+// SPDX-License-Identifier: MIT
+
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { CooklangGrammarContribution } from './cooklang-grammar-contribution';
