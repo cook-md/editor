@@ -2,19 +2,39 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Project Overview
+
+This is a **fork of Eclipse Theia** used to build a full-fledged **Cooklang editor** — a desktop application similar to Obsidian but focused on recipe management using the [Cooklang](https://cooklang.org/) markup language.
+
+**Main goals:**
+- Syntax highlighting for Cooklang (.cook files)
+- Autocomplete for ingredients, cookware, and recipe metadata
+- AI assistance for recipe writing and editing
+- Shopping list generation from recipes
+- Pantry management
+- Reports and analytics (cost, nutrition, meal planning)
+
+## Target Platform
+
+This is an **Electron-only** application. There is no browser target. Only `examples/electron/` is used.
+
 ## Development Commands
 
 **Essential commands:**
-- `npm install` - Install dependencies and run post-install hooks
-- `npm run build:browser` - Builds all packages, including example applications and bundles the Browser application (preferred during development)
+- `npm install` - Install dependencies, create workspace symlinks, run post-install hooks
 - `npm run compile` - Compile TypeScript packages only
 - `npm run lint` - Run ESLint across all packages
 - `npm run test` - Run all tests
 
-**Application commands:**
-- `npm run start:browser` - Start browser example at localhost:3000
+**Electron application:**
+- `cd examples/electron && npm run bundle` - Build/rebuild the Electron app (regenerates src-gen/ files)
 - `npm run start:electron` - Start electron application
 - `npm run watch` - Watch mode for development
+
+**Cooklang-specific:**
+- `npx lerna run compile --scope @theia/cooklang` - Compile the Cooklang extension
+- `cd packages/cooklang-native && cargo build` - Build the NAPI-RS native addon (Rust)
+- `cd packages/cooklang-native && npm run build` - Build native addon for Node.js (requires @napi-rs/cli)
 
 **Package-specific (using lerna):**
 - `npx lerna run compile --scope @theia/package-name` - Build specific package
@@ -83,3 +103,17 @@ For more information also look at:
 - InversifyJS for dependency injection
 - Lerna for monorepo management
 - Webpack for application bundling
+- NAPI-RS for Rust native Node.js addons
+
+## Cooklang Packages
+
+- `packages/cooklang/` - Theia extension providing Cooklang language support (TextMate grammar + LSP client)
+- `packages/cooklang-native/` - NAPI-RS crate wrapping Rust cooklang parser and language server
+
+**Adding a new package to the monorepo:**
+1. Create `packages/foo/package.json` with `theiaExtensions`
+2. Create `packages/foo/tsconfig.json` with project references
+3. Add `"@theia/foo": "1.68.0"` to `examples/electron/package.json` dependencies
+4. Add `{ "path": "../../packages/foo" }` to `examples/electron/tsconfig.json` references
+5. Run `npm install` to create workspace symlink
+6. Run `cd examples/electron && npm run bundle` to regenerate `src-gen/` files
