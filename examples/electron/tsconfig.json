@@ -24,6 +24,9 @@
       "path": "../../packages/ai-core-ui"
     },
     {
+      "path": "../../packages/cooklang"
+    },
+    {
       "path": "../../packages/core"
     },
     {
