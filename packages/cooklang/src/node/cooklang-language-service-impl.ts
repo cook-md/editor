@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
-import { CooklangLanguageService } from '../common/cooklang-language-service';
+import {
+    CooklangLanguageService,
+    CooklangInitializeResult,
+    CooklangCompletionList,
+    CooklangHover,
+    CooklangDocumentSymbol,
+    CooklangSemanticTokens
+} from '../common/cooklang-language-service';
 import { createNativeLspConnection } from './cooklang-language-server-connection';
 import { MessageConnection } from 'vscode-languageserver-protocol/node';
 
@@ -15,7 +22,6 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
     @postConstruct()
     protected init(): void {
         try {
-            // Dynamic import of native addon - it may not be built yet
             const native = require('@theia/cooklang-native');
             if (native && native.LspServer) {
                 this.nativeLsp = new native.LspServer();
@@ -31,17 +37,20 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         }
     }
 
-    async initialize(rootUri: string | null): Promise<void> {
+    // --- Lifecycle ---
+
+    async initialize(rootUri: string | null): Promise<CooklangInitializeResult> {
         if (!this.connection) {
-            return;
+            return { capabilities: {} };
         }
-        await this.connection.sendRequest('initialize', {
+        const result = await this.connection.sendRequest('initialize', {
             processId: process.pid,
             capabilities: {},
             rootUri,
             workspaceFolders: rootUri ? [{ uri: rootUri, name: 'workspace' }] : null,
         });
         await this.connection.sendNotification('initialized');
+        return result as CooklangInitializeResult;
     }
 
     async shutdown(): Promise<void> {
@@ -51,5 +60,80 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         await this.connection.sendRequest('shutdown');
         this.connection.sendNotification('exit');
         this.connection.dispose();
+    }
+
+    // --- Document sync ---
+
+    didOpenTextDocument(uri: string, languageId: string, version: number, text: string): void {
+        this.connection?.sendNotification('textDocument/didOpen', {
+            textDocument: { uri, languageId, version, text }
+        });
+    }
+
+    didChangeTextDocument(uri: string, version: number, text: string): void {
+        this.connection?.sendNotification('textDocument/didChange', {
+            textDocument: { uri, version },
+            contentChanges: [{ text }]
+        });
+    }
+
+    didCloseTextDocument(uri: string): void {
+        this.connection?.sendNotification('textDocument/didClose', {
+            textDocument: { uri }
+        });
+    }
+
+    didSaveTextDocument(uri: string): void {
+        this.connection?.sendNotification('textDocument/didSave', {
+            textDocument: { uri }
+        });
+    }
+
+    // --- Language features ---
+
+    async completion(uri: string, line: number, character: number): Promise<CooklangCompletionList | null> {
+        if (!this.connection) {
+            return null;
+        }
+        const result = await this.connection.sendRequest('textDocument/completion', {
+            textDocument: { uri },
+            position: { line, character }
+        });
+        if (!result) {
+            return null;
+        }
+        // LSP returns CompletionList | CompletionItem[] — normalize to list
+        if (Array.isArray(result)) {
+            return { isIncomplete: false, items: result };
+        }
+        return result as CooklangCompletionList;
+    }
+
+    async hover(uri: string, line: number, character: number): Promise<CooklangHover | null> {
+        if (!this.connection) {
+            return null;
+        }
+        return await this.connection.sendRequest('textDocument/hover', {
+            textDocument: { uri },
+            position: { line, character }
+        }) as CooklangHover | null;
+    }
+
+    async documentSymbol(uri: string): Promise<CooklangDocumentSymbol[] | null> {
+        if (!this.connection) {
+            return null;
+        }
+        return await this.connection.sendRequest('textDocument/documentSymbol', {
+            textDocument: { uri }
+        }) as CooklangDocumentSymbol[] | null;
+    }
+
+    async semanticTokensFull(uri: string): Promise<CooklangSemanticTokens | null> {
+        if (!this.connection) {
+            return null;
+        }
+        return await this.connection.sendRequest('textDocument/semanticTokens/full', {
+            textDocument: { uri }
+        }) as CooklangSemanticTokens | null;
     }
 }
