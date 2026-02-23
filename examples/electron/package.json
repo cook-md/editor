@@ -30,6 +30,7 @@
     "@theia/ai-chat-ui": "1.68.0",
     "@theia/ai-core": "1.68.0",
     "@theia/ai-core-ui": "1.68.0",
+    "@theia/cooklang": "1.68.0",
     "@theia/core": "1.68.0",
     "@theia/editor": "1.68.0",
     "@theia/editor-preview": "1.68.0",
