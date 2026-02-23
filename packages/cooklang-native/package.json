@@ -1,0 +1,19 @@
+{
+  "name": "@theia/cooklang-native",
+  "version": "0.1.0",
+  "description": "Cooklang native bindings via NAPI-RS",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "cooklang-native",
+    "triples": {}
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "napi build --release --platform",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  }
+}
