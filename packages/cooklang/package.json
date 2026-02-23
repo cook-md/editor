@@ -1,0 +1,37 @@
+{
+  "name": "@theia/cooklang",
+  "version": "1.68.0",
+  "description": "Theia - Cooklang Language Support",
+  "dependencies": {
+    "@theia/core": "1.68.0",
+    "@theia/monaco": "1.68.0",
+    "@theia/monaco-editor-core": "1.96.302",
+    "tslib": "^2.6.2"
+  },
+  "main": "lib/common",
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/cooklang-frontend-module"
+    }
+  ],
+  "keywords": [
+    "theia-extension"
+  ],
+  "license": "MIT",
+  "files": [
+    "data",
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "compile": "theiaext compile",
+    "lint": "theiaext lint",
+    "test": "theiaext test",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.68.0"
+  }
+}
