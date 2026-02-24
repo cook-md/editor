@@ -13,6 +13,7 @@ import { CooklangLanguageClientContribution } from './cooklang-language-client-c
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
+import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
     // TextMate grammar
@@ -39,4 +40,7 @@ export default new ContainerModule(bind => {
     bind(RecipePreviewContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(RecipePreviewContribution);
     bind(KeybindingContribution).toService(RecipePreviewContribution);
+
+    // Cooklang preferences
+    bindCooklangPreferences(bind);
 });
