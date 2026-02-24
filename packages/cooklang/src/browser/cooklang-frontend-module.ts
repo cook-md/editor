@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/browser';
+import {
+    FrontendApplicationContribution,
+    WidgetFactory,
+    bindViewContribution,
+} from '@theia/core/lib/browser';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import URI from '@theia/core/lib/common/uri';
@@ -14,6 +19,9 @@ import { CooklangLanguageClientContribution } from './cooklang-language-client-c
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
+import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
+import { ShoppingListService } from './shopping-list-service';
+import { ShoppingListContribution } from './shopping-list-contribution';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -45,4 +53,17 @@ export default new ContainerModule(bind => {
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
+
+    // Shopping list
+    bind(ShoppingListService).toSelf().inSingletonScope();
+
+    bind(ShoppingListWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: SHOPPING_LIST_WIDGET_ID,
+        createWidget: () => ctx.container.get<ShoppingListWidget>(ShoppingListWidget),
+    })).inSingletonScope();
+
+    bindViewContribution(bind, ShoppingListContribution);
+    bind(FrontendApplicationContribution).toService(ShoppingListContribution);
+    bind(TabBarToolbarContribution).toService(ShoppingListContribution);
 });
