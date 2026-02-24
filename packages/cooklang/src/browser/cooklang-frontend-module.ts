@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
+import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/browser';
+import { CommandContribution } from '@theia/core/lib/common/command';
+import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
+import URI from '@theia/core/lib/common/uri';
 import { CooklangGrammarContribution } from './cooklang-grammar-contribution';
 import { CooklangLanguageClientContribution } from './cooklang-language-client-contribution';
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
+import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
+import { RecipePreviewContribution } from './recipe-preview-contribution';
 
 export default new ContainerModule(bind => {
     // TextMate grammar
@@ -22,4 +27,16 @@ export default new ContainerModule(bind => {
     // Language client contribution (registers Monaco providers + document listeners)
     bind(CooklangLanguageClientContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(CooklangLanguageClientContribution);
+
+    // Recipe preview widget factory
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: RECIPE_PREVIEW_WIDGET_ID,
+        createWidget: (options: { uri: string }) =>
+            createRecipePreviewWidget(ctx.container, new URI(options.uri)),
+    })).inSingletonScope();
+
+    // Recipe preview commands and keybindings
+    bind(RecipePreviewContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(RecipePreviewContribution);
+    bind(KeybindingContribution).toService(RecipePreviewContribution);
 });
