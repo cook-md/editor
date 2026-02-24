@@ -104,22 +104,22 @@ export interface TextItem {
 
 export interface IngredientItem {
     type: 'ingredient';
-    value: number;
+    index: number;
 }
 
 export interface CookwareItem {
     type: 'cookware';
-    value: number;
+    index: number;
 }
 
 export interface TimerItem {
     type: 'timer';
-    value: number;
+    index: number;
 }
 
 export interface InlineQuantityItem {
     type: 'inlineQuantity';
-    value: number;
+    index: number;
 }
 
 export type StepItem = TextItem | IngredientItem | CookwareItem | TimerItem | InlineQuantityItem;

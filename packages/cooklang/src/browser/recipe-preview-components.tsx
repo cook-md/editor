@@ -52,9 +52,9 @@ function ingredientIndicesForSection(section: Section): number[] {
             continue;
         }
         for (const item of content.value.items) {
-            if (item.type === 'ingredient' && !seen.has(item.value)) {
-                seen.add(item.value);
-                result.push(item.value);
+            if (item.type === 'ingredient' && !seen.has(item.index)) {
+                seen.add(item.index);
+                result.push(item.index);
             }
         }
     }
@@ -93,26 +93,26 @@ const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }:
             return <React.Fragment>{item.value}</React.Fragment>;
 
         case 'ingredient': {
-            const ing = ingredients[item.value];
-            const displayName = ing ? (ing.alias ?? ing.name) : `ingredient[${item.value}]`;
+            const ing = ingredients[item.index];
+            const displayName = ing ? (ing.alias ?? ing.name) : `ingredient[${item.index}]`;
             return <span className='ingredient-badge'>{displayName}</span>;
         }
 
         case 'cookware': {
-            const cw = cookware[item.value];
-            const displayName = cw ? (cw.alias ?? cw.name) : `cookware[${item.value}]`;
+            const cw = cookware[item.index];
+            const displayName = cw ? (cw.alias ?? cw.name) : `cookware[${item.index}]`;
             return <span className='cookware-badge'>{displayName}</span>;
         }
 
         case 'timer': {
-            const timer = timers[item.value];
-            const displayText = timer ? formatTimer(timer) : `timer[${item.value}]`;
+            const timer = timers[item.index];
+            const displayText = timer ? formatTimer(timer) : `timer[${item.index}]`;
             return <span className='timer-badge'>{displayText}</span>;
         }
 
         case 'inlineQuantity': {
-            const iq = inlineQuantities[item.value];
-            const displayText = iq ? formatQuantity(iq) : `qty[${item.value}]`;
+            const iq = inlineQuantities[item.index];
+            const displayText = iq ? formatQuantity(iq) : `qty[${item.index}]`;
             return <strong>{displayText}</strong>;
         }
     }
@@ -133,13 +133,14 @@ const StepIngredientsSummary = ({ items, ingredients }: StepIngredientsSummaryPr
         return null;
     }
     const parts = ingItems.map(i => {
-        const ing = ingredients[i.value];
+        const ing = ingredients[i.index];
         if (!ing) {
             return null;
         }
         const qty = formatQuantity(ing.quantity);
         const name = ing.alias ?? ing.name;
-        return qty ? `${qty} ${name}` : name;
+        const note = ing.note ? ` (${ing.note})` : '';
+        return qty ? `${name}: ${qty}${note}` : `${name}${note}`;
     }).filter((p): p is string => p !== null);
 
     if (parts.length === 0) {
