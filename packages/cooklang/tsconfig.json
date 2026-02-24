@@ -8,6 +8,7 @@
   "include": ["src"],
   "references": [
     { "path": "../core" },
+    { "path": "../editor" },
     { "path": "../monaco" },
     { "path": "../workspace" }
   ]

@@ -148,4 +148,14 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             textDocument: { uri }
         }) as CooklangSemanticTokens | null;
     }
+
+    async parse(content: string): Promise<string> {
+        try {
+            const native = require('@theia/cooklang-native');
+            return native.parse(content);
+        } catch (error) {
+            console.error('[cooklang] Failed to parse recipe:', error);
+            return JSON.stringify({ recipe: null, errors: [{ message: String(error), severity: 'error' }], warnings: [] });
+        }
+    }
 }

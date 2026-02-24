@@ -27,6 +27,9 @@ export interface CooklangLanguageService {
     hover(uri: string, line: number, character: number): Promise<CooklangHover | null>;
     documentSymbol(uri: string): Promise<CooklangDocumentSymbol[] | null>;
     semanticTokensFull(uri: string): Promise<CooklangSemanticTokens | null>;
+
+    // Recipe parsing (returns JSON-serialized ParseResult)
+    parse(content: string): Promise<string>;
 }
 
 // Plain JSON DTOs — subsets of vscode-languageserver-protocol types
