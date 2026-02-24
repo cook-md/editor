@@ -84,7 +84,7 @@ export class ShoppingListContribution
         }
 
         const name = targetUri.path.base.replace(/\.cook$/i, '');
-        const workspaceRoot = this.shoppingListService['getWorkspaceRootUri']();
+        const workspaceRoot = this.shoppingListService.getWorkspaceRootUri();
         const relativePath = workspaceRoot
             ? workspaceRoot.relative(targetUri)?.toString() ?? targetUri.path.base
             : targetUri.path.base;

@@ -253,7 +253,7 @@ export class ShoppingListService implements Disposable {
      * Returns a `URI` pointing to the first workspace root, or `undefined` when no
      * workspace is open.
      */
-    protected getWorkspaceRootUri(): URI | undefined {
+    getWorkspaceRootUri(): URI | undefined {
         const roots = this.workspaceService.tryGetRoots();
         return roots.length > 0 ? new URI(roots[0].resource.toString()) : undefined;
     }
