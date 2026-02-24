@@ -4,9 +4,7 @@
 import { injectable, inject, postConstruct, interfaces } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
-import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
-import * as monaco from '@theia/monaco-editor-core';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -44,7 +42,6 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected uri: URI;
     protected recipe: Recipe | undefined;
     protected parseErrors: string[] = [];
-    protected readonly toDispose = new DisposableCollection();
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
     @postConstruct()
@@ -190,7 +187,6 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             clearTimeout(this.debounceTimer);
             this.debounceTimer = undefined;
         }
-        this.toDispose.dispose();
         super.dispose();
     }
 }
