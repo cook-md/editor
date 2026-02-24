@@ -7,7 +7,8 @@ import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/brow
 import { ApplicationShell, WidgetManager } from '@theia/core/lib/browser';
 import { EditorManager } from '@theia/editor/lib/browser';
 import URI from '@theia/core/lib/common/uri';
-import { COOKLANG_LANGUAGE_ID } from '../common';
+import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
 import {
     RecipePreviewWidget,
     RECIPE_PREVIEW_WIDGET_ID,
@@ -36,7 +37,7 @@ export namespace CooklangPreviewCommands {
 // ---------------------------------------------------------------------------
 
 @injectable()
-export class RecipePreviewContribution implements CommandContribution, KeybindingContribution {
+export class RecipePreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler {
 
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
@@ -46,6 +47,28 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
 
     @inject(WidgetManager)
     protected readonly widgetManager: WidgetManager;
+
+    @inject(CooklangPreferences)
+    protected readonly preferences: CooklangPreferences;
+
+    readonly id = 'cooklang-preview-open-handler';
+    readonly label = 'Cooklang: Recipe Preview';
+
+    canHandle(uri: URI): number {
+        if (uri.path.ext === '.cook' && this.preferences['cooklang.openInPreviewMode']) {
+            return 200;
+        }
+        return 0;
+    }
+
+    async open(uri: URI): Promise<RecipePreviewWidget> {
+        const preview = await this.getOrCreatePreview(uri);
+        if (!preview.isAttached) {
+            await this.shell.addWidget(preview, { area: 'main' });
+        }
+        this.shell.activateWidget(preview.id);
+        return preview;
+    }
 
     // --- CommandContribution ---
 

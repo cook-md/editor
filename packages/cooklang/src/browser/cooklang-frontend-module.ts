@@ -5,6 +5,7 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { FrontendApplicationContribution, WidgetFactory } from '@theia/core/lib/browser';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
+import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import URI from '@theia/core/lib/common/uri';
@@ -40,6 +41,7 @@ export default new ContainerModule(bind => {
     bind(RecipePreviewContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(RecipePreviewContribution);
     bind(KeybindingContribution).toService(RecipePreviewContribution);
+    bind(OpenHandler).toService(RecipePreviewContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
