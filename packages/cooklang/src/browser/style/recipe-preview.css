@@ -1,0 +1,266 @@
+.theia-recipe-preview {
+    height: 100%;
+    overflow-y: auto;
+    padding: 24px;
+    font-family: var(--theia-ui-font-family);
+    color: var(--theia-foreground);
+    background: var(--theia-editor-background);
+}
+
+/* Header */
+.theia-recipe-preview .recipe-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--theia-foreground);
+}
+
+/* Tags */
+.theia-recipe-preview .recipe-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.theia-recipe-preview .recipe-tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #fbbf24, #fb923c);
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* Description */
+.theia-recipe-preview .recipe-description {
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #fed7aa;
+    background: #fffbeb;
+    margin-bottom: 12px;
+    font-style: italic;
+    color: #374151;
+}
+
+/* Metadata pills */
+.theia-recipe-preview .recipe-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.theia-recipe-preview .metadata-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    background: var(--theia-badge-background, #f3f4f6);
+    color: var(--theia-badge-foreground, #374151);
+    font-size: 13px;
+    border: 1px solid var(--theia-contrastBorder, #e5e7eb);
+}
+
+/* Grid layout */
+.theia-recipe-preview .recipe-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 24px;
+}
+
+/* Sidebar (ingredients + cookware) */
+.theia-recipe-preview .recipe-sidebar {
+    border: 1px solid var(--theia-panel-border, #e5e7eb);
+    border-radius: 12px;
+    padding: 20px;
+    background: var(--theia-editorWidget-background, #ffffff);
+    align-self: start;
+}
+
+.theia-recipe-preview .sidebar-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #ea580c;
+}
+
+.theia-recipe-preview .sidebar-title.cookware-title {
+    color: #16a34a;
+    margin-top: 20px;
+}
+
+.theia-recipe-preview .section-subtitle {
+    font-size: 15px;
+    font-weight: 600;
+    color: #c2410c;
+    margin-top: 12px;
+    margin-bottom: 8px;
+}
+
+/* Ingredient list */
+.theia-recipe-preview .ingredient-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.theia-recipe-preview .ingredient-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #fffbeb;
+    margin-bottom: 6px;
+}
+
+.theia-recipe-preview .ingredient-name {
+    font-weight: 500;
+}
+
+.theia-recipe-preview .ingredient-note {
+    font-size: 12px;
+    color: #6b7280;
+    font-style: italic;
+    margin-left: 4px;
+}
+
+.theia-recipe-preview .ingredient-quantity {
+    color: #c2410c;
+    font-weight: 600;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+
+/* Cookware list */
+.theia-recipe-preview .cookware-item {
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #f0fdf4;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+/* Instructions panel */
+.theia-recipe-preview .recipe-instructions {
+    border: 1px solid var(--theia-panel-border, #e5e7eb);
+    border-radius: 12px;
+    padding: 20px;
+    background: var(--theia-editorWidget-background, #ffffff);
+}
+
+.theia-recipe-preview .instructions-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: #ea580c;
+}
+
+.theia-recipe-preview .section-header {
+    font-size: 17px;
+    font-weight: 600;
+    color: #c2410c;
+    border-bottom: 2px solid #fed7aa;
+    padding-bottom: 6px;
+    margin-top: 20px;
+    margin-bottom: 12px;
+}
+
+/* Step */
+.theia-recipe-preview .step-item {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    background: #fafaf9;
+    margin-bottom: 12px;
+}
+
+.theia-recipe-preview .step-number {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    background: linear-gradient(135deg, #ff6b35, #f97316);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.theia-recipe-preview .step-content {
+    flex: 1;
+    line-height: 1.8;
+}
+
+/* Inline badges */
+.theia-recipe-preview .ingredient-badge {
+    display: inline;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #fef3c7, #fed7aa);
+    border: 1px solid #fbbf24;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.theia-recipe-preview .cookware-badge {
+    display: inline;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+    border: 1px solid #4ade80;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.theia-recipe-preview .timer-badge {
+    display: inline;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    border: 1px solid #f87171;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+/* Note block */
+.theia-recipe-preview .note-item {
+    padding: 12px;
+    border-radius: 12px;
+    background: #eff6ff;
+    border-left: 4px solid #60a5fa;
+    margin-bottom: 12px;
+    font-style: italic;
+    color: #374151;
+}
+
+/* Step ingredients summary */
+.theia-recipe-preview .step-ingredients {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 8px;
+    padding-left: 12px;
+    border-left: 2px solid #fed7aa;
+}
+
+/* Error/empty states */
+.theia-recipe-preview .recipe-error {
+    padding: 16px;
+    border-radius: 8px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+}
+
+.theia-recipe-preview .recipe-empty {
+    padding: 32px;
+    text-align: center;
+    color: #9ca3af;
+    font-style: italic;
+}
