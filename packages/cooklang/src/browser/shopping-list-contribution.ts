@@ -4,7 +4,6 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { Command, CommandRegistry } from '@theia/core/lib/common/command';
 import { AbstractViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
-import { FrontendApplicationContribution } from '@theia/core/lib/browser';
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { EditorManager } from '@theia/editor/lib/browser';
 import URI from '@theia/core/lib/common/uri';
@@ -36,7 +35,7 @@ export namespace ShoppingListCommands {
 @injectable()
 export class ShoppingListContribution
     extends AbstractViewContribution<ShoppingListWidget>
-    implements FrontendApplicationContribution, TabBarToolbarContribution {
+    implements TabBarToolbarContribution {
 
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;

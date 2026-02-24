@@ -64,6 +64,5 @@ export default new ContainerModule(bind => {
     })).inSingletonScope();
 
     bindViewContribution(bind, ShoppingListContribution);
-    bind(FrontendApplicationContribution).toService(ShoppingListContribution);
     bind(TabBarToolbarContribution).toService(ShoppingListContribution);
 });
