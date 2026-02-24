@@ -19,6 +19,7 @@ import { PluginDeployerResolver, PluginDeployerResolverContext } from '../../../
 import * as fs from '@theia/core/shared/fs-extra';
 import * as path from 'path';
 import { FileUri } from '@theia/core/lib/node';
+import { BackendApplicationPath } from '@theia/core/lib/node/backend-application';
 import URI from '@theia/core/lib/common/uri';
 
 @injectable()
@@ -45,7 +46,7 @@ export abstract class LocalPluginDeployerResolver implements PluginDeployerResol
         }
         let fsPath = FileUri.fsPath(localUri);
         if (!path.isAbsolute(fsPath)) {
-            fsPath = path.resolve(process.cwd(), fsPath);
+            fsPath = path.resolve(BackendApplicationPath, fsPath);
         }
         if (!await fs.pathExists(fsPath)) {
             console.warn(`The local plugin referenced by ${pluginResolverContext.getOriginId()} does not exist.`);
