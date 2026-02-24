@@ -12,13 +12,17 @@ import {
     MessageConnection
 } from 'vscode-languageserver-protocol/node';
 
+const HEADER_SEPARATOR = Buffer.from('\r\n\r\n', 'ascii');
+
 /**
  * MessageReader that reads from the NAPI-RS LspServer.
  * Parses raw LSP protocol messages (Content-Length header + JSON body).
+ * Uses Buffer internally so Content-Length (bytes) is handled correctly
+ * even when the JSON body contains multi-byte UTF-8 characters.
  */
 export class NativeMessageReader extends AbstractMessageReader {
     private callback: DataCallback | undefined;
-    private buffer = '';
+    private buffer = Buffer.alloc(0);
     private running = false;
 
     constructor(private receiveFn: () => Promise<string | null>) {
@@ -41,7 +45,7 @@ export class NativeMessageReader extends AbstractMessageReader {
                 if (chunk === null) {
                     break;
                 }
-                this.buffer += chunk;
+                this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk, 'utf-8')]);
                 this.processBuffer();
             } catch (error) {
                 this.fireError(error as Error);
@@ -53,16 +57,16 @@ export class NativeMessageReader extends AbstractMessageReader {
 
     private processBuffer(): void {
         while (true) {
-            const headerEnd = this.buffer.indexOf('\r\n\r\n');
+            const headerEnd = this.buffer.indexOf(HEADER_SEPARATOR);
             if (headerEnd === -1) {
                 return;
             }
 
-            const header = this.buffer.substring(0, headerEnd);
+            const header = this.buffer.subarray(0, headerEnd).toString('ascii');
             const contentLengthMatch = header.match(/Content-Length:\s*(\d+)/i);
             if (!contentLengthMatch) {
                 // Skip malformed header
-                this.buffer = this.buffer.substring(headerEnd + 4);
+                this.buffer = this.buffer.subarray(headerEnd + 4);
                 continue;
             }
 
@@ -74,8 +78,8 @@ export class NativeMessageReader extends AbstractMessageReader {
                 return; // Not enough data yet
             }
 
-            const body = this.buffer.substring(bodyStart, bodyEnd);
-            this.buffer = this.buffer.substring(bodyEnd);
+            const body = this.buffer.subarray(bodyStart, bodyEnd).toString('utf-8');
+            this.buffer = this.buffer.subarray(bodyEnd);
 
             try {
                 const message = JSON.parse(body) as Message;

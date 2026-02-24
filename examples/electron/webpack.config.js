@@ -16,6 +16,12 @@ configs[0].module.rules.push({
     loader: require.resolve('@theia/application-manager/lib/expose-loader')
 });
 
+// Exclude NAPI-RS native addon from webpack bundling.
+// The NAPI-RS index.js uses __dirname + existsSync to locate .node binaries,
+// which breaks when processed by webpack. Let Node.js resolve it at runtime.
+nodeConfig.config.externals = Object.assign({}, nodeConfig.config.externals, {
+    '@theia/cooklang-native': 'commonjs @theia/cooklang-native'
+});
 
 module.exports = [
     ...configs,

@@ -29,6 +29,10 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
                     (msg: string) => this.nativeLsp.sendMessage(msg),
                     () => this.nativeLsp.receiveMessage()
                 );
+                // Capture server-to-client notifications
+                this.connection.onNotification('window/logMessage', (params: { type: number; message: string }) => {
+                    console.info('[cooklang-lsp-rust]', params.message);
+                });
                 this.connection.listen();
                 console.info('Cooklang LSP server started in-process');
             }
@@ -41,15 +45,19 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
 
     async initialize(rootUri: string | null): Promise<CooklangInitializeResult> {
         if (!this.connection) {
+            console.warn('[cooklang-lsp] No connection available, skipping initialize');
             return { capabilities: {} };
         }
+        console.info('[cooklang-lsp] Backend sending initialize with rootUri:', rootUri);
         const result = await this.connection.sendRequest('initialize', {
             processId: process.pid,
             capabilities: {},
             rootUri,
             workspaceFolders: rootUri ? [{ uri: rootUri, name: 'workspace' }] : null,
         });
-        await this.connection.sendNotification('initialized');
+        console.info('[cooklang-lsp] Initialize response received, sending initialized notification');
+        await this.connection.sendNotification('initialized', {});
+        console.info('[cooklang-lsp] Initialized notification sent');
         return result as CooklangInitializeResult;
     }
 
@@ -100,13 +108,17 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             position: { line, character }
         });
         if (!result) {
+            console.info('[cooklang-lsp] Completion returned null');
             return null;
         }
         // LSP returns CompletionList | CompletionItem[] — normalize to list
         if (Array.isArray(result)) {
+            console.info('[cooklang-lsp] Completion returned', result.length, 'items (array)');
             return { isIncomplete: false, items: result };
         }
-        return result as CooklangCompletionList;
+        const list = result as CooklangCompletionList;
+        console.info('[cooklang-lsp] Completion returned', list.items?.length, 'items');
+        return list;
     }
 
     async hover(uri: string, line: number, character: number): Promise<CooklangHover | null> {

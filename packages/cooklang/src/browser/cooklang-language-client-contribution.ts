@@ -36,20 +36,25 @@ export class CooklangLanguageClientContribution implements FrontendApplicationCo
         await this.workspaceService.roots;
         const roots = this.workspaceService.tryGetRoots();
         const rootUri = roots.length > 0 ? roots[0].resource.toString() : null;
+        console.info('[cooklang-lsp] Frontend sending rootUri:', rootUri);
 
         try {
             const result = await this.service.initialize(rootUri);
+            console.info('[cooklang-lsp] Initialize result capabilities:', JSON.stringify(result.capabilities));
             this.extractSemanticTokensLegend(result);
         } catch (error) {
             console.warn('Failed to initialize Cooklang LSP server:', error);
             return;
         }
 
+        this.registerDocumentListeners();
         this.registerCompletionProvider();
         this.registerHoverProvider();
         this.registerDocumentSymbolProvider();
         this.registerSemanticTokensProvider();
-        this.registerDocumentListeners();
+        this.syncAlreadyOpenDocuments();
+        // Documents may be restored after onStart; retry sync after a delay
+        setTimeout(() => this.syncAlreadyOpenDocuments(), 3000);
     }
 
     onStop(): void {
@@ -71,24 +76,51 @@ export class CooklangLanguageClientContribution implements FrontendApplicationCo
         }
     }
 
+    // --- Sync documents already open before listeners were registered ---
+
+    protected syncAlreadyOpenDocuments(): void {
+        const models = monaco.editor.getModels();
+        console.info('[cooklang-lsp] syncAlreadyOpenDocuments: found', models.length, 'models');
+        for (const model of models) {
+            const langId = model.getLanguageId();
+            const uri = model.uri.toString();
+            console.info('[cooklang-lsp]   model:', uri, 'lang:', langId);
+            if (langId === COOKLANG_LANGUAGE_ID && !this.documentVersions.has(uri)) {
+                const version = 1;
+                this.documentVersions.set(uri, version);
+                console.info('[cooklang-lsp] Syncing already-open document:', uri);
+                this.service.didOpenTextDocument(uri, langId, version, model.getValue());
+            }
+        }
+    }
+
     // --- Monaco provider registration ---
 
     protected registerCompletionProvider(): void {
+        console.info('[cooklang-lsp] Registering completion provider for language:', COOKLANG_LANGUAGE_ID);
         this.toDispose.push(monaco.languages.registerCompletionItemProvider(COOKLANG_LANGUAGE_ID, {
             triggerCharacters: ['@', '#', '~', '%', '{'],
             provideCompletionItems: async (model, position) => {
-                const result = await this.service.completion(
-                    model.uri.toString(),
-                    position.lineNumber - 1,
-                    position.column - 1
-                );
-                if (!result) {
+                console.info('[cooklang-lsp] Completion requested:', model.uri.toString(),
+                    'pos:', position.lineNumber, position.column, 'lang:', model.getLanguageId());
+                try {
+                    const result = await this.service.completion(
+                        model.uri.toString(),
+                        position.lineNumber - 1,
+                        position.column - 1
+                    );
+                    console.info('[cooklang-lsp] Completion result:', result ? result.items.length + ' items' : 'null');
+                    if (!result) {
+                        return { suggestions: [] };
+                    }
+                    return {
+                        incomplete: result.isIncomplete,
+                        suggestions: result.items.map(item => this.toMonacoCompletionItem(item, model.uri))
+                    };
+                } catch (error) {
+                    console.error('[cooklang-lsp] Completion error:', error);
                     return { suggestions: [] };
                 }
-                return {
-                    incomplete: result.isIncomplete,
-                    suggestions: result.items.map(item => this.toMonacoCompletionItem(item, model.uri))
-                };
             }
         }));
     }
@@ -145,11 +177,13 @@ export class CooklangLanguageClientContribution implements FrontendApplicationCo
 
     protected registerDocumentListeners(): void {
         this.toDispose.push(this.monacoWorkspace.onDidOpenTextDocument(model => {
+            console.info('[cooklang-lsp] onDidOpenTextDocument:', model.uri, 'lang:', model.languageId);
             if (model.languageId !== COOKLANG_LANGUAGE_ID) {
                 return;
             }
             const version = 1;
             this.documentVersions.set(model.uri, version);
+            console.info('[cooklang-lsp] Sending didOpen to LSP for:', model.uri);
             this.service.didOpenTextDocument(model.uri, model.languageId, version, model.getText());
         }));
 
