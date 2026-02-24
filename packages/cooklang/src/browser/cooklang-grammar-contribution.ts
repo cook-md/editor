@@ -9,7 +9,7 @@ import {
     TextmateRegistry
 } from '@theia/monaco/lib/browser/textmate';
 import * as monaco from '@theia/monaco-editor-core';
-import { COOKLANG_LANGUAGE_ID, COOKLANG_TEXTMATE_SCOPE } from '../common';
+import { COOKLANG_LANGUAGE_ID, COOKLANG_TEXTMATE_SCOPE, AISLE_CONF_LANGUAGE_ID, AISLE_CONF_TEXTMATE_SCOPE } from '../common';
 
 @injectable()
 export class CooklangGrammarContribution implements LanguageGrammarDefinitionContribution {
@@ -35,6 +35,21 @@ export class CooklangGrammarContribution implements LanguageGrammarDefinitionCon
         ]
     };
 
+    readonly aisleConfConfig: monaco.languages.LanguageConfiguration = {
+        comments: {
+            lineComment: '#'
+        },
+        brackets: [
+            ['[', ']']
+        ],
+        autoClosingPairs: [
+            { open: '[', close: ']' }
+        ],
+        surroundingPairs: [
+            { open: '[', close: ']' }
+        ]
+    };
+
     registerTextmateLanguage(registry: TextmateRegistry): void {
         monaco.languages.register({
             id: COOKLANG_LANGUAGE_ID,
@@ -57,5 +72,28 @@ export class CooklangGrammarContribution implements LanguageGrammarDefinitionCon
 
         registry.registerTextmateGrammarScope(COOKLANG_TEXTMATE_SCOPE, grammarDefinitionProvider);
         registry.mapLanguageIdToTextmateGrammar(COOKLANG_LANGUAGE_ID, COOKLANG_TEXTMATE_SCOPE);
+
+        // Aisle config
+        monaco.languages.register({
+            id: AISLE_CONF_LANGUAGE_ID,
+            aliases: ['Aisle Config', 'aisle-conf'],
+            extensions: ['.conf'],
+            filenames: ['aisle.conf']
+        });
+
+        monaco.languages.setLanguageConfiguration(AISLE_CONF_LANGUAGE_ID, this.aisleConfConfig);
+
+        const aisleConfGrammar = require('../../data/aisle-conf.tmLanguage.json');
+        const aisleConfGrammarProvider: GrammarDefinitionProvider = {
+            getGrammarDefinition(): Promise<GrammarDefinition> {
+                return Promise.resolve({
+                    format: 'json',
+                    content: aisleConfGrammar
+                });
+            }
+        };
+
+        registry.registerTextmateGrammarScope(AISLE_CONF_TEXTMATE_SCOPE, aisleConfGrammarProvider);
+        registry.mapLanguageIdToTextmateGrammar(AISLE_CONF_LANGUAGE_ID, AISLE_CONF_TEXTMATE_SCOPE);
     }
 }
