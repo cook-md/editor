@@ -1,0 +1,184 @@
+.theia-shopping-list {
+    height: 100%;
+    overflow-y: auto;
+    font-family: var(--theia-ui-font-family);
+    color: var(--theia-foreground);
+    background: var(--theia-panel-background);
+}
+
+.shopping-list-content {
+    padding: 12px 16px;
+}
+
+/* --- Selected Recipes --- */
+
+.shopping-list-empty-recipes {
+    padding: 16px;
+    color: var(--theia-descriptionForeground);
+    font-style: italic;
+    text-align: center;
+}
+
+.shopping-list-recipes {
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--theia-panel-border);
+    padding-bottom: 12px;
+}
+
+.shopping-list-recipes-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.shopping-list-recipes-title {
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--theia-descriptionForeground);
+}
+
+.shopping-list-clear-btn {
+    background: none;
+    border: 1px solid var(--theia-button-border);
+    color: var(--theia-descriptionForeground);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.shopping-list-clear-btn:hover {
+    color: var(--theia-foreground);
+    border-color: var(--theia-foreground);
+}
+
+.shopping-list-recipe-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.shopping-list-recipe-name {
+    flex: 1;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shopping-list-scale-input {
+    width: 48px;
+    padding: 2px 4px;
+    font-size: 12px;
+    text-align: center;
+    background: var(--theia-input-background);
+    color: var(--theia-input-foreground);
+    border: 1px solid var(--theia-input-border);
+    border-radius: 4px;
+}
+
+.shopping-list-remove-btn {
+    background: none;
+    border: none;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.shopping-list-remove-btn:hover {
+    color: var(--theia-errorForeground);
+}
+
+/* --- Category --- */
+
+.shopping-list-category {
+    margin-bottom: 12px;
+}
+
+.shopping-list-category-header {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #ff6b35;
+    margin: 0 0 6px 0;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--theia-panel-border);
+}
+
+/* --- Ingredient Row --- */
+
+.shopping-list-ingredient {
+    padding: 3px 0;
+}
+
+.shopping-list-ingredient.checked {
+    opacity: 0.5;
+}
+
+.shopping-list-ingredient.checked .shopping-list-ingredient-name {
+    text-decoration: line-through;
+}
+
+.shopping-list-ingredient-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.shopping-list-ingredient-label input[type='checkbox'] {
+    margin: 0;
+    accent-color: #ff6b35;
+}
+
+.shopping-list-ingredient-name {
+    flex: 1;
+}
+
+.shopping-list-ingredient-qty {
+    color: var(--theia-descriptionForeground);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* --- Pantry --- */
+
+.shopping-list-pantry {
+    margin-top: 16px;
+    border-top: 1px solid var(--theia-panel-border);
+    padding-top: 8px;
+}
+
+.shopping-list-pantry-toggle {
+    background: none;
+    border: none;
+    color: #22c55e;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 0;
+}
+
+.shopping-list-pantry-toggle:hover {
+    text-decoration: underline;
+}
+
+.shopping-list-pantry-list {
+    list-style: none;
+    margin: 4px 0 0 0;
+    padding: 0 0 0 20px;
+}
+
+.shopping-list-pantry-item {
+    font-size: 12px;
+    color: #22c55e;
+    padding: 2px 0;
+}
