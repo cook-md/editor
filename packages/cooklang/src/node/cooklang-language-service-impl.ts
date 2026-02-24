@@ -169,7 +169,7 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             );
         } catch (error) {
             console.error('[cooklang] Failed to generate shopping list:', error);
-            return JSON.stringify({ categories: [], other: { name: 'other', items: [] }, pantry_items: [] });
+            return JSON.stringify({ categories: [], other: { name: 'other', items: [] }, pantryItems: [] });
         }
     }
 }

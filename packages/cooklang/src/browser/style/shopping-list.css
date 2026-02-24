@@ -106,7 +106,7 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #ff6b35;
+    color: var(--theia-textLink-foreground);
     margin: 0 0 6px 0;
     padding: 4px 0;
     border-bottom: 1px solid var(--theia-panel-border);
@@ -136,7 +136,7 @@
 
 .shopping-list-ingredient-label input[type='checkbox'] {
     margin: 0;
-    accent-color: #ff6b35;
+    accent-color: var(--theia-textLink-foreground);
 }
 
 .shopping-list-ingredient-name {
@@ -160,7 +160,7 @@
 .shopping-list-pantry-toggle {
     background: none;
     border: none;
-    color: #22c55e;
+    color: var(--theia-testing-iconPassed);
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
@@ -179,6 +179,6 @@
 
 .shopping-list-pantry-item {
     font-size: 12px;
-    color: #22c55e;
+    color: var(--theia-testing-iconPassed);
     padding: 2px 0;
 }

@@ -22,7 +22,7 @@ export interface ShoppingListResult {
     /** Uncategorized ingredients */
     other: ShoppingListCategory;
     /** Names of ingredients found in pantry (informational) */
-    pantry_items: string[];
+    pantryItems: string[];
 }
 
 /**

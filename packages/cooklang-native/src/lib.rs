@@ -80,6 +80,7 @@ pub struct ShoppingListCategory {
 
 /// The result returned by `generate_shopping_list`.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ShoppingListResult {
     /// Ingredients grouped by aisle category (empty when no aisle config is given).
     pub categories: Vec<ShoppingListCategory>,

@@ -43,7 +43,7 @@ export const RecipeListPanel = ({
                 </button>
             </div>
             {recipes.map((recipe, idx) => (
-                <div key={idx} className='shopping-list-recipe-row'>
+                <div key={recipe.path} className='shopping-list-recipe-row'>
                     <span className='shopping-list-recipe-name'>{recipe.name}</span>
                     <input
                         className='shopping-list-scale-input'
@@ -51,8 +51,8 @@ export const RecipeListPanel = ({
                         min='0.5'
                         max='100'
                         step='0.5'
-                        value={recipe.scale}
-                        onChange={e => {
+                        defaultValue={recipe.scale}
+                        onBlur={e => {
                             const val = parseFloat(e.target.value);
                             if (!isNaN(val) && val > 0) {
                                 onScaleChange(idx, val);
@@ -211,13 +211,14 @@ export const ShoppingListView = ({
 
                 {result.other.items.length > 0 && (
                     <CategorySection
+                        key='other'
                         category={result.other}
                         checkedItems={checkedItems}
                         onToggle={onToggleItem}
                     />
                 )}
 
-                <PantrySection pantryItems={result.pantry_items} />
+                <PantrySection pantryItems={result.pantryItems} />
             </>
         )}
     </div>

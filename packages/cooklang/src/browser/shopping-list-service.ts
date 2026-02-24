@@ -33,6 +33,7 @@ export class ShoppingListService implements Disposable {
     protected recipes: ShoppingListRecipe[] = [];
     protected result: ShoppingListResult | undefined;
     protected checkedItems = new Set<string>();
+    protected regenerationSeq = 0;
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
 
@@ -78,6 +79,9 @@ export class ShoppingListService implements Disposable {
      * shopping list via RPC.
      */
     async addRecipe(path: string, name: string, scale: number = 1): Promise<void> {
+        if (this.recipes.some(r => r.path === path)) {
+            return;
+        }
         this.recipes.push({ path, name, scale });
         await this.saveToFile();
         await this.regenerate();
@@ -126,6 +130,8 @@ export class ShoppingListService implements Disposable {
      * Silently skips recipes whose files cannot be read (e.g. deleted from disk).
      */
     async regenerate(): Promise<void> {
+        const seq = ++this.regenerationSeq;
+
         if (this.recipes.length === 0) {
             this.result = undefined;
             this.onDidChangeEmitter.fire();
@@ -148,8 +154,16 @@ export class ShoppingListService implements Disposable {
             }
         }
 
+        if (seq !== this.regenerationSeq) {
+            return;
+        }
+
         const aisleConf = await this.readConfigFile(rootUri, 'config/aisle.conf');
         const pantryConf = await this.readConfigFile(rootUri, 'config/pantry.conf');
+
+        if (seq !== this.regenerationSeq) {
+            return;
+        }
 
         try {
             const json = await this.languageService.generateShoppingList(
@@ -157,6 +171,9 @@ export class ShoppingListService implements Disposable {
                 aisleConf,
                 pantryConf
             );
+            if (seq !== this.regenerationSeq) {
+                return;
+            }
             this.result = JSON.parse(json);
         } catch (e) {
             console.error('[shopping-list] Failed to generate shopping list:', e);
@@ -207,7 +224,7 @@ export class ShoppingListService implements Disposable {
                 recipes.push({
                     path: parts[0],
                     name: parts[1],
-                    scale: parseFloat(parts[2]) || 1,
+                    scale: Number.isFinite(parseFloat(parts[2])) && parseFloat(parts[2]) > 0 ? parseFloat(parts[2]) : 1,
                 });
             }
         }
