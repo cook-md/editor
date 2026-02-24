@@ -1,0 +1,218 @@
+// Copyright (C) 2026 Cooklang contributors
+// SPDX-License-Identifier: MIT
+
+import { injectable, inject, postConstruct, interfaces } from '@theia/core/shared/inversify';
+import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
+import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
+import * as monaco from '@theia/monaco-editor-core';
+import URI from '@theia/core/lib/common/uri';
+import * as React from '@theia/core/shared/react';
+import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
+import { Recipe } from '../common/recipe-types';
+import { RecipeView } from './recipe-preview-components';
+
+import '../../src/browser/style/recipe-preview.css';
+
+// ---------------------------------------------------------------------------
+// Public constants and helpers
+// ---------------------------------------------------------------------------
+
+export const RECIPE_PREVIEW_WIDGET_ID = 'recipe-preview-widget';
+
+/**
+ * Constructs a unique widget ID for a preview panel tied to a specific URI.
+ */
+export function createRecipePreviewWidgetId(uri: URI): string {
+    return `${RECIPE_PREVIEW_WIDGET_ID}:${uri.toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// RecipePreviewWidget
+// ---------------------------------------------------------------------------
+
+@injectable()
+export class RecipePreviewWidget extends ReactWidget implements Navigatable {
+
+    @inject(CooklangLanguageService)
+    protected readonly service: CooklangLanguageService;
+
+    @inject(MonacoWorkspace)
+    protected readonly monacoWorkspace: MonacoWorkspace;
+
+    protected uri: URI;
+    protected recipe: Recipe | undefined;
+    protected parseErrors: string[] = [];
+    protected readonly toDispose = new DisposableCollection();
+    protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+    @postConstruct()
+    protected init(): void {
+        this.addClass('theia-recipe-preview');
+        this.scrollOptions = {
+            suppressScrollX: true,
+            minScrollbarLength: 35,
+        };
+        this.listenToDocumentChanges();
+    }
+
+    /**
+     * Bind this widget to a source `.cook` file URI and trigger the first parse.
+     */
+    setUri(uri: URI): void {
+        this.uri = uri;
+        this.id = createRecipePreviewWidgetId(uri);
+        this.title.label = `Preview: ${uri.path.base}`;
+        this.title.caption = `Recipe preview for ${uri.toString()}`;
+        this.title.closable = true;
+        this.title.iconClass = 'codicon codicon-open-preview';
+        this.parseCurrentContent();
+    }
+
+    // --- Navigatable ---
+
+    getResourceUri(): URI | undefined {
+        return this.uri;
+    }
+
+    createMoveToUri(resourceUri: URI): URI | undefined {
+        return resourceUri;
+    }
+
+    // --- Document change listeners ---
+
+    protected listenToDocumentChanges(): void {
+        this.toDispose.push(
+            this.monacoWorkspace.onDidChangeTextDocument(event => {
+                if (
+                    event.model.languageId !== COOKLANG_LANGUAGE_ID ||
+                    event.model.uri !== this.uri?.toString()
+                ) {
+                    return;
+                }
+                this.debouncedParse(event.model.getText());
+            })
+        );
+
+        this.toDispose.push(
+            this.monacoWorkspace.onDidOpenTextDocument(model => {
+                if (
+                    model.languageId !== COOKLANG_LANGUAGE_ID ||
+                    model.uri !== this.uri?.toString()
+                ) {
+                    return;
+                }
+                this.parseContent(model.getText());
+            })
+        );
+    }
+
+    // --- Parse helpers ---
+
+    protected debouncedParse(content: string): void {
+        if (this.debounceTimer !== undefined) {
+            clearTimeout(this.debounceTimer);
+        }
+        this.debounceTimer = setTimeout(() => {
+            this.debounceTimer = undefined;
+            this.parseContent(content);
+        }, 300);
+    }
+
+    protected parseCurrentContent(): void {
+        if (!this.uri) {
+            return;
+        }
+        const model = this.monacoWorkspace.getTextDocument(this.uri.toString());
+        if (model) {
+            this.parseContent(model.getText());
+        }
+    }
+
+    protected parseContent(content: string): void {
+        this.service.parse(content).then(json => {
+            try {
+                const result = JSON.parse(json);
+                this.recipe = result.recipe ?? undefined;
+                this.parseErrors = [
+                    ...((result.errors ?? []) as Array<{ message: string }>).map(e => e.message),
+                    ...((result.warnings ?? []) as Array<{ message: string }>).map(w => w.message),
+                ];
+            } catch (e) {
+                this.recipe = undefined;
+                this.parseErrors = [`Failed to parse response: ${e}`];
+            }
+            this.update();
+        }).catch(e => {
+            this.recipe = undefined;
+            this.parseErrors = [`Parse request failed: ${e}`];
+            this.update();
+        });
+    }
+
+    // --- Rendering ---
+
+    protected render(): React.ReactNode {
+        if (this.recipe) {
+            return (
+                <RecipeView
+                    recipe={this.recipe}
+                    fileName={this.uri?.path.base ?? ''}
+                />
+            );
+        }
+
+        if (this.parseErrors.length > 0) {
+            return (
+                <div className='recipe-error'>
+                    <strong>Parse errors:</strong>
+                    <ul>
+                        {this.parseErrors.map((msg, idx) => (
+                            <li key={idx}>{msg}</li>
+                        ))}
+                    </ul>
+                </div>
+            );
+        }
+
+        return (
+            <div className='recipe-empty'>
+                Open a <code>.cook</code> file to see its recipe preview.
+            </div>
+        );
+    }
+
+    // --- Disposal ---
+
+    override dispose(): void {
+        if (this.debounceTimer !== undefined) {
+            clearTimeout(this.debounceTimer);
+            this.debounceTimer = undefined;
+        }
+        this.toDispose.dispose();
+        super.dispose();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Factory helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a fully initialised {@link RecipePreviewWidget} bound to `uri`.
+ *
+ * Uses a child container so each preview panel gets its own widget instance
+ * while still inheriting all parent bindings (including CooklangLanguageService
+ * and MonacoWorkspace).
+ */
+export function createRecipePreviewWidget(
+    container: interfaces.Container,
+    uri: URI
+): RecipePreviewWidget {
+    const child = container.createChild();
+    child.bind(RecipePreviewWidget).toSelf().inTransientScope();
+    const widget = child.get(RecipePreviewWidget);
+    widget.setUri(uri);
+    return widget;
+}
