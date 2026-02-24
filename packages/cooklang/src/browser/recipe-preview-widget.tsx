@@ -5,6 +5,7 @@ import { injectable, inject, postConstruct, interfaces } from '@theia/core/share
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -38,6 +39,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(MonacoWorkspace)
     protected readonly monacoWorkspace: MonacoWorkspace;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
@@ -124,6 +128,14 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         const model = this.monacoWorkspace.getTextDocument(this.uri.toString());
         if (model) {
             this.parseContent(model.getText());
+        } else {
+            this.fileService.read(this.uri).then(
+                content => this.parseContent(content.value),
+                err => {
+                    this.parseErrors = [`Failed to read file: ${err}`];
+                    this.update();
+                }
+            );
         }
     }
 
