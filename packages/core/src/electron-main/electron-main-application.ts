@@ -231,6 +231,7 @@ export class ElectronMainApplication {
                     }
                     this.useNativeWindowFrame = this.getTitleBarStyle(config) === 'native';
                     this._config = config;
+                    this.applyBranding(config);
                     this.hookApplicationEvents();
                     this.showInitialWindow(argv.includes('--open-url') ? argv[argv.length - 1] : undefined);
                     const port = await this.startBackend();
@@ -246,6 +247,19 @@ export class ElectronMainApplication {
                     });
                 },
             ).parse();
+    }
+
+    protected applyBranding(config: FrontendApplicationConfig): void {
+        if (config.applicationName) {
+            app.setName(config.applicationName);
+        }
+        const iconPath = config.electron?.windowOptions?.icon;
+        if (iconPath && typeof iconPath === 'string') {
+            const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
+            if (isOSX && app.dock) {
+                app.dock.setIcon(resolvedIcon);
+            }
+        }
     }
 
     protected getTitleBarStyle(config: FrontendApplicationConfig): 'native' | 'custom' {
@@ -498,8 +512,16 @@ export class ElectronMainApplication {
                 backgroundThrottling: false,
                 enableDeprecatedPaste: true
             },
-            ...this.config.electron?.windowOptions || {},
+            ...this.resolveWindowOptions(this.config.electron?.windowOptions || {}),
         };
+    }
+
+    protected resolveWindowOptions(windowOptions: BrowserWindowConstructorOptions): BrowserWindowConstructorOptions {
+        const resolved = { ...windowOptions };
+        if (resolved.icon && typeof resolved.icon === 'string') {
+            resolved.icon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, resolved.icon);
+        }
+        return resolved;
     }
 
     async openDefaultWindow(params?: WindowSearchParams): Promise<BrowserWindow> {

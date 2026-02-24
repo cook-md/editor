@@ -35,7 +35,7 @@ export namespace ElectronFrontendApplicationConfig {
         windowOptions: {},
         showWindowEarly: true,
         splashScreenOptions: {},
-        uriScheme: 'theia'
+        uriScheme: 'cookmd'
     };
     export interface SplashScreenOptions {
         /**
@@ -122,14 +122,14 @@ export namespace DefaultTheme {
 export type FrontendApplicationConfig = RequiredRecursive<FrontendApplicationConfig.Partial>;
 export namespace FrontendApplicationConfig {
     export const DEFAULT: FrontendApplicationConfig = {
-        applicationName: 'Eclipse Theia',
+        applicationName: 'CookMD',
         defaultTheme: { light: 'light', dark: 'dark' },
         defaultIconTheme: 'theia-file-icons',
         electron: ElectronFrontendApplicationConfig.DEFAULT,
         defaultLocale: '',
         validatePreferencesSchema: true,
         reloadOnReconnect: false,
-        uriScheme: 'theia'
+        uriScheme: 'cookmd'
     };
     export interface Partial extends ApplicationConfig {
 
