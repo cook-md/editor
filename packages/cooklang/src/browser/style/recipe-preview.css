@@ -133,7 +133,7 @@
 }
 
 .theia-recipe-preview .ingredient-name {
-    font-weight: 500;
+    font-weight: 400;
 }
 
 .theia-recipe-preview .ingredient-note {
@@ -144,8 +144,8 @@
 }
 
 .theia-recipe-preview .ingredient-quantity {
-    color: var(--theia-foreground);
-    font-weight: 600;
+    color: var(--theia-descriptionForeground);
+    font-weight: 400;
     margin-left: 8px;
     white-space: nowrap;
 }
