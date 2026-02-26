@@ -1,0 +1,187 @@
+// Copyright (C) 2026 Cooklang contributors
+// SPDX-License-Identifier: MIT
+
+import { injectable, inject } from '@theia/core/shared/inversify';
+import { CommandContribution, CommandRegistry, Command } from '@theia/core/lib/common/command';
+import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
+import { ApplicationShell, WidgetManager } from '@theia/core/lib/browser';
+import { EditorManager } from '@theia/editor/lib/browser';
+import URI from '@theia/core/lib/common/uri';
+import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { COOKLANG_LANGUAGE_ID } from '../common';
+import {
+    MenuPreviewWidget,
+    MENU_PREVIEW_WIDGET_ID,
+    createMenuPreviewWidgetId,
+} from './menu-preview-widget';
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+export namespace CooklangMenuPreviewCommands {
+    export const TOGGLE_MENU_PREVIEW: Command = {
+        id: 'cooklang.toggleMenuPreview',
+        label: 'Cooklang: Toggle Menu Preview',
+        iconClass: 'codicon codicon-open-preview'
+    };
+    export const OPEN_MENU_PREVIEW_SIDE: Command = {
+        id: 'cooklang.openMenuPreviewSide',
+        label: 'Cooklang: Open Menu Preview to the Side',
+        iconClass: 'codicon codicon-open-preview'
+    };
+}
+
+// ---------------------------------------------------------------------------
+// MenuPreviewContribution
+// ---------------------------------------------------------------------------
+
+@injectable()
+export class MenuPreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler {
+
+    @inject(EditorManager)
+    protected readonly editorManager: EditorManager;
+
+    @inject(ApplicationShell)
+    protected readonly shell: ApplicationShell;
+
+    @inject(WidgetManager)
+    protected readonly widgetManager: WidgetManager;
+
+    readonly id = 'cooklang-menu-preview-open-handler';
+    readonly label = 'Cooklang: Menu Preview';
+
+    canHandle(uri: URI): number {
+        if (uri.path.ext === '.menu') {
+            return 200;
+        }
+        return 0;
+    }
+
+    async open(uri: URI): Promise<MenuPreviewWidget> {
+        const preview = await this.getOrCreatePreview(uri);
+        if (!preview.isAttached) {
+            await this.shell.addWidget(preview, { area: 'main' });
+        }
+        this.shell.activateWidget(preview.id);
+        return preview;
+    }
+
+    // --- CommandContribution ---
+
+    registerCommands(commands: CommandRegistry): void {
+        commands.registerCommand(CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW, {
+            execute: () => this.togglePreview(),
+            isEnabled: () => this.canPreviewMenu(),
+            isVisible: () => this.canPreviewMenu()
+        });
+        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE, {
+            execute: () => this.openPreviewSide(),
+            isEnabled: () => this.canPreviewMenu(),
+            isVisible: () => this.canPreviewMenu()
+        });
+    }
+
+    // --- KeybindingContribution ---
+
+    registerKeybindings(keybindings: KeybindingRegistry): void {
+        keybindings.registerKeybinding({
+            command: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id,
+            keybinding: 'ctrlcmd+shift+v',
+            when: `editorLangId == ${COOKLANG_LANGUAGE_ID} && resourceExtname == .menu`
+        });
+        keybindings.registerKeybinding({
+            command: CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE.id,
+            keybinding: 'ctrlcmd+k v',
+            when: `resourceExtname == .menu`
+        });
+    }
+
+    // --- Helpers ---
+
+    /**
+     * Returns true if the current widget is a MenuPreviewWidget, or if there
+     * is an active editor whose file has a `.menu` extension.
+     */
+    protected canPreviewMenu(): boolean {
+        const current = this.shell.currentWidget;
+        if (current instanceof MenuPreviewWidget) {
+            return true;
+        }
+        return this.getActiveMenuEditorUri() !== undefined;
+    }
+
+    /**
+     * Returns the URI of the active editor when its file has a `.menu` extension,
+     * or `undefined` otherwise.
+     */
+    protected getActiveMenuEditorUri(): URI | undefined {
+        const editorWidget = this.editorManager.currentEditor;
+        if (!editorWidget) {
+            return undefined;
+        }
+        const uri = new URI(editorWidget.editor.document.uri);
+        if (uri.path.ext !== '.menu') {
+            return undefined;
+        }
+        return uri;
+    }
+
+    /**
+     * Toggles between the preview panel and the source editor.
+     *
+     * - If the current widget is a preview, reveal the originating editor.
+     * - If the current widget is a menu editor, open/reveal the preview in
+     *   the same area.
+     */
+    protected async togglePreview(): Promise<void> {
+        const current = this.shell.currentWidget;
+
+        if (current instanceof MenuPreviewWidget) {
+            const resourceUri = current.getResourceUri();
+            if (resourceUri) {
+                await this.editorManager.open(resourceUri);
+            }
+            return;
+        }
+
+        const uri = this.getActiveMenuEditorUri();
+        if (!uri) {
+            return;
+        }
+
+        const preview = await this.getOrCreatePreview(uri);
+        await this.shell.addWidget(preview, { area: 'main' });
+        this.shell.activateWidget(preview.id);
+    }
+
+    /**
+     * Opens the preview panel to the right of the active menu editor.
+     */
+    protected async openPreviewSide(): Promise<void> {
+        const uri = this.getActiveMenuEditorUri();
+        if (!uri) {
+            return;
+        }
+
+        const preview = await this.getOrCreatePreview(uri);
+        await this.shell.addWidget(preview, { area: 'main', mode: 'open-to-right' });
+        this.shell.activateWidget(preview.id);
+    }
+
+    /**
+     * Returns an existing preview widget for `uri` if one is already open,
+     * otherwise creates a new one via the widget factory.
+     */
+    protected async getOrCreatePreview(uri: URI): Promise<MenuPreviewWidget> {
+        const widgetId = createMenuPreviewWidgetId(uri);
+        const existing = this.widgetManager.tryGetWidget<MenuPreviewWidget>(widgetId);
+        if (existing) {
+            return existing;
+        }
+        return this.widgetManager.getOrCreateWidget<MenuPreviewWidget>(
+            MENU_PREVIEW_WIDGET_ID,
+            { uri: uri.toString() }
+        );
+    }
+}
