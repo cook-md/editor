@@ -8,6 +8,7 @@ import {
     bindViewContribution,
 } from '@theia/core/lib/browser';
 import { CommandContribution } from '@theia/core/lib/common/command';
+import { MenuContribution } from '@theia/core/lib/common/menu';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
@@ -22,6 +23,8 @@ import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListContribution } from './shopping-list-contribution';
+import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
+import { MenuPreviewContribution } from './menu-preview-contribution';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -45,11 +48,28 @@ export default new ContainerModule(bind => {
             createRecipePreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
 
-    // Recipe preview commands and keybindings
+    // Recipe preview commands, keybindings, toolbar, and context menu
     bind(RecipePreviewContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(RecipePreviewContribution);
     bind(KeybindingContribution).toService(RecipePreviewContribution);
     bind(OpenHandler).toService(RecipePreviewContribution);
+    bind(TabBarToolbarContribution).toService(RecipePreviewContribution);
+    bind(MenuContribution).toService(RecipePreviewContribution);
+
+    // Menu preview widget factory
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: MENU_PREVIEW_WIDGET_ID,
+        createWidget: (options: { uri: string }) =>
+            createMenuPreviewWidget(ctx.container, new URI(options.uri)),
+    })).inSingletonScope();
+
+    // Menu preview commands, keybindings, toolbar, and context menu
+    bind(MenuPreviewContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(MenuPreviewContribution);
+    bind(KeybindingContribution).toService(MenuPreviewContribution);
+    bind(OpenHandler).toService(MenuPreviewContribution);
+    bind(TabBarToolbarContribution).toService(MenuPreviewContribution);
+    bind(MenuContribution).toService(MenuPreviewContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);

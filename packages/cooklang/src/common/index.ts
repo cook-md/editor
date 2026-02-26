@@ -9,3 +9,4 @@ export { CooklangLanguageService, CooklangLanguageServicePath } from './cooklang
 export * from './recipe-types';
 export { CooklangPreferences, bindCooklangPreferences } from './cooklang-preferences';
 export * from './shopping-list-types';
+export * from './menu-types';

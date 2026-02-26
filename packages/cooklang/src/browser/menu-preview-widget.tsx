@@ -13,30 +13,30 @@ import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
-import { Recipe } from '../common/recipe-types';
-import { RecipeView } from './recipe-preview-components';
+import { MenuParseResult } from '../common/menu-types';
+import { MenuView } from './menu-preview-components';
 
-import '../../src/browser/style/recipe-preview.css';
+import '../../src/browser/style/menu-preview.css';
 
 // ---------------------------------------------------------------------------
 // Public constants and helpers
 // ---------------------------------------------------------------------------
 
-export const RECIPE_PREVIEW_WIDGET_ID = 'recipe-preview-widget';
+export const MENU_PREVIEW_WIDGET_ID = 'menu-preview-widget';
 
 /**
  * Constructs a unique widget ID for a preview panel tied to a specific URI.
  */
-export function createRecipePreviewWidgetId(uri: URI): string {
-    return `${RECIPE_PREVIEW_WIDGET_ID}:${uri.toString()}`;
+export function createMenuPreviewWidgetId(uri: URI): string {
+    return `${MENU_PREVIEW_WIDGET_ID}:${uri.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
-// RecipePreviewWidget
+// MenuPreviewWidget
 // ---------------------------------------------------------------------------
 
 @injectable()
-export class RecipePreviewWidget extends ReactWidget implements Navigatable {
+export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(CooklangLanguageService)
     protected readonly service: CooklangLanguageService;
@@ -60,13 +60,14 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected readonly workspaceService: WorkspaceService;
 
     protected uri: URI;
-    protected recipe: Recipe | undefined;
+    protected menuResult: MenuParseResult | undefined;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    protected scale = 1;
 
     @postConstruct()
     protected init(): void {
-        this.addClass('theia-recipe-preview');
+        this.addClass('theia-menu-preview');
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
@@ -75,13 +76,13 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     /**
-     * Bind this widget to a source `.cook` file URI and trigger the first parse.
+     * Bind this widget to a source `.menu` file URI and trigger the first parse.
      */
     setUri(uri: URI): void {
         this.uri = uri;
-        this.id = createRecipePreviewWidgetId(uri);
+        this.id = createMenuPreviewWidgetId(uri);
         this.title.label = `Preview: ${uri.path.base}`;
-        this.title.caption = `Recipe preview for ${uri.toString()}`;
+        this.title.caption = `Menu preview for ${uri.toString()}`;
         this.title.closable = true;
         this.title.iconClass = 'codicon codicon-open-preview';
         this.parseCurrentContent();
@@ -156,21 +157,21 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     protected parseContent(content: string): void {
-        this.service.parse(content).then(json => {
+        this.service.parseMenu(content, this.scale).then(json => {
             try {
-                const result = JSON.parse(json);
-                this.recipe = result.recipe ?? undefined;
+                const result: MenuParseResult = JSON.parse(json);
+                this.menuResult = result;
                 this.parseErrors = [
-                    ...((result.errors ?? []) as Array<{ message: string }>).map(e => e.message),
-                    ...((result.warnings ?? []) as Array<{ message: string }>).map(w => w.message),
+                    ...(result.errors ?? []).map(e => e.message),
+                    ...(result.warnings ?? []).map(w => w.message),
                 ];
             } catch (e) {
-                this.recipe = undefined;
+                this.menuResult = undefined;
                 this.parseErrors = [`Failed to parse response: ${e}`];
             }
             this.update();
         }).catch(e => {
-            this.recipe = undefined;
+            this.menuResult = undefined;
             this.parseErrors = [`Parse request failed: ${e}`];
             this.update();
         });
@@ -184,8 +185,13 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         }
     };
 
-    protected handleAddToShoppingList = (scale: number): void => {
-        this.commandRegistry.executeCommand('cooklang.addToShoppingList', this, scale);
+    protected handleScaleChange = (newScale: number): void => {
+        this.scale = newScale;
+        this.parseCurrentContent();
+    };
+
+    protected handleAddToShoppingList = (currentScale: number): void => {
+        this.commandRegistry.executeCommand('cooklang.addToShoppingList', this, currentScale);
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
@@ -194,16 +200,21 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             return;
         }
         const rootUri = new URI(root.resource.toString());
-        const targetUri = rootUri.resolve(referencePath + '.cook');
+        const cleanPath = referencePath.startsWith('./')
+            ? referencePath.slice(2)
+            : referencePath;
+        const targetUri = rootUri.resolve(cleanPath + '.cook');
         open(this.openerService, targetUri);
     };
 
     protected render(): React.ReactNode {
-        if (this.recipe) {
+        if (this.menuResult && this.menuResult.sections.length > 0) {
             return (
-                <RecipeView
-                    recipe={this.recipe}
+                <MenuView
+                    menuResult={this.menuResult}
                     fileName={this.uri?.path.base ?? ''}
+                    scale={this.scale}
+                    onScaleChange={this.handleScaleChange}
                     onShowSource={this.handleShowSource}
                     onAddToShoppingList={this.handleAddToShoppingList}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
@@ -213,7 +224,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
         if (this.parseErrors.length > 0) {
             return (
-                <div className='recipe-error'>
+                <div className='menu-error'>
                     <strong>Parse errors:</strong>
                     <ul>
                         {this.parseErrors.map((msg, idx) => (
@@ -225,8 +236,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         }
 
         return (
-            <div className='recipe-empty'>
-                Open a <code>.cook</code> file to see its recipe preview.
+            <div className='menu-empty'>
+                Open a <code>.menu</code> file to see its meal plan preview.
             </div>
         );
     }
@@ -247,19 +258,19 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 // ---------------------------------------------------------------------------
 
 /**
- * Create a fully initialised {@link RecipePreviewWidget} bound to `uri`.
+ * Create a fully initialised {@link MenuPreviewWidget} bound to `uri`.
  *
  * Uses a child container so each preview panel gets its own widget instance
  * while still inheriting all parent bindings (including CooklangLanguageService
  * and MonacoWorkspace).
  */
-export function createRecipePreviewWidget(
+export function createMenuPreviewWidget(
     container: interfaces.Container,
     uri: URI
-): RecipePreviewWidget {
+): MenuPreviewWidget {
     const child = container.createChild();
-    child.bind(RecipePreviewWidget).toSelf().inTransientScope();
-    const widget = child.get(RecipePreviewWidget);
+    child.bind(MenuPreviewWidget).toSelf().inTransientScope();
+    const widget = child.get(MenuPreviewWidget);
     widget.setUri(uri);
     return widget;
 }

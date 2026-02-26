@@ -14,41 +14,41 @@ import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { SelectionService } from '@theia/core/lib/common/selection-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
-import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
+import { COOKLANG_LANGUAGE_ID } from '../common';
 import {
-    RecipePreviewWidget,
-    RECIPE_PREVIEW_WIDGET_ID,
-    createRecipePreviewWidgetId
-} from './recipe-preview-widget';
+    MenuPreviewWidget,
+    MENU_PREVIEW_WIDGET_ID,
+    createMenuPreviewWidgetId,
+} from './menu-preview-widget';
 
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-export namespace CooklangPreviewCommands {
-    export const TOGGLE_PREVIEW: Command = {
-        id: 'cooklang.togglePreview',
-        label: 'Cooklang: Toggle Preview',
+export namespace CooklangMenuPreviewCommands {
+    export const TOGGLE_MENU_PREVIEW: Command = {
+        id: 'cooklang.toggleMenuPreview',
+        label: 'Cooklang: Toggle Menu Preview',
         iconClass: 'codicon codicon-open-preview'
     };
-    export const OPEN_PREVIEW_SIDE: Command = {
-        id: 'cooklang.openPreviewSide',
-        label: 'Cooklang: Open Preview to the Side',
+    export const OPEN_MENU_PREVIEW_SIDE: Command = {
+        id: 'cooklang.openMenuPreviewSide',
+        label: 'Cooklang: Open Menu Preview to the Side',
         iconClass: 'codicon codicon-open-preview'
     };
-    export const OPEN_SOURCE: Command = {
-        id: 'cooklang.openSource',
-        label: 'Cooklang: Open Source',
+    export const OPEN_MENU_SOURCE: Command = {
+        id: 'cooklang.openMenuSource',
+        label: 'Cooklang: Open Menu Source',
         iconClass: 'codicon codicon-go-to-file'
     };
 }
 
 // ---------------------------------------------------------------------------
-// RecipePreviewContribution
+// MenuPreviewContribution
 // ---------------------------------------------------------------------------
 
 @injectable()
-export class RecipePreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler, TabBarToolbarContribution, MenuContribution {
+export class MenuPreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler, TabBarToolbarContribution, MenuContribution {
 
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
@@ -59,23 +59,20 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     @inject(WidgetManager)
     protected readonly widgetManager: WidgetManager;
 
-    @inject(CooklangPreferences)
-    protected readonly preferences: CooklangPreferences;
-
     @inject(SelectionService)
     protected readonly selectionService: SelectionService;
 
-    readonly id = 'cooklang-preview-open-handler';
-    readonly label = 'Cooklang: Recipe Preview';
+    readonly id = 'cooklang-menu-preview-open-handler';
+    readonly label = 'Cooklang: Menu Preview';
 
     canHandle(uri: URI): number {
-        if (uri.path.ext === '.cook' && this.preferences['cooklang.openInPreviewMode']) {
+        if (uri.path.ext === '.menu') {
             return 200;
         }
         return 0;
     }
 
-    async open(uri: URI): Promise<RecipePreviewWidget> {
+    async open(uri: URI): Promise<MenuPreviewWidget> {
         const preview = await this.getOrCreatePreview(uri);
         if (!preview.isAttached) {
             await this.shell.addWidget(preview, { area: 'main' });
@@ -87,18 +84,18 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     // --- CommandContribution ---
 
     registerCommands(commands: CommandRegistry): void {
-        commands.registerCommand(CooklangPreviewCommands.TOGGLE_PREVIEW, {
+        commands.registerCommand(CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW, {
             execute: (...args: unknown[]) => this.togglePreview(args),
             isEnabled: (...args: unknown[]) => this.canTogglePreview(args),
         });
-        commands.registerCommand(CooklangPreviewCommands.OPEN_PREVIEW_SIDE, {
+        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE, {
             execute: (...args: unknown[]) => this.openPreviewSide(args),
             isEnabled: (...args: unknown[]) => this.canOpenPreview(args),
         });
-        commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE,
+        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_SOURCE,
             UriAwareCommandHandler.MonoSelect(this.selectionService, {
                 execute: uri => this.editorManager.open(uri),
-                isEnabled: uri => uri.path.ext === '.cook',
+                isEnabled: uri => uri.path.ext === '.menu',
             })
         );
     }
@@ -107,16 +104,16 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
 
     registerToolbarItems(toolbar: TabBarToolbarRegistry): void {
         toolbar.registerItem({
-            id: CooklangPreviewCommands.TOGGLE_PREVIEW.id + '.toolbar',
-            command: CooklangPreviewCommands.TOGGLE_PREVIEW.id,
-            tooltip: 'Toggle Preview',
+            id: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id + '.toolbar',
+            command: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id,
+            tooltip: 'Toggle Menu Preview',
             isVisible: widget => {
-                if (widget instanceof RecipePreviewWidget) {
+                if (widget instanceof MenuPreviewWidget) {
                     return true;
                 }
                 if (NavigatableWidget.is(widget)) {
                     const uri = widget.getResourceUri();
-                    return uri !== undefined && uri.path.ext === '.cook';
+                    return uri !== undefined && uri.path.ext === '.menu';
                 }
                 return false;
             },
@@ -127,9 +124,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
 
     registerMenus(menus: MenuModelRegistry): void {
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, {
-            commandId: CooklangPreviewCommands.OPEN_SOURCE.id,
+            commandId: CooklangMenuPreviewCommands.OPEN_MENU_SOURCE.id,
             label: 'Open Source',
-            when: 'resourceExtname == .cook',
+            when: 'resourceExtname == .menu',
         });
     }
 
@@ -137,44 +134,45 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
 
     registerKeybindings(keybindings: KeybindingRegistry): void {
         keybindings.registerKeybinding({
-            command: CooklangPreviewCommands.TOGGLE_PREVIEW.id,
+            command: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id,
             keybinding: 'ctrlcmd+shift+v',
-            when: `editorLangId == ${COOKLANG_LANGUAGE_ID}`
+            when: `editorLangId == ${COOKLANG_LANGUAGE_ID} && resourceExtname == .menu`
         });
         keybindings.registerKeybinding({
-            command: CooklangPreviewCommands.OPEN_PREVIEW_SIDE.id,
-            keybinding: 'ctrlcmd+k v'
+            command: CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE.id,
+            keybinding: 'ctrlcmd+k v',
+            when: `resourceExtname == .menu`
         });
     }
 
     // --- Helpers ---
 
     /**
-     * Returns true if the current widget is a RecipePreviewWidget, or if there
-     * is an active editor whose language is Cooklang.
+     * Returns true if the current widget is a MenuPreviewWidget, or if there
+     * is an active editor whose file has a `.menu` extension.
      */
-    protected canPreview(): boolean {
+    protected canPreviewMenu(): boolean {
         const current = this.shell.currentWidget;
-        if (current instanceof RecipePreviewWidget) {
+        if (current instanceof MenuPreviewWidget) {
             return true;
         }
-        return this.getActiveCooklangEditorUri() !== undefined;
+        return this.getActiveMenuEditorUri() !== undefined;
     }
 
     /**
-     * Returns the URI of the active editor when its language is Cooklang,
+     * Returns the URI of the active editor when its file has a `.menu` extension,
      * or `undefined` otherwise.
      */
-    protected getActiveCooklangEditorUri(): URI | undefined {
+    protected getActiveMenuEditorUri(): URI | undefined {
         const editorWidget = this.editorManager.currentEditor;
         if (!editorWidget) {
             return undefined;
         }
-        const { languageId, uri } = editorWidget.editor.document;
-        if (languageId !== COOKLANG_LANGUAGE_ID) {
+        const uri = new URI(editorWidget.editor.document.uri);
+        if (uri.path.ext !== '.menu') {
             return undefined;
         }
-        return new URI(uri);
+        return uri;
     }
 
     /**
@@ -183,31 +181,30 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
      */
     protected canTogglePreview(args: unknown[] = []): boolean {
         if (args.length > 0) {
-            if (args[0] instanceof RecipePreviewWidget) {
+            if (args[0] instanceof MenuPreviewWidget) {
                 return true;
             }
             if (NavigatableWidget.is(args[0])) {
                 const uri = (args[0] as NavigatableWidget).getResourceUri();
-                if (uri && uri.path.ext === '.cook') {
+                if (uri && uri.path.ext === '.menu') {
                     return true;
                 }
             }
         }
-        return this.canPreview();
+        return this.canPreviewMenu();
     }
 
     /**
      * Toggles between the preview panel and the source editor.
      *
      * - If the current widget is a preview, reveal the originating editor.
-     * - If the current widget is a Cooklang editor, open/reveal the preview in
+     * - If the current widget is a menu editor, open/reveal the preview in
      *   the same area.
      */
     protected async togglePreview(args: unknown[] = []): Promise<void> {
-        // Toolbar may pass the widget as an argument
         const target = args.length > 0 ? args[0] : this.shell.currentWidget;
 
-        if (target instanceof RecipePreviewWidget) {
+        if (target instanceof MenuPreviewWidget) {
             const resourceUri = target.getResourceUri();
             if (resourceUri) {
                 await this.editorManager.open(resourceUri);
@@ -215,9 +212,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             return;
         }
 
-        const uri = (NavigatableWidget.is(target) && target.getResourceUri()?.path.ext === '.cook')
+        const uri = (NavigatableWidget.is(target) && target.getResourceUri()?.path.ext === '.menu')
             ? target.getResourceUri()!
-            : this.getActiveCooklangEditorUri();
+            : this.getActiveMenuEditorUri();
         if (!uri) {
             return;
         }
@@ -228,23 +225,23 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     }
 
     /**
-     * Resolves a .cook URI from command arguments (context menu, toolbar widget)
-     * or falls back to the active Cooklang editor.
+     * Resolves a .menu URI from command arguments (context menu, toolbar widget)
+     * or falls back to the active menu editor.
      */
     protected resolveUri(args: unknown[]): URI | undefined {
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (uri.path.ext === '.cook') {
+            if (uri.path.ext === '.menu') {
                 return uri;
             }
         }
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (uri && uri.path.ext === '.cook') {
+            if (uri && uri.path.ext === '.menu') {
                 return uri;
             }
         }
-        return this.getActiveCooklangEditorUri();
+        return this.getActiveMenuEditorUri();
     }
 
     protected canOpenPreview(args: unknown[] = []): boolean {
@@ -256,7 +253,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     }
 
     /**
-     * Opens the preview panel to the right of the active Cooklang editor.
+     * Opens the preview panel to the right of the active menu editor.
      */
     protected async openPreviewSide(args: unknown[] = []): Promise<void> {
         const uri = this.resolveUri(args);
@@ -273,14 +270,14 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
      * Returns an existing preview widget for `uri` if one is already open,
      * otherwise creates a new one via the widget factory.
      */
-    protected async getOrCreatePreview(uri: URI): Promise<RecipePreviewWidget> {
-        const widgetId = createRecipePreviewWidgetId(uri);
-        const existing = this.widgetManager.tryGetWidget<RecipePreviewWidget>(widgetId);
+    protected async getOrCreatePreview(uri: URI): Promise<MenuPreviewWidget> {
+        const widgetId = createMenuPreviewWidgetId(uri);
+        const existing = this.widgetManager.tryGetWidget<MenuPreviewWidget>(widgetId);
         if (existing) {
             return existing;
         }
-        return this.widgetManager.getOrCreateWidget<RecipePreviewWidget>(
-            RECIPE_PREVIEW_WIDGET_ID,
+        return this.widgetManager.getOrCreateWidget<MenuPreviewWidget>(
+            MENU_PREVIEW_WIDGET_ID,
             { uri: uri.toString() }
         );
     }

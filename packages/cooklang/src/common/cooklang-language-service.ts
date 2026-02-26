@@ -31,6 +31,9 @@ export interface CooklangLanguageService {
     // Recipe parsing (returns JSON-serialized ParseResult)
     parse(content: string): Promise<string>;
 
+    // Menu parsing (returns JSON-serialized MenuParseResult)
+    parseMenu(content: string, scale: number): Promise<string>;
+
     // Shopping list generation
     generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string>;
 }

@@ -15,6 +15,8 @@ export declare function parse(input: string): string
  * Returns a JSON-serialized `ShoppingListResult`.
  */
 export declare function generateShoppingList(recipesJson: string, aisleConf?: string | undefined | null, pantryConf?: string | undefined | null): string
+/** Parse a Cooklang menu file and return a menu-specific JSON structure. */
+export declare function parseMenu(input: string, scale: number): string
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
