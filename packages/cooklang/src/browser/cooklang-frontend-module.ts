@@ -22,6 +22,8 @@ import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListContribution } from './shopping-list-contribution';
+import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
+import { MenuPreviewContribution } from './menu-preview-contribution';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -50,6 +52,19 @@ export default new ContainerModule(bind => {
     bind(CommandContribution).toService(RecipePreviewContribution);
     bind(KeybindingContribution).toService(RecipePreviewContribution);
     bind(OpenHandler).toService(RecipePreviewContribution);
+
+    // Menu preview widget factory
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: MENU_PREVIEW_WIDGET_ID,
+        createWidget: (options: { uri: string }) =>
+            createMenuPreviewWidget(ctx.container, new URI(options.uri)),
+    })).inSingletonScope();
+
+    // Menu preview commands and keybindings
+    bind(MenuPreviewContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(MenuPreviewContribution);
+    bind(KeybindingContribution).toService(MenuPreviewContribution);
+    bind(OpenHandler).toService(MenuPreviewContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
