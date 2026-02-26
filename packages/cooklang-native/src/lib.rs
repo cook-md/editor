@@ -195,6 +195,295 @@ pub fn generate_shopping_list(
         .map_err(|e| napi::Error::from_reason(e.to_string()))
 }
 
+// ── Menu parsing ─────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct MenuParseResult {
+    pub metadata: Option<MenuMetadata>,
+    pub sections: Vec<MenuSection>,
+    pub errors: Vec<DiagnosticInfo>,
+    pub warnings: Vec<DiagnosticInfo>,
+}
+
+#[derive(Serialize)]
+pub struct MenuMetadata {
+    pub servings: Option<String>,
+    pub time: Option<String>,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub source: Option<String>,
+    #[serde(rename = "sourceUrl")]
+    pub source_url: Option<String>,
+    pub custom: Vec<(String, String)>,
+}
+
+#[derive(Serialize)]
+pub struct MenuSection {
+    pub name: Option<String>,
+    pub lines: Vec<Vec<MenuSectionItem>>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "type")]
+pub enum MenuSectionItem {
+    #[serde(rename = "text")]
+    Text { value: String },
+    #[serde(rename = "recipeReference")]
+    RecipeReference {
+        name: String,
+        scale: Option<f64>,
+    },
+    #[serde(rename = "ingredient")]
+    Ingredient {
+        name: String,
+        quantity: Option<String>,
+        unit: Option<String>,
+    },
+}
+
+/// Format a cooklang `Value` into a human-readable string for quantities.
+fn format_menu_value(value: &cooklang::Value) -> Option<String> {
+    match value {
+        cooklang::Value::Number(n) => {
+            let v = n.value();
+            if v == v.floor() {
+                Some(format!("{}", v as i64))
+            } else {
+                Some(format!("{}", v))
+            }
+        }
+        cooklang::Value::Range { start, end } => {
+            let s = start.value();
+            let e = end.value();
+            Some(format!("{}-{}", s, e))
+        }
+        cooklang::Value::Text(t) => Some(t.to_string()),
+    }
+}
+
+/// Parse a Cooklang menu file and return a menu-specific JSON structure.
+#[napi]
+pub fn parse_menu(input: String, scale: f64) -> napi::Result<String> {
+    let parser = cooklang::CooklangParser::new(
+        cooklang::Extensions::all(),
+        Default::default(),
+    );
+
+    let result = parser.parse(&input);
+    let report = result.report();
+
+    let errors: Vec<DiagnosticInfo> = report
+        .errors()
+        .map(|e| DiagnosticInfo {
+            message: e.message.to_string(),
+            severity: "error".to_string(),
+        })
+        .collect();
+
+    let warnings: Vec<DiagnosticInfo> = report
+        .warnings()
+        .map(|w| DiagnosticInfo {
+            message: w.message.to_string(),
+            severity: "warning".to_string(),
+        })
+        .collect();
+
+    let recipe = match result.into_output() {
+        Some(r) => r,
+        None => {
+            let menu_result = MenuParseResult {
+                metadata: None,
+                sections: Vec::new(),
+                errors,
+                warnings,
+            };
+            return serde_json::to_string(&menu_result)
+                .map_err(|e| napi::Error::from_reason(e.to_string()));
+        }
+    };
+
+    // Build sections from recipe content
+    let mut sections: Vec<MenuSection> = Vec::new();
+
+    for section in &recipe.sections {
+        let section_name = section.name.clone();
+        let mut lines: Vec<Vec<MenuSectionItem>> = Vec::new();
+
+        for content in &section.content {
+            if let cooklang::Content::Step(step) = content {
+                let mut step_items: Vec<MenuSectionItem> = Vec::new();
+                let mut current_text = String::new();
+
+                for item in &step.items {
+                    match item {
+                        cooklang::Item::Text { value } => {
+                            if value == "-" {
+                                // Bullet marker — finalise current line and start a new one
+                                if !current_text.is_empty() {
+                                    step_items.push(MenuSectionItem::Text {
+                                        value: current_text.clone(),
+                                    });
+                                    current_text.clear();
+                                }
+                                if !step_items.is_empty() {
+                                    lines.push(step_items.clone());
+                                    step_items.clear();
+                                }
+                            } else {
+                                // Split on newlines; each newline flushes the current line
+                                let parts: Vec<&str> = value.split('\n').collect();
+                                for (i, part) in parts.iter().enumerate() {
+                                    if i > 0 {
+                                        if !current_text.is_empty() {
+                                            step_items.push(MenuSectionItem::Text {
+                                                value: current_text.clone(),
+                                            });
+                                            current_text.clear();
+                                        }
+                                        if !step_items.is_empty() {
+                                            lines.push(step_items.clone());
+                                            step_items.clear();
+                                        }
+                                    }
+                                    if !part.is_empty() {
+                                        current_text.push_str(part);
+                                    }
+                                }
+                            }
+                        }
+                        cooklang::Item::Ingredient { index } => {
+                            // Flush any accumulated text first
+                            if !current_text.is_empty() {
+                                step_items.push(MenuSectionItem::Text {
+                                    value: current_text.clone(),
+                                });
+                                current_text.clear();
+                            }
+
+                            if let Some(ing) = recipe.ingredients.get(*index) {
+                                if let Some(ref recipe_ref) = ing.reference {
+                                    // Recipe reference — extract numeric scale from quantity
+                                    let recipe_scale =
+                                        ing.quantity.as_ref().and_then(|q| {
+                                            match q.value() {
+                                                cooklang::Value::Number(n) => Some(n.value()),
+                                                _ => None,
+                                            }
+                                        });
+
+                                    // Apply menu scaling to the recipe reference scale
+                                    let final_scale = recipe_scale.map(|s| s * scale);
+
+                                    let name = if recipe_ref.components.is_empty() {
+                                        recipe_ref.name.clone()
+                                    } else {
+                                        format!(
+                                            "{}/{}",
+                                            recipe_ref.components.join("/"),
+                                            recipe_ref.name
+                                        )
+                                    };
+
+                                    step_items.push(MenuSectionItem::RecipeReference {
+                                        name,
+                                        scale: final_scale,
+                                    });
+                                } else {
+                                    // Regular ingredient
+                                    let quantity = ing
+                                        .quantity
+                                        .as_ref()
+                                        .and_then(|q| format_menu_value(q.value()));
+                                    let unit = ing
+                                        .quantity
+                                        .as_ref()
+                                        .and_then(|q| q.unit().map(|u| u.to_string()));
+
+                                    step_items.push(MenuSectionItem::Ingredient {
+                                        name: ing.name.to_string(),
+                                        quantity,
+                                        unit,
+                                    });
+                                }
+                            }
+                        }
+                        // Cookware, timers, and other items are ignored in menu files
+                        _ => {}
+                    }
+                }
+
+                // Flush any remaining text and items as the final line of this step
+                if !current_text.is_empty() {
+                    step_items.push(MenuSectionItem::Text {
+                        value: current_text,
+                    });
+                }
+                if !step_items.is_empty() {
+                    lines.push(step_items);
+                }
+            }
+        }
+
+        if !lines.is_empty() {
+            sections.push(MenuSection {
+                name: section_name,
+                lines,
+            });
+        }
+    }
+
+    // Extract metadata
+    let metadata = if recipe.metadata.map.is_empty() {
+        None
+    } else {
+        let get_field = |key: &str| -> Option<String> {
+            recipe.metadata.get(key).and_then(|v| {
+                if let Some(s) = v.as_str() {
+                    Some(s.to_string())
+                } else if let Some(n) = v.as_i64() {
+                    Some(n.to_string())
+                } else {
+                    v.as_f64().map(|f| {
+                        if f == f.floor() {
+                            format!("{}", f as i64)
+                        } else {
+                            format!("{}", f)
+                        }
+                    })
+                }
+            })
+        };
+
+        let mut custom: Vec<(String, String)> = Vec::new();
+        for (key, value) in recipe.metadata.map_filtered() {
+            // Skip keys that have dedicated fields above
+            if let (Some(key_str), Some(val_str)) = (key.as_str(), value.as_str()) {
+                custom.push((key_str.to_string(), val_str.to_string()));
+            }
+        }
+
+        Some(MenuMetadata {
+            servings: get_field("servings").or_else(|| get_field("serves")),
+            time: get_field("time").or_else(|| get_field("duration")),
+            author: get_field("author"),
+            description: get_field("description"),
+            source: get_field("source"),
+            source_url: get_field("source.url"),
+            custom,
+        })
+    };
+
+    let menu_result = MenuParseResult {
+        metadata,
+        sections,
+        errors,
+        warnings,
+    };
+
+    serde_json::to_string(&menu_result)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
 #[napi]
 pub struct LspServer {
     request_tx: mpsc::UnboundedSender<Vec<u8>>,
