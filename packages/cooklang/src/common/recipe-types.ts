@@ -68,11 +68,17 @@ export interface Quantity {
 // Recipe components
 // ---------------------------------------------------------------------------
 
+export interface RecipeReference {
+    name: string;
+    components: string[];
+}
+
 export interface Ingredient {
     name: string;
     alias: string | null;
     quantity: Quantity | null;
     note: string | null;
+    reference: RecipeReference | null;
 }
 
 export interface Cookware {
@@ -244,4 +250,72 @@ export function formatQuantity(qty: Quantity | null): string {
         return `${valStr} ${qty.unit}`;
     }
     return valStr;
+}
+
+// ---------------------------------------------------------------------------
+// Scaling
+// ---------------------------------------------------------------------------
+
+function scaleNumberValue(nv: NumberValue, factor: number): NumberValue {
+    switch (nv.type) {
+        case 'regular':
+            return { type: 'regular', value: nv.value * factor };
+        case 'fraction': {
+            const decimal = nv.value.whole + nv.value.num / nv.value.den;
+            return { type: 'regular', value: decimal * factor };
+        }
+    }
+}
+
+function scaleQuantityValue(qv: QuantityValue, factor: number): QuantityValue {
+    switch (qv.type) {
+        case 'number':
+            return { type: 'number', value: scaleNumberValue(qv.value, factor) };
+        case 'range':
+            return {
+                type: 'range',
+                value: {
+                    start: scaleNumberValue(qv.value.start, factor),
+                    end: scaleNumberValue(qv.value.end, factor),
+                },
+            };
+        case 'text':
+            return qv;
+    }
+}
+
+function scaleQuantity(qty: Quantity | null, factor: number): Quantity | null {
+    if (qty === null || !qty.scalable) {
+        return qty;
+    }
+    return { ...qty, value: scaleQuantityValue(qty.value, factor) };
+}
+
+/**
+ * Return a shallow copy of `recipe` with all scalable quantities multiplied
+ * by `factor`. Non-scalable quantities and text values are left unchanged.
+ */
+export function scaleRecipe(recipe: Recipe, factor: number): Recipe {
+    if (factor === 1) {
+        return recipe;
+    }
+    return {
+        ...recipe,
+        ingredients: recipe.ingredients.map(ing => ({
+            ...ing,
+            quantity: scaleQuantity(ing.quantity, factor),
+        })),
+        cookware: recipe.cookware.map(cw => ({
+            ...cw,
+            quantity: scaleQuantity(cw.quantity, factor),
+        })),
+        timers: recipe.timers.map(t => ({
+            ...t,
+            quantity: scaleQuantity(t.quantity, factor),
+        })),
+        inline_quantities: recipe.inline_quantities.map(iq => ({
+            ...iq,
+            value: iq.scalable ? scaleQuantityValue(iq.value, factor) : iq.value,
+        })),
+    };
 }

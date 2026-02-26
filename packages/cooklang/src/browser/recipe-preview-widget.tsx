@@ -4,8 +4,11 @@
 import { injectable, inject, postConstruct, interfaces } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
+import { CommandRegistry } from '@theia/core/lib/common/command';
+import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -42,6 +45,15 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(FileService)
     protected readonly fileService: FileService;
+
+    @inject(CommandRegistry)
+    protected readonly commandRegistry: CommandRegistry;
+
+    @inject(OpenerService)
+    protected readonly openerService: OpenerService;
+
+    @inject(WorkspaceService)
+    protected readonly workspaceService: WorkspaceService;
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
@@ -162,12 +174,28 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
+    protected handleAddToShoppingList = (scale: number): void => {
+        this.commandRegistry.executeCommand('cooklang.addToShoppingList', this, scale);
+    };
+
+    protected handleNavigateToRecipe = (referencePath: string): void => {
+        const root = this.workspaceService.tryGetRoots()[0];
+        if (!root) {
+            return;
+        }
+        const rootUri = new URI(root.resource.toString());
+        const targetUri = rootUri.resolve(referencePath + '.cook');
+        open(this.openerService, targetUri);
+    };
+
     protected render(): React.ReactNode {
         if (this.recipe) {
             return (
                 <RecipeView
                     recipe={this.recipe}
                     fileName={this.uri?.path.base ?? ''}
+                    onAddToShoppingList={this.handleAddToShoppingList}
+                    onNavigateToRecipe={this.handleNavigateToRecipe}
                 />
             );
         }

@@ -43,7 +43,7 @@ export class ShoppingListService implements Disposable {
     @postConstruct()
     protected init(): void {
         this.toDispose.push(this.onDidChangeEmitter);
-        this.loadFromFile();
+        this.workspaceService.roots.then(() => this.loadFromFile());
     }
 
     /** Returns the current ordered list of recipes. */
@@ -79,9 +79,6 @@ export class ShoppingListService implements Disposable {
      * shopping list via RPC.
      */
     async addRecipe(path: string, name: string, scale: number = 1): Promise<void> {
-        if (this.recipes.some(r => r.path === path)) {
-            return;
-        }
         this.recipes.push({ path, name, scale });
         await this.saveToFile();
         await this.regenerate();

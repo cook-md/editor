@@ -11,14 +11,82 @@
     background: var(--theia-editor-background);
 }
 
-/* Header */
+/* Header row */
+.theia-recipe-preview .recipe-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid var(--theia-panel-border);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
 .theia-recipe-preview .recipe-title {
     font-size: 1.8em;
     font-weight: 600;
-    margin-bottom: 8px;
+    margin-bottom: 0;
     color: var(--theia-foreground);
-    border-bottom: 1px solid var(--theia-panel-border);
-    padding-bottom: 8px;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* Header actions (scale + add to shopping list) */
+.theia-recipe-preview .recipe-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+/* Scale control */
+.theia-recipe-preview .recipe-scale-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theia-recipe-preview .recipe-scale-label {
+    font-size: 0.85em;
+    color: var(--theia-descriptionForeground);
+    white-space: nowrap;
+}
+
+.theia-recipe-preview .recipe-scale-input {
+    width: 52px;
+    padding: 2px 4px;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+    background: var(--theia-input-background);
+    color: var(--theia-input-foreground);
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.theia-recipe-preview .recipe-scale-input:focus {
+    outline: 1px solid var(--theia-focusBorder);
+    border-color: var(--theia-focusBorder);
+}
+
+/* Add to shopping list button */
+.theia-recipe-preview .recipe-add-shopping-list {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.theia-recipe-preview .recipe-add-shopping-list:hover {
+    background: var(--theia-toolbar-hoverBackground, var(--theia-textCodeBlock-background));
+    color: var(--theia-foreground);
 }
 
 /* Tags */
@@ -148,6 +216,25 @@
     font-weight: 400;
     margin-left: 8px;
     white-space: nowrap;
+}
+
+/* Reference ingredient links */
+.theia-recipe-preview .ingredient-ref-link {
+    color: var(--theia-textLink-foreground);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.theia-recipe-preview .ingredient-ref-link:hover {
+    color: var(--theia-textLink-activeForeground);
+    text-decoration: underline;
+}
+
+.theia-recipe-preview .ingredient-ref-icon {
+    font-size: 12px;
+    opacity: 0.8;
 }
 
 /* Cookware list */

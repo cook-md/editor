@@ -4,6 +4,7 @@
 import * as React from '@theia/core/shared/react';
 import {
     Recipe,
+    RecipeReference,
     Section,
     SectionContent,
     StepItem,
@@ -74,6 +75,16 @@ function formatTimer(timer: Timer): string {
         return formatQuantity(timer.quantity);
     }
     return '';
+}
+
+/**
+ * Build a relative path from a recipe reference's components and name.
+ */
+function buildReferencePath(ref: RecipeReference): string {
+    if (ref.components.length === 0) {
+        return ref.name;
+    }
+    return ref.components.join('/') + '/' + ref.name;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,14 +257,26 @@ export const InstructionsPanel = ({
 
 interface IngredientRowProps {
     ingredient: Ingredient;
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-const IngredientRow = ({ ingredient }: IngredientRowProps): React.ReactElement => {
+const IngredientRow = ({ ingredient, onNavigateToRecipe }: IngredientRowProps): React.ReactElement => {
     const qty = formatQuantity(ingredient.quantity);
+    const displayName = ingredient.alias ?? ingredient.name;
+    const isRef = ingredient.reference !== null && ingredient.reference !== undefined;
+
     return (
-        <li className='ingredient-item'>
+        <li className={`ingredient-item${isRef ? ' ingredient-ref' : ''}`}>
             <span className='ingredient-name'>
-                {ingredient.alias ?? ingredient.name}
+                {isRef && onNavigateToRecipe ? (
+                    <a className='ingredient-ref-link'
+                        onClick={() => onNavigateToRecipe(buildReferencePath(ingredient.reference!))}>
+                        <span className='codicon codicon-link ingredient-ref-icon'></span>
+                        {displayName}
+                    </a>
+                ) : (
+                    displayName
+                )}
                 {ingredient.note && (
                     <span className='ingredient-note'> ({ingredient.note})</span>
                 )}
@@ -271,20 +294,30 @@ interface IngredientsSidebarProps {
     sections: Section[];
     ingredients: Ingredient[];
     cookware: Cookware[];
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
 export const IngredientsSidebar = ({
     sections,
     ingredients,
     cookware,
+    onNavigateToRecipe,
 }: IngredientsSidebarProps): React.ReactElement => {
     const multiSection = sections.length > 1;
 
+    /** Sort indices so that reference ingredients appear first. */
+    const sortRefsFirst = (indices: number[]): number[] =>
+        [...indices].sort((a, b) => {
+            const aRef = ingredients[a]?.reference ? 0 : 1;
+            const bRef = ingredients[b]?.reference ? 0 : 1;
+            return aRef - bRef;
+        });
+
     const renderIngredientList = (indices: number[]): React.ReactElement => (
         <ul className='ingredient-list'>
-            {indices.map(idx => (
+            {sortRefsFirst(indices).map(idx => (
                 ingredients[idx] && (
-                    <IngredientRow key={idx} ingredient={ingredients[idx]} />
+                    <IngredientRow key={idx} ingredient={ingredients[idx]} onNavigateToRecipe={onNavigateToRecipe} />
                 )
             ))}
         </ul>
@@ -386,9 +419,10 @@ export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
     onAddToShoppingList?: (scale: number) => void;
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName, onAddToShoppingList }: RecipeViewProps): React.ReactElement => {
+export const RecipeView = ({ recipe, fileName, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
     const [scale, setScale] = React.useState(1);
     const meta = recipe.metadata.map;
 
@@ -460,6 +494,7 @@ export const RecipeView = ({ recipe, fileName, onAddToShoppingList }: RecipeView
                     sections={scaled.sections}
                     ingredients={scaled.ingredients}
                     cookware={scaled.cookware}
+                    onNavigateToRecipe={onNavigateToRecipe}
                 />
                 <InstructionsPanel
                     sections={scaled.sections}
