@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 napi = { version = "2", features = ["napi6", "serde-json", "tokio_rt"] }
 napi-derive = "2"
-cooklang = "0.17"
+cooklang = { version = "0.17", features = ["pantry"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tower-lsp = "0.20"

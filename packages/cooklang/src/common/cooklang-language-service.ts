@@ -30,6 +30,9 @@ export interface CooklangLanguageService {
 
     // Recipe parsing (returns JSON-serialized ParseResult)
     parse(content: string): Promise<string>;
+
+    // Shopping list generation
+    generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string>;
 }
 
 // Plain JSON DTOs — subsets of vscode-languageserver-protocol types

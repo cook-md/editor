@@ -158,4 +158,18 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             return JSON.stringify({ recipe: null, errors: [{ message: String(error), severity: 'error' }], warnings: [] });
         }
     }
+
+    async generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string> {
+        try {
+            const native = require('@theia/cooklang-native');
+            return native.generateShoppingList(
+                recipesJson,
+                aisleConf ?? undefined,
+                pantryConf ?? undefined
+            );
+        } catch (error) {
+            console.error('[cooklang] Failed to generate shopping list:', error);
+            return JSON.stringify({ categories: [], other: { name: 'other', items: [] }, pantryItems: [] });
+        }
+    }
 }

@@ -4,6 +4,7 @@
 import * as React from '@theia/core/shared/react';
 import {
     Recipe,
+    RecipeReference,
     Section,
     SectionContent,
     StepItem,
@@ -12,6 +13,7 @@ import {
     Timer,
     InlineQuantity,
     formatQuantity,
+    scaleRecipe,
 } from '../common/recipe-types';
 
 // ---------------------------------------------------------------------------
@@ -73,6 +75,16 @@ function formatTimer(timer: Timer): string {
         return formatQuantity(timer.quantity);
     }
     return '';
+}
+
+/**
+ * Build a relative path from a recipe reference's components and name.
+ */
+function buildReferencePath(ref: RecipeReference): string {
+    if (ref.components.length === 0) {
+        return ref.name;
+    }
+    return ref.components.join('/') + '/' + ref.name;
 }
 
 // ---------------------------------------------------------------------------
@@ -245,14 +257,26 @@ export const InstructionsPanel = ({
 
 interface IngredientRowProps {
     ingredient: Ingredient;
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-const IngredientRow = ({ ingredient }: IngredientRowProps): React.ReactElement => {
+const IngredientRow = ({ ingredient, onNavigateToRecipe }: IngredientRowProps): React.ReactElement => {
     const qty = formatQuantity(ingredient.quantity);
+    const displayName = ingredient.alias ?? ingredient.name;
+    const isRef = ingredient.reference !== null && ingredient.reference !== undefined;
+
     return (
-        <li className='ingredient-item'>
+        <li className={`ingredient-item${isRef ? ' ingredient-ref' : ''}`}>
             <span className='ingredient-name'>
-                {ingredient.alias ?? ingredient.name}
+                {isRef && onNavigateToRecipe ? (
+                    <a className='ingredient-ref-link'
+                        onClick={() => onNavigateToRecipe(buildReferencePath(ingredient.reference!))}>
+                        <span className='codicon codicon-link ingredient-ref-icon'></span>
+                        {displayName}
+                    </a>
+                ) : (
+                    displayName
+                )}
                 {ingredient.note && (
                     <span className='ingredient-note'> ({ingredient.note})</span>
                 )}
@@ -270,20 +294,30 @@ interface IngredientsSidebarProps {
     sections: Section[];
     ingredients: Ingredient[];
     cookware: Cookware[];
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
 export const IngredientsSidebar = ({
     sections,
     ingredients,
     cookware,
+    onNavigateToRecipe,
 }: IngredientsSidebarProps): React.ReactElement => {
     const multiSection = sections.length > 1;
 
+    /** Sort indices so that reference ingredients appear first. */
+    const sortRefsFirst = (indices: number[]): number[] =>
+        [...indices].sort((a, b) => {
+            const aRef = ingredients[a]?.reference ? 0 : 1;
+            const bRef = ingredients[b]?.reference ? 0 : 1;
+            return aRef - bRef;
+        });
+
     const renderIngredientList = (indices: number[]): React.ReactElement => (
         <ul className='ingredient-list'>
-            {indices.map(idx => (
+            {sortRefsFirst(indices).map(idx => (
                 ingredients[idx] && (
-                    <IngredientRow key={idx} ingredient={ingredients[idx]} />
+                    <IngredientRow key={idx} ingredient={ingredients[idx]} onNavigateToRecipe={onNavigateToRecipe} />
                 )
             ))}
         </ul>
@@ -384,9 +418,12 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
 export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
+    onAddToShoppingList?: (scale: number) => void;
+    onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactElement => {
+export const RecipeView = ({ recipe, fileName, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
+    const [scale, setScale] = React.useState(1);
     const meta = recipe.metadata.map;
 
     // Derive title from metadata or strip the .cook extension from the filename.
@@ -404,9 +441,39 @@ export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactEl
 
     const description = meta['description'] ? String(meta['description']) : undefined;
 
+    const scaled = scaleRecipe(recipe, scale);
+
     return (
         <div>
-            <h1 className='recipe-title'>{title}</h1>
+            <div className='recipe-header'>
+                <h1 className='recipe-title'>{title}</h1>
+                <div className='recipe-header-actions'>
+                    <div className='recipe-scale-control'>
+                        <label className='recipe-scale-label'>Scale</label>
+                        <input
+                            className='recipe-scale-input'
+                            type='number'
+                            min={1}
+                            step={1}
+                            value={scale}
+                            onChange={e => {
+                                const val = parseFloat(e.target.value);
+                                if (Number.isFinite(val) && val > 0) {
+                                    setScale(val);
+                                }
+                            }}
+                            title='Scale factor'
+                        />
+                    </div>
+                    {onAddToShoppingList && (
+                        <button className='recipe-add-shopping-list' onClick={() => onAddToShoppingList(scale)}
+                            title='Add to Shopping List'>
+                            <span className='codicon codicon-add'></span>
+                            <span className='theia-shopping-cart-icon'></span>
+                        </button>
+                    )}
+                </div>
+            </div>
 
             {tags.length > 0 && (
                 <div className='recipe-tags'>
@@ -424,16 +491,17 @@ export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactEl
 
             <div className='recipe-grid'>
                 <IngredientsSidebar
-                    sections={recipe.sections}
-                    ingredients={recipe.ingredients}
-                    cookware={recipe.cookware}
+                    sections={scaled.sections}
+                    ingredients={scaled.ingredients}
+                    cookware={scaled.cookware}
+                    onNavigateToRecipe={onNavigateToRecipe}
                 />
                 <InstructionsPanel
-                    sections={recipe.sections}
-                    ingredients={recipe.ingredients}
-                    cookware={recipe.cookware}
-                    timers={recipe.timers}
-                    inlineQuantities={recipe.inline_quantities}
+                    sections={scaled.sections}
+                    ingredients={scaled.ingredients}
+                    cookware={scaled.cookware}
+                    timers={scaled.timers}
+                    inlineQuantities={scaled.inline_quantities}
                 />
             </div>
         </div>

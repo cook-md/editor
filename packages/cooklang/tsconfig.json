@@ -11,6 +11,7 @@
     { "path": "../editor" },
     { "path": "../filesystem" },
     { "path": "../monaco" },
+    { "path": "../navigator" },
     { "path": "../workspace" }
   ]
 }

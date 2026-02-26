@@ -5,6 +5,16 @@
 
 /** Parse a Cooklang recipe text and return the parsed result as JSON. */
 export declare function parse(input: string): string
+/**
+ * Generate a shopping list from one or more Cooklang recipes.
+ *
+ * - `recipes_json` – JSON array of `{ content: string, scale: number }` objects.
+ * - `aisle_conf` – optional aisle configuration text (cooklang shopping-list format).
+ * - `pantry_conf` – optional pantry configuration text (TOML format).
+ *
+ * Returns a JSON-serialized `ShoppingListResult`.
+ */
+export declare function generateShoppingList(recipesJson: string, aisleConf?: string | undefined | null, pantryConf?: string | undefined | null): string
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
