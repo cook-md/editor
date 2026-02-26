@@ -310,8 +310,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { parse, generateShoppingList, LspServer } = nativeBinding
+const { parse, generateShoppingList, parseMenu, LspServer } = nativeBinding
 
 module.exports.parse = parse
 module.exports.generateShoppingList = generateShoppingList
+module.exports.parseMenu = parseMenu
 module.exports.LspServer = LspServer
