@@ -12,6 +12,8 @@ import { EditorManager } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { SelectionService } from '@theia/core/lib/common/selection-service';
+import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { COOKLANG_LANGUAGE_ID } from '../common';
 import {
     MenuPreviewWidget,
@@ -57,6 +59,9 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     @inject(WidgetManager)
     protected readonly widgetManager: WidgetManager;
 
+    @inject(SelectionService)
+    protected readonly selectionService: SelectionService;
+
     readonly id = 'cooklang-menu-preview-open-handler';
     readonly label = 'Cooklang: Menu Preview';
 
@@ -87,10 +92,12 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
             execute: (...args: unknown[]) => this.openPreviewSide(args),
             isEnabled: (...args: unknown[]) => this.canOpenPreview(args),
         });
-        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_SOURCE, {
-            execute: (...args: unknown[]) => this.openSource(args),
-            isEnabled: (...args: unknown[]) => this.canOpenSource(args),
-        });
+        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_SOURCE,
+            UriAwareCommandHandler.MonoSelect(this.selectionService, {
+                execute: uri => this.editorManager.open(uri),
+                isEnabled: uri => uri.path.ext === '.menu',
+            })
+        );
     }
 
     // --- TabBarToolbarContribution ---
@@ -242,20 +249,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     }
 
     protected canOpenSource(args: unknown[] = []): boolean {
-        if (args.length === 0) {
-            return true;
-        }
         return this.resolveUri(args) !== undefined;
-    }
-
-    /**
-     * Opens the .menu file in the text editor, bypassing the preview OpenHandler.
-     */
-    protected async openSource(args: unknown[] = []): Promise<void> {
-        const uri = this.resolveUri(args);
-        if (uri) {
-            await this.editorManager.open(uri);
-        }
     }
 
     /**

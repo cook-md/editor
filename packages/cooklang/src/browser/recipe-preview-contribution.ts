@@ -12,6 +12,8 @@ import { EditorManager } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { SelectionService } from '@theia/core/lib/common/selection-service';
+import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
 import {
     RecipePreviewWidget,
@@ -60,6 +62,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     @inject(CooklangPreferences)
     protected readonly preferences: CooklangPreferences;
 
+    @inject(SelectionService)
+    protected readonly selectionService: SelectionService;
+
     readonly id = 'cooklang-preview-open-handler';
     readonly label = 'Cooklang: Recipe Preview';
 
@@ -90,10 +95,12 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             execute: (...args: unknown[]) => this.openPreviewSide(args),
             isEnabled: (...args: unknown[]) => this.canOpenPreview(args),
         });
-        commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE, {
-            execute: (...args: unknown[]) => this.openSource(args),
-            isEnabled: (...args: unknown[]) => this.canOpenSource(args),
-        });
+        commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE,
+            UriAwareCommandHandler.MonoSelect(this.selectionService, {
+                execute: uri => this.editorManager.open(uri),
+                isEnabled: uri => uri.path.ext === '.cook',
+            })
+        );
     }
 
     // --- TabBarToolbarContribution ---
@@ -245,20 +252,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     }
 
     protected canOpenSource(args: unknown[] = []): boolean {
-        if (args.length === 0) {
-            return true;
-        }
         return this.resolveUri(args) !== undefined;
-    }
-
-    /**
-     * Opens the .cook file in the text editor, bypassing the preview OpenHandler.
-     */
-    protected async openSource(args: unknown[] = []): Promise<void> {
-        const uri = this.resolveUri(args);
-        if (uri) {
-            await this.editorManager.open(uri);
-        }
     }
 
     /**
