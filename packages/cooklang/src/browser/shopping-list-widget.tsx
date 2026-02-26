@@ -3,7 +3,6 @@
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
-import { codicon } from '@theia/core/lib/browser';
 import * as React from '@theia/core/shared/react';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListView } from './shopping-list-components';
@@ -26,7 +25,7 @@ export class ShoppingListWidget extends ReactWidget {
         this.id = SHOPPING_LIST_WIDGET_ID;
         this.title.label = ShoppingListWidget.LABEL;
         this.title.caption = ShoppingListWidget.LABEL;
-        this.title.iconClass = codicon('checklist');
+        this.title.iconClass = 'theia-shopping-cart-icon';
         this.title.closable = true;
         this.addClass('theia-shopping-list');
         this.scrollOptions = {
@@ -37,6 +36,7 @@ export class ShoppingListWidget extends ReactWidget {
         this.toDispose.push(
             this.shoppingListService.onDidChange(() => this.update())
         );
+        this.update();
     }
 
     protected render(): React.ReactNode {

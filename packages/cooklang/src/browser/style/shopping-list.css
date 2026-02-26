@@ -1,5 +1,15 @@
 /* Shopping List — editor/document style, fully theme-aware */
 
+/* Custom shopping cart icon (Lucide, ISC license) */
+.theia-shopping-cart-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    -webkit-mask: url('../icons/shopping-cart.svg') center/16px no-repeat;
+    mask: url('../icons/shopping-cart.svg') center/16px no-repeat;
+    background-color: currentColor;
+}
+
 .theia-shopping-list {
     height: 100%;
     overflow-y: auto;

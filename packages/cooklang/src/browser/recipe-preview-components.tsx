@@ -12,6 +12,7 @@ import {
     Timer,
     InlineQuantity,
     formatQuantity,
+    scaleRecipe,
 } from '../common/recipe-types';
 
 // ---------------------------------------------------------------------------
@@ -384,9 +385,11 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
 export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
+    onAddToShoppingList?: (scale: number) => void;
 }
 
-export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactElement => {
+export const RecipeView = ({ recipe, fileName, onAddToShoppingList }: RecipeViewProps): React.ReactElement => {
+    const [scale, setScale] = React.useState(1);
     const meta = recipe.metadata.map;
 
     // Derive title from metadata or strip the .cook extension from the filename.
@@ -404,9 +407,39 @@ export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactEl
 
     const description = meta['description'] ? String(meta['description']) : undefined;
 
+    const scaled = scaleRecipe(recipe, scale);
+
     return (
         <div>
-            <h1 className='recipe-title'>{title}</h1>
+            <div className='recipe-header'>
+                <h1 className='recipe-title'>{title}</h1>
+                <div className='recipe-header-actions'>
+                    <div className='recipe-scale-control'>
+                        <label className='recipe-scale-label'>Scale</label>
+                        <input
+                            className='recipe-scale-input'
+                            type='number'
+                            min={1}
+                            step={1}
+                            value={scale}
+                            onChange={e => {
+                                const val = parseFloat(e.target.value);
+                                if (Number.isFinite(val) && val > 0) {
+                                    setScale(val);
+                                }
+                            }}
+                            title='Scale factor'
+                        />
+                    </div>
+                    {onAddToShoppingList && (
+                        <button className='recipe-add-shopping-list' onClick={() => onAddToShoppingList(scale)}
+                            title='Add to Shopping List'>
+                            <span className='codicon codicon-add'></span>
+                            <span className='theia-shopping-cart-icon'></span>
+                        </button>
+                    )}
+                </div>
+            </div>
 
             {tags.length > 0 && (
                 <div className='recipe-tags'>
@@ -424,16 +457,16 @@ export const RecipeView = ({ recipe, fileName }: RecipeViewProps): React.ReactEl
 
             <div className='recipe-grid'>
                 <IngredientsSidebar
-                    sections={recipe.sections}
-                    ingredients={recipe.ingredients}
-                    cookware={recipe.cookware}
+                    sections={scaled.sections}
+                    ingredients={scaled.ingredients}
+                    cookware={scaled.cookware}
                 />
                 <InstructionsPanel
-                    sections={recipe.sections}
-                    ingredients={recipe.ingredients}
-                    cookware={recipe.cookware}
-                    timers={recipe.timers}
-                    inlineQuantities={recipe.inline_quantities}
+                    sections={scaled.sections}
+                    ingredients={scaled.ingredients}
+                    cookware={scaled.cookware}
+                    timers={scaled.timers}
+                    inlineQuantities={scaled.inline_quantities}
                 />
             </div>
         </div>
