@@ -418,11 +418,12 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
 export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
+    onShowSource?: () => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
+export const RecipeView = ({ recipe, fileName, onShowSource, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
     const [scale, setScale] = React.useState(1);
     const meta = recipe.metadata.map;
 
@@ -470,6 +471,12 @@ export const RecipeView = ({ recipe, fileName, onAddToShoppingList, onNavigateTo
                             title='Add to Shopping List'>
                             <span className='codicon codicon-add'></span>
                             <span className='theia-shopping-cart-icon'></span>
+                        </button>
+                    )}
+                    {onShowSource && (
+                        <button className='recipe-show-source' onClick={onShowSource}
+                            title='Show Source'>
+                            <span className='codicon codicon-go-to-file'></span>
                         </button>
                     )}
                 </div>

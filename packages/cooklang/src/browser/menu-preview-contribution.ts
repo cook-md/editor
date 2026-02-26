@@ -3,9 +3,13 @@
 
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { CommandContribution, CommandRegistry, Command } from '@theia/core/lib/common/command';
+import { MenuModelRegistry, MenuContribution } from '@theia/core/lib/common/menu';
 import { KeybindingContribution, KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { ApplicationShell, WidgetManager } from '@theia/core/lib/browser';
+import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
+import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager } from '@theia/editor/lib/browser';
+import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { COOKLANG_LANGUAGE_ID } from '../common';
@@ -30,6 +34,11 @@ export namespace CooklangMenuPreviewCommands {
         label: 'Cooklang: Open Menu Preview to the Side',
         iconClass: 'codicon codicon-open-preview'
     };
+    export const OPEN_MENU_SOURCE: Command = {
+        id: 'cooklang.openMenuSource',
+        label: 'Cooklang: Open Menu Source',
+        iconClass: 'codicon codicon-go-to-file'
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +46,7 @@ export namespace CooklangMenuPreviewCommands {
 // ---------------------------------------------------------------------------
 
 @injectable()
-export class MenuPreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler {
+export class MenuPreviewContribution implements CommandContribution, KeybindingContribution, OpenHandler, TabBarToolbarContribution, MenuContribution {
 
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
@@ -71,14 +80,46 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
 
     registerCommands(commands: CommandRegistry): void {
         commands.registerCommand(CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW, {
-            execute: () => this.togglePreview(),
-            isEnabled: () => this.canPreviewMenu(),
-            isVisible: () => this.canPreviewMenu()
+            execute: (...args: unknown[]) => this.togglePreview(args),
+            isEnabled: (...args: unknown[]) => this.canTogglePreview(args),
         });
         commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE, {
-            execute: () => this.openPreviewSide(),
-            isEnabled: () => this.canPreviewMenu(),
-            isVisible: () => this.canPreviewMenu()
+            execute: (...args: unknown[]) => this.openPreviewSide(args),
+            isEnabled: (...args: unknown[]) => this.canOpenPreview(args),
+        });
+        commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_SOURCE, {
+            execute: (...args: unknown[]) => this.openSource(args),
+            isEnabled: (...args: unknown[]) => this.canOpenSource(args),
+        });
+    }
+
+    // --- TabBarToolbarContribution ---
+
+    registerToolbarItems(toolbar: TabBarToolbarRegistry): void {
+        toolbar.registerItem({
+            id: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id + '.toolbar',
+            command: CooklangMenuPreviewCommands.TOGGLE_MENU_PREVIEW.id,
+            tooltip: 'Toggle Menu Preview',
+            isVisible: widget => {
+                if (widget instanceof MenuPreviewWidget) {
+                    return true;
+                }
+                if (NavigatableWidget.is(widget)) {
+                    const uri = widget.getResourceUri();
+                    return uri !== undefined && uri.path.ext === '.menu';
+                }
+                return false;
+            },
+        });
+    }
+
+    // --- MenuContribution ---
+
+    registerMenus(menus: MenuModelRegistry): void {
+        menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, {
+            commandId: CooklangMenuPreviewCommands.OPEN_MENU_SOURCE.id,
+            label: 'Open Source',
+            when: 'resourceExtname == .menu',
         });
     }
 
@@ -128,24 +169,45 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     }
 
     /**
+     * Returns true when a toggle/preview action can be performed, accepting
+     * optional widget arguments from the toolbar.
+     */
+    protected canTogglePreview(args: unknown[] = []): boolean {
+        if (args.length > 0) {
+            if (args[0] instanceof MenuPreviewWidget) {
+                return true;
+            }
+            if (NavigatableWidget.is(args[0])) {
+                const uri = (args[0] as NavigatableWidget).getResourceUri();
+                if (uri && uri.path.ext === '.menu') {
+                    return true;
+                }
+            }
+        }
+        return this.canPreviewMenu();
+    }
+
+    /**
      * Toggles between the preview panel and the source editor.
      *
      * - If the current widget is a preview, reveal the originating editor.
      * - If the current widget is a menu editor, open/reveal the preview in
      *   the same area.
      */
-    protected async togglePreview(): Promise<void> {
-        const current = this.shell.currentWidget;
+    protected async togglePreview(args: unknown[] = []): Promise<void> {
+        const target = args.length > 0 ? args[0] : this.shell.currentWidget;
 
-        if (current instanceof MenuPreviewWidget) {
-            const resourceUri = current.getResourceUri();
+        if (target instanceof MenuPreviewWidget) {
+            const resourceUri = target.getResourceUri();
             if (resourceUri) {
                 await this.editorManager.open(resourceUri);
             }
             return;
         }
 
-        const uri = this.getActiveMenuEditorUri();
+        const uri = (NavigatableWidget.is(target) && target.getResourceUri()?.path.ext === '.menu')
+            ? target.getResourceUri()!
+            : this.getActiveMenuEditorUri();
         if (!uri) {
             return;
         }
@@ -156,10 +218,51 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     }
 
     /**
+     * Resolves a .menu URI from command arguments (context menu, toolbar widget)
+     * or falls back to the active menu editor.
+     */
+    protected resolveUri(args: unknown[]): URI | undefined {
+        if (args.length > 0 && args[0] instanceof URI) {
+            const uri = args[0] as URI;
+            if (uri.path.ext === '.menu') {
+                return uri;
+            }
+        }
+        if (args.length > 0 && NavigatableWidget.is(args[0])) {
+            const uri = (args[0] as NavigatableWidget).getResourceUri();
+            if (uri && uri.path.ext === '.menu') {
+                return uri;
+            }
+        }
+        return this.getActiveMenuEditorUri();
+    }
+
+    protected canOpenPreview(args: unknown[] = []): boolean {
+        return this.resolveUri(args) !== undefined;
+    }
+
+    protected canOpenSource(args: unknown[] = []): boolean {
+        if (args.length === 0) {
+            return true;
+        }
+        return this.resolveUri(args) !== undefined;
+    }
+
+    /**
+     * Opens the .menu file in the text editor, bypassing the preview OpenHandler.
+     */
+    protected async openSource(args: unknown[] = []): Promise<void> {
+        const uri = this.resolveUri(args);
+        if (uri) {
+            await this.editorManager.open(uri);
+        }
+    }
+
+    /**
      * Opens the preview panel to the right of the active menu editor.
      */
-    protected async openPreviewSide(): Promise<void> {
-        const uri = this.getActiveMenuEditorUri();
+    protected async openPreviewSide(args: unknown[] = []): Promise<void> {
+        const uri = this.resolveUri(args);
         if (!uri) {
             return;
         }

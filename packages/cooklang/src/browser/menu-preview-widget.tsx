@@ -6,6 +6,7 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
+import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
@@ -51,6 +52,9 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(OpenerService)
     protected readonly openerService: OpenerService;
+
+    @inject(EditorManager)
+    protected readonly editorManager: EditorManager;
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
@@ -175,6 +179,12 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
+    protected handleShowSource = (): void => {
+        if (this.uri) {
+            this.editorManager.open(this.uri);
+        }
+    };
+
     protected handleScaleChange = (newScale: number): void => {
         this.scale = newScale;
         this.parseCurrentContent();
@@ -205,6 +215,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
                     fileName={this.uri?.path.base ?? ''}
                     scale={this.scale}
                     onScaleChange={this.handleScaleChange}
+                    onShowSource={this.handleShowSource}
                     onAddToShoppingList={this.handleAddToShoppingList}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
                 />

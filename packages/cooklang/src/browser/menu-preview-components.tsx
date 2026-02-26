@@ -164,6 +164,7 @@ export interface MenuViewProps {
     fileName: string;
     scale: number;
     onScaleChange?: (scale: number) => void;
+    onShowSource?: () => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
 }
@@ -173,6 +174,7 @@ export const MenuView = ({
     fileName,
     scale,
     onScaleChange,
+    onShowSource,
     onAddToShoppingList,
     onNavigateToRecipe,
 }: MenuViewProps): React.ReactElement => {
@@ -213,6 +215,15 @@ export const MenuView = ({
                         >
                             <span className='codicon codicon-add'></span>
                             <span className='theia-shopping-cart-icon'></span>
+                        </button>
+                    )}
+                    {onShowSource && (
+                        <button
+                            className='menu-add-shopping-list'
+                            onClick={onShowSource}
+                            title='Show Source'
+                        >
+                            <span className='codicon codicon-go-to-file'></span>
                         </button>
                     )}
                 </div>

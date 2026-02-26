@@ -8,6 +8,7 @@ import {
     bindViewContribution,
 } from '@theia/core/lib/browser';
 import { CommandContribution } from '@theia/core/lib/common/command';
+import { MenuContribution } from '@theia/core/lib/common/menu';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
@@ -47,11 +48,13 @@ export default new ContainerModule(bind => {
             createRecipePreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
 
-    // Recipe preview commands and keybindings
+    // Recipe preview commands, keybindings, toolbar, and context menu
     bind(RecipePreviewContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(RecipePreviewContribution);
     bind(KeybindingContribution).toService(RecipePreviewContribution);
     bind(OpenHandler).toService(RecipePreviewContribution);
+    bind(TabBarToolbarContribution).toService(RecipePreviewContribution);
+    bind(MenuContribution).toService(RecipePreviewContribution);
 
     // Menu preview widget factory
     bind(WidgetFactory).toDynamicValue(ctx => ({
@@ -60,11 +63,13 @@ export default new ContainerModule(bind => {
             createMenuPreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
 
-    // Menu preview commands and keybindings
+    // Menu preview commands, keybindings, toolbar, and context menu
     bind(MenuPreviewContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(MenuPreviewContribution);
     bind(KeybindingContribution).toService(MenuPreviewContribution);
     bind(OpenHandler).toService(MenuPreviewContribution);
+    bind(TabBarToolbarContribution).toService(MenuPreviewContribution);
+    bind(MenuContribution).toService(MenuPreviewContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
