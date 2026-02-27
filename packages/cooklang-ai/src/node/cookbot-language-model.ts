@@ -33,7 +33,22 @@ export class CookbotLanguageModel implements LanguageModel {
     @inject(CookbotGrpcClient)
     protected readonly grpcClient: CookbotGrpcClient;
 
+    private initialized = false;
+
+    protected async ensureInitialized(): Promise<void> {
+        if (!this.initialized) {
+            try {
+                await this.grpcClient.initialize('');
+                this.initialized = true;
+            } catch (e) {
+                console.error('Failed to initialize cookbot session:', e);
+            }
+        }
+    }
+
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
+        await this.ensureInitialized();
+
         const messages = request.messages.map(msg => {
             if (LanguageModelMessage.isTextMessage(msg)) {
                 return { role: msg.actor === 'ai' ? 'assistant' : 'user', content: msg.text };
