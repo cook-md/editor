@@ -13,6 +13,10 @@ import {
     LanguageModelStreamResponsePart,
     UserRequest,
     LanguageModelMessage,
+    ToolCallResult,
+    ToolRequest,
+    isToolCallContent,
+    hasToolCallError,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
@@ -39,6 +43,7 @@ export class CookbotLanguageModel implements LanguageModel {
         if (!this.initialized) {
             try {
                 await this.grpcClient.initialize('');
+                this.grpcClient.connectToolStream();
                 this.initialized = true;
             } catch (e) {
                 console.error('Failed to initialize cookbot session:', e);
@@ -48,6 +53,11 @@ export class CookbotLanguageModel implements LanguageModel {
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
         await this.ensureInitialized();
+
+        // Wrap tool handlers to forward results back to cookbot via the ToolExecutionService stream.
+        // When Theia's delegate system calls a tool and gets a result, we also send it to cookbot
+        // so it can continue its internal conversation with Claude.
+        this.wrapToolHandlers(request.tools);
 
         const messages = request.messages.map(msg => {
             if (LanguageModelMessage.isTextMessage(msg)) {
@@ -77,6 +87,70 @@ export class CookbotLanguageModel implements LanguageModel {
 
         const stream = this.mapStream(grpcStream);
         return { stream } as LanguageModelStreamResponse;
+    }
+
+    /**
+     * Wraps each tool handler so that its result is also forwarded to cookbot
+     * via `grpcClient.sendToolResult()`. The tool_call's `id` (from the stream chunk)
+     * is used as the `executionId` correlation key.
+     */
+    protected wrapToolHandlers(tools: ToolRequest[] | undefined): void {
+        if (!tools) {
+            return;
+        }
+        for (const tool of tools) {
+            const originalHandler = tool.handler;
+            tool.handler = async (argString, ctx) => {
+                const toolCallId = ctx?.toolCallId;
+                try {
+                    const result = await originalHandler(argString, ctx);
+                    if (toolCallId) {
+                        const resultString = this.toolCallResultToString(result);
+                        const success = !hasToolCallError(result);
+                        this.grpcClient.sendToolResult(
+                            toolCallId,
+                            success,
+                            resultString,
+                            success ? undefined : resultString
+                        );
+                    }
+                    return result;
+                } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : String(error);
+                    if (toolCallId) {
+                        this.grpcClient.sendToolResult(toolCallId, false, '', errorMessage);
+                    }
+                    throw error;
+                }
+            };
+        }
+    }
+
+    /**
+     * Converts a ToolCallResult into a string suitable for sending to cookbot.
+     */
+    protected toolCallResultToString(result: ToolCallResult): string {
+        if (result === undefined) {
+            return '';
+        }
+        if (typeof result === 'string') {
+            return result;
+        }
+        if (isToolCallContent(result)) {
+            const textParts = result.content
+                .filter(part => part.type === 'text')
+                .map(part => (part as { text: string }).text);
+            if (textParts.length > 0) {
+                return textParts.join('\n');
+            }
+            const errorParts = result.content
+                .filter(part => part.type === 'error')
+                .map(part => (part as { data: string }).data);
+            if (errorParts.length > 0) {
+                return errorParts.join('\n');
+            }
+        }
+        return JSON.stringify(result);
     }
 
     private async *mapStream(
