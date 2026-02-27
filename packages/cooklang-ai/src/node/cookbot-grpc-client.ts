@@ -98,14 +98,16 @@ export class CookbotGrpcClient {
     }
 
     sendToolResult(executionId: string, success: boolean, result: string, error?: string): void {
-        if (this.toolStream) {
-            this.toolStream.write({
-                executionId,
-                success,
-                result,
-                error: error || '',
-            });
+        if (!this.toolStream) {
+            console.warn('Cannot send tool result: tool stream not connected');
+            return;
         }
+        this.toolStream.write({
+            executionId,
+            success,
+            result,
+            error: error || '',
+        });
     }
 
     private toolStream: grpc.ClientDuplexStream<any, any> | undefined;

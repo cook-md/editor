@@ -41,13 +41,9 @@ export class CookbotLanguageModel implements LanguageModel {
 
     protected async ensureInitialized(): Promise<void> {
         if (!this.initialized) {
-            try {
-                await this.grpcClient.initialize('');
-                this.grpcClient.connectToolStream();
-                this.initialized = true;
-            } catch (e) {
-                console.error('Failed to initialize cookbot session:', e);
-            }
+            await this.grpcClient.initialize('');
+            this.grpcClient.connectToolStream();
+            this.initialized = true;
         }
     }
 

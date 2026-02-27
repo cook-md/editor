@@ -9,6 +9,26 @@ import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import URI from '@theia/core/lib/common/uri';
+import { FileStat } from '@theia/filesystem/lib/common/files';
+
+function parseArgs(argString: string): Record<string, string> {
+    try {
+        return JSON.parse(argString);
+    } catch {
+        throw new Error('Invalid arguments: expected JSON string');
+    }
+}
+
+function validatePath(path: string, root: FileStat): URI {
+    const fileUri = root.resource.resolve(path);
+    const rootPath = root.resource.path.toString();
+    const filePath = fileUri.path.normalize().toString();
+    if (!filePath.startsWith(rootPath + '/') && filePath !== rootPath) {
+        throw new Error('Path escapes workspace root');
+    }
+    return fileUri;
+}
 
 @injectable()
 export class CookbotListFilesTool implements ToolProvider {
@@ -36,7 +56,7 @@ export class CookbotListFilesTool implements ToolProvider {
     }
 
     private async execute(argString: string): Promise<string> {
-        const args = JSON.parse(argString);
+        const args = parseArgs(argString);
         const roots = this.workspaceService.tryGetRoots();
         if (roots.length === 0) {
             return 'No workspace open';
@@ -76,12 +96,12 @@ export class CookbotReadFileTool implements ToolProvider {
     }
 
     private async execute(argString: string): Promise<string> {
-        const args = JSON.parse(argString);
+        const args = parseArgs(argString);
         const roots = this.workspaceService.tryGetRoots();
         if (roots.length === 0) {
             return 'No workspace open';
         }
-        const fileUri = roots[0].resource.resolve(args.path);
+        const fileUri = validatePath(args.path, roots[0]);
         try {
             const content = await this.fileService.read(fileUri);
             return content.value;
@@ -125,12 +145,12 @@ export class CookbotWriteFileTool implements ToolProvider {
     }
 
     private async execute(argString: string): Promise<string> {
-        const args = JSON.parse(argString);
+        const args = parseArgs(argString);
         const roots = this.workspaceService.tryGetRoots();
         if (roots.length === 0) {
             return 'No workspace open';
         }
-        const fileUri = roots[0].resource.resolve(args.path);
+        const fileUri = validatePath(args.path, roots[0]);
         try {
             await this.fileService.write(fileUri, args.content);
             return `File written: ${args.path}`;
