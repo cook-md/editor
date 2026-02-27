@@ -5,25 +5,40 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'path';
 import { Emitter, Event } from '@theia/core';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { CookbotChatChunk, CookbotInitResult, CookbotToolRequest } from '../common/cookbot-protocol';
+import { CookbotAuthService } from '../common/cookbot-auth-protocol';
 
 @injectable()
 export class CookbotGrpcClient {
+
+    @inject(CookbotAuthService)
+    protected readonly authService: CookbotAuthService;
 
     private chatService: any;
     private connectionService: any;
     private toolExecutionService: any;
     private sessionId: string | undefined;
+    private authToken: string = '';
 
     @postConstruct()
     protected init(): void {
-        this.connect();
+        try {
+            this.connect();
+        } catch (err) {
+            console.warn('CookbotGrpcClient: failed to connect on startup, will retry on first use:', (err as Error).message);
+        }
+    }
+
+    protected ensureConnected(): void {
+        if (!this.chatService) {
+            this.connect();
+        }
     }
 
     protected connect(): void {
@@ -36,32 +51,34 @@ export class CookbotGrpcClient {
             oneofs: true,
         });
         const proto = grpc.loadPackageDefinition(packageDefinition) as any;
-        const address = process.env.COOKBOT_ADDRESS || '127.0.0.1:50051';
+        const isPackaged = !!(process as any).resourcesPath && !(process as any).defaultApp;
+        const defaultAddress = isPackaged ? 'cookbot.cook.md:443' : '127.0.0.1:50052';
+        const address = process.env.COOKBOT_ADDRESS || defaultAddress;
+        const useSecure = address.includes('cook.md') || address.startsWith('https://');
+        const cleanAddress = address.replace(/^https?:\/\//, '');
+        const credentials = useSecure ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
-        this.chatService = new proto.cookbot.AIChatService(
-            address, grpc.credentials.createInsecure()
-        );
-        this.connectionService = new proto.cookbot.Connection(
-            address, grpc.credentials.createInsecure()
-        );
-        this.toolExecutionService = new proto.cookbot.ToolExecutionService(
-            address, grpc.credentials.createInsecure()
-        );
+        this.chatService = new proto.cookbot.AIChatService(cleanAddress, credentials);
+        this.connectionService = new proto.cookbot.Connection(cleanAddress, credentials);
+        this.toolExecutionService = new proto.cookbot.ToolExecutionService(cleanAddress, credentials);
     }
 
     async initialize(recipesDir: string, customInstructions?: string): Promise<CookbotInitResult> {
+        this.ensureConnected();
+        const token = await this.authService.getToken();
         return new Promise((resolve, reject) => {
             this.connectionService.Initialize({
                 customInstructions: customInstructions || '',
                 clientVersion: '0.1.0',
                 recipesDir,
-                authToken: '',
+                authToken: token || '',
             }, (err: grpc.ServiceError | null, response: any) => {
                 if (err) {
                     reject(err);
                     return;
                 }
                 this.sessionId = response.sessionId;
+                this.authToken = token || '';
                 resolve({
                     success: response.success,
                     sessionId: response.sessionId,
@@ -80,11 +97,12 @@ export class CookbotGrpcClient {
         conversationHistory: Array<{ role: string; content: string }>,
         cancellationToken?: CancellationToken
     ): { stream: AsyncIterable<CookbotChatChunk> } {
+        this.ensureConnected();
         const call = this.chatService.SendMessage({
             message,
             conversationHistory,
             sessionId: this.sessionId || '',
-            authToken: '',
+            authToken: this.authToken,
         });
 
         if (cancellationToken) {
@@ -116,6 +134,7 @@ export class CookbotGrpcClient {
     readonly onToolRequest: Event<CookbotToolRequest> = this.onToolRequestEmitter.event;
 
     connectToolStream(): void {
+        this.ensureConnected();
         this.setupToolStream();
     }
 

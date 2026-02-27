@@ -180,11 +180,18 @@ export class CookbotLanguageModel implements LanguageModel {
     private async *mapStream(
         grpcStream: AsyncIterable<CookbotChatChunk>
     ): AsyncIterable<LanguageModelStreamResponsePart> {
-        for await (const chunk of grpcStream) {
-            const part = this.mapChunkToPart(chunk);
-            if (part) {
-                yield part;
+        try {
+            for await (const chunk of grpcStream) {
+                const part = this.mapChunkToPart(chunk);
+                if (part) {
+                    yield part;
+                }
             }
+        } catch (error: unknown) {
+            if (error instanceof Error && 'code' in error && (error as any).code === 16) {
+                this.initPromise = undefined;
+            }
+            throw error;
         }
     }
 
