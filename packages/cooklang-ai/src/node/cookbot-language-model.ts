@@ -37,14 +37,15 @@ export class CookbotLanguageModel implements LanguageModel {
     @inject(CookbotGrpcClient)
     protected readonly grpcClient: CookbotGrpcClient;
 
-    private initialized = false;
+    private initPromise: Promise<void> | undefined;
 
     protected async ensureInitialized(): Promise<void> {
-        if (!this.initialized) {
-            await this.grpcClient.initialize('');
-            this.grpcClient.connectToolStream();
-            this.initialized = true;
+        if (!this.initPromise) {
+            this.initPromise = this.grpcClient.initialize('').then(() => {
+                this.grpcClient.connectToolStream();
+            });
         }
+        await this.initPromise;
     }
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
@@ -85,18 +86,26 @@ export class CookbotLanguageModel implements LanguageModel {
         return { stream } as LanguageModelStreamResponse;
     }
 
+    private readonly wrappedHandlers = new WeakSet<Function>();
+
     /**
      * Wraps each tool handler so that its result is also forwarded to cookbot
      * via `grpcClient.sendToolResult()`. The tool_call's `id` (from the stream chunk)
      * is used as the `executionId` correlation key.
+     *
+     * Uses a WeakSet to avoid wrapping the same handler more than once across
+     * multiple `request()` calls that share the same ToolRequest objects.
      */
     protected wrapToolHandlers(tools: ToolRequest[] | undefined): void {
         if (!tools) {
             return;
         }
         for (const tool of tools) {
+            if (this.wrappedHandlers.has(tool.handler)) {
+                continue;
+            }
             const originalHandler = tool.handler;
-            tool.handler = async (argString, ctx) => {
+            const wrapped = async (argString: string, ctx?: { toolCallId?: string }): Promise<ToolCallResult> => {
                 const toolCallId = ctx?.toolCallId;
                 try {
                     const result = await originalHandler(argString, ctx);
@@ -119,6 +128,8 @@ export class CookbotLanguageModel implements LanguageModel {
                     throw error;
                 }
             };
+            this.wrappedHandlers.add(wrapped);
+            tool.handler = wrapped;
         }
     }
 
@@ -201,12 +212,6 @@ export class CookbotLanguageModel implements LanguageModel {
                 return undefined;
 
             case 'usage_info':
-                if (chunk.usageInfo) {
-                    return {
-                        input_tokens: chunk.usageInfo.tokensUsed,
-                        output_tokens: 0,
-                    };
-                }
                 return undefined;
 
             case 'error':

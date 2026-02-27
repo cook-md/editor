@@ -36,7 +36,7 @@ export class CookbotGrpcClient {
             oneofs: true,
         });
         const proto = grpc.loadPackageDefinition(packageDefinition) as any;
-        const address = '127.0.0.1:50051';
+        const address = process.env.COOKBOT_ADDRESS || '127.0.0.1:50051';
 
         this.chatService = new proto.cookbot.AIChatService(
             address, grpc.credentials.createInsecure()
@@ -248,6 +248,7 @@ export class CookbotGrpcClient {
         if (chunk.streamEnd) {
             return { type: 'stream_end', streamEnd: true };
         }
+        console.warn('Unknown cookbot chunk type, skipping:', Object.keys(chunk));
         return { type: 'stream_end', streamEnd: true };
     }
 }
