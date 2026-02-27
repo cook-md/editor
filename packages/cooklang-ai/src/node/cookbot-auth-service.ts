@@ -8,6 +8,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
 import { injectable } from '@theia/core/shared/inversify';
@@ -53,6 +54,9 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
     async getToken(): Promise<string | undefined> {
         if (!this.authData) {
             await this.loadFromDisk();
+        }
+        if (this.authData) {
+            await this.tryRenewToken();
         }
         return this.authData?.token;
     }
@@ -132,6 +136,62 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
         }
     }
 
+    private async tryRenewToken(): Promise<void> {
+        if (!this.authData?.expiresAt) {
+            return;
+        }
+        const expiresAt = new Date(this.authData.expiresAt).getTime();
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        if (Date.now() < expiresAt - oneDayMs) {
+            return; // Not close to expiry
+        }
+        try {
+            const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
+            const url = new URL('/api/sessions/renew', webBaseUrl);
+            const response = await this.httpPost(url, this.authData.token);
+            const data = JSON.parse(response);
+            if (data.token) {
+                const { email, exp } = this.parseJwtPayload(data.token);
+                const renewed: AuthData = {
+                    token: data.token,
+                    email: email || this.authData.email,
+                    expiresAt: exp ? new Date(exp * 1000).toISOString() : this.authData.expiresAt,
+                    createdAt: this.authData.createdAt,
+                };
+                await this.saveToDisk(renewed);
+                this.authData = renewed;
+            }
+        } catch {
+            // Renewal failed, continue with existing token
+            console.warn('Token renewal failed, continuing with existing token');
+        }
+    }
+
+    private httpPost(url: URL, bearerToken: string): Promise<string> {
+        const lib = url.protocol === 'https:' ? https : http;
+        return new Promise((resolve, reject) => {
+            const req = lib.request(url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'Content-Type': 'application/json',
+                },
+            }, (res: http.IncomingMessage) => {
+                let body = '';
+                res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+                res.on('end', () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve(body);
+                    } else {
+                        reject(new Error(`Renewal request failed with status ${res.statusCode}`));
+                    }
+                });
+            });
+            req.on('error', reject);
+            req.end();
+        });
+    }
+
     private async loadFromDisk(): Promise<void> {
         try {
             const content = await fs.promises.readFile(this.getAuthFilePath(), 'utf8');
@@ -139,8 +199,15 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
             if (data.token) {
                 this.authData = data;
             }
-        } catch {
-            // File missing or corrupted — treat as logged out
+        } catch (err: unknown) {
+            if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+                // File exists but is corrupted — delete it
+                try {
+                    await fs.promises.unlink(this.getAuthFilePath());
+                } catch {
+                    // Ignore delete failure
+                }
+            }
         }
     }
 
