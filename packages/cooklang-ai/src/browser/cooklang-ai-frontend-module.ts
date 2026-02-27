@@ -8,7 +8,12 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { ChatAgent } from '@theia/ai-chat/lib/common';
 import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
+import { CommandContribution } from '@theia/core/lib/common/command';
+import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
+import { CookbotAuthService, CookbotAuthServicePath } from '../common/cookbot-auth-protocol';
 import { CookbotChatAgent } from './cookbot-chat-agent';
+import { CookbotAuthContribution } from './cookbot-auth-contribution';
 import { CookbotListFilesTool, CookbotReadFileTool, CookbotWriteFileTool } from './cookbot-tool-provider';
 
 export default new ContainerModule(bind => {
@@ -21,4 +26,14 @@ export default new ContainerModule(bind => {
     bindToolProvider(CookbotListFilesTool, bind);
     bindToolProvider(CookbotReadFileTool, bind);
     bindToolProvider(CookbotWriteFileTool, bind);
+
+    // Auth service RPC proxy
+    bind(CookbotAuthService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy<CookbotAuthService>(ctx.container, CookbotAuthServicePath)
+    ).inSingletonScope();
+
+    // Auth contribution (commands + status bar)
+    bind(CookbotAuthContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(CookbotAuthContribution);
+    bind(CommandContribution).toService(CookbotAuthContribution);
 });
