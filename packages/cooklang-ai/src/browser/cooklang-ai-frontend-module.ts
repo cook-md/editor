@@ -5,6 +5,8 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-export { CookbotGrpcClient } from './cookbot-grpc-client';
-export { CookbotLanguageModel } from './cookbot-language-model';
-export { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
+import { ContainerModule } from '@theia/core/shared/inversify';
+
+export default new ContainerModule(() => {
+    // Frontend bindings will be added in a future task (chat agent, etc.)
+});
