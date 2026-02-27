@@ -11,6 +11,7 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import { FileStat } from '@theia/filesystem/lib/common/files';
+import { minimatch } from 'minimatch';
 
 function parseArgs(argString: string): Record<string, string> {
     try {
@@ -33,6 +34,9 @@ function validatePath(path: string, root: FileStat): URI {
 @injectable()
 export class CookbotListFilesTool implements ToolProvider {
     static ID = 'cookbot_list_files';
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
@@ -62,7 +66,34 @@ export class CookbotListFilesTool implements ToolProvider {
             return 'No workspace open';
         }
         const root = roots[0];
-        return JSON.stringify({ root: root.resource.toString(), pattern: args.pattern || '**/*' });
+        const pattern = args.pattern || '**/*';
+        const rootPath = root.resource.path.toString();
+
+        const files: string[] = [];
+        await this.collectFiles(root.resource, rootPath, pattern, files);
+        return JSON.stringify(files);
+    }
+
+    private async collectFiles(dirUri: URI, rootPath: string, pattern: string, files: string[], depth: number = 0): Promise<void> {
+        if (depth > 20) {
+            return;
+        }
+        try {
+            const stat = await this.fileService.resolve(dirUri);
+            if (!stat.children) {
+                return;
+            }
+            for (const child of stat.children) {
+                const relativePath = child.resource.path.toString().substring(rootPath.length + 1);
+                if (child.isDirectory) {
+                    await this.collectFiles(child.resource, rootPath, pattern, files, depth + 1);
+                } else if (minimatch(relativePath, pattern)) {
+                    files.push(relativePath);
+                }
+            }
+        } catch {
+            // Directory may not exist or be inaccessible
+        }
     }
 }
 

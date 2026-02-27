@@ -19,6 +19,8 @@ import {
     hasToolCallError,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotChatChunk } from '../common/cookbot-protocol';
 
@@ -37,15 +39,30 @@ export class CookbotLanguageModel implements LanguageModel {
     @inject(CookbotGrpcClient)
     protected readonly grpcClient: CookbotGrpcClient;
 
+    @inject(WorkspaceServer)
+    protected readonly workspaceServer: WorkspaceServer;
+
     private initPromise: Promise<void> | undefined;
 
     protected async ensureInitialized(): Promise<void> {
         if (!this.initPromise) {
-            this.initPromise = this.grpcClient.initialize('').then(() => {
-                this.grpcClient.connectToolStream();
-            });
+            this.initPromise = this.doInitialize();
         }
         await this.initPromise;
+    }
+
+    private async doInitialize(): Promise<void> {
+        let recipesDir = '';
+        try {
+            const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
+            if (workspaceUri) {
+                recipesDir = FileUri.fsPath(workspaceUri);
+            }
+        } catch {
+            // Workspace may not be set yet
+        }
+        await this.grpcClient.initialize(recipesDir);
+        this.grpcClient.connectToolStream();
     }
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {

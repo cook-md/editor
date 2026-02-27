@@ -116,6 +116,16 @@ export class CookbotGrpcClient {
     readonly onToolRequest: Event<CookbotToolRequest> = this.onToolRequestEmitter.event;
 
     connectToolStream(): void {
+        this.setupToolStream();
+    }
+
+    private toolStreamReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+    private setupToolStream(): void {
+        if (this.toolStreamReconnectTimer) {
+            clearTimeout(this.toolStreamReconnectTimer);
+            this.toolStreamReconnectTimer = undefined;
+        }
         this.toolStream = this.toolExecutionService.ExecuteTools();
         this.toolStream!.on('data', (request: any) => {
             this.onToolRequestEmitter.fire({
@@ -127,7 +137,22 @@ export class CookbotGrpcClient {
         });
         this.toolStream!.on('error', (err: Error) => {
             console.error('Tool execution stream error:', err.message);
+            this.toolStream = undefined;
+            this.scheduleToolStreamReconnect();
         });
+        this.toolStream!.on('end', () => {
+            this.toolStream = undefined;
+            this.scheduleToolStreamReconnect();
+        });
+    }
+
+    private scheduleToolStreamReconnect(): void {
+        if (!this.toolStreamReconnectTimer) {
+            this.toolStreamReconnectTimer = setTimeout(() => {
+                console.info('Reconnecting tool execution stream...');
+                this.setupToolStream();
+            }, 3000);
+        }
     }
 
     private async *grpcStreamToAsync(call: grpc.ClientReadableStream<any>): AsyncIterable<CookbotChatChunk> {
