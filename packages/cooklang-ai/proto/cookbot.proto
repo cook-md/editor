@@ -1,0 +1,220 @@
+syntax = "proto3";
+
+package cookbot;
+
+// ============================================================================
+// AI Chat Service
+// ============================================================================
+
+service AIChatService {
+  // Send a message to Claude and stream responses back
+  rpc SendMessage(ChatRequest) returns (stream ChatChunk);
+
+  // Get usage statistics for current billing cycle
+  rpc GetUsage(GetUsageRequest) returns (UsageStats);
+
+  // Manually compact conversation context
+  rpc CompactContext(CompactContextRequest) returns (CompactContextResponse);
+}
+
+message ChatRequest {
+  string message = 1;
+  repeated Message conversation_history = 2;
+  string session_id = 3;
+  string auth_token = 4;  // JWT token for authentication
+}
+
+message Message {
+  string role = 1;  // "user" or "assistant"
+  string content = 2;
+}
+
+message ChatChunk {
+  oneof chunk_type {
+    string text_delta = 1;           // Incremental text from Claude
+    ToolExecution tool_execution = 2; // Tool being executed
+    string error = 3;                 // Error message
+    bool stream_end = 4;              // End of stream marker
+    ToolCall tool_call = 5;           // When Claude requests a tool
+    ToolResult tool_result = 6;       // When tool execution completes
+    ThinkingDelta thinking_delta = 7; // Extended thinking content (new)
+    UsageInfo usage_info = 8;         // Token usage info
+    ContextStatus context_status = 9; // Context compaction status
+    CompactionInfo compaction_info = 10; // Compaction occurred
+  }
+}
+
+message ThinkingDelta {
+  string thinking_text = 1;  // Incremental thinking content
+  bool is_signature = 2;     // True for signature_delta events
+  string signature = 3;      // Signature for verification (if is_signature=true)
+}
+
+message ToolExecution {
+  string tool_name = 1;
+  string status = 2;  // "started", "completed", "failed"
+}
+
+message ToolCall {
+  string tool_id = 1;              // Unique ID for this tool call
+  string tool_name = 2;            // Name of the tool being called
+  string tool_input = 3;           // JSON representation of tool parameters
+}
+
+message ToolResult {
+  string tool_id = 1;              // Matches the tool call ID
+  string tool_name = 2;            // Name of the tool that was executed
+  bool success = 3;                // Whether execution succeeded
+  string result = 4;               // Tool output (preview/summary)
+  string error = 5;                // Error message if failed
+}
+
+message UsageInfo {
+  int64 tokens_used = 1;      // Total tokens used this period
+  int64 token_limit = 2;      // User's token limit
+  bool warning = 3;           // True if >= 80% of limit
+  bool limit_exceeded = 4;    // True if >= 100% of limit
+}
+
+// Context status for compaction tracking
+message ContextStatus {
+  uint32 tokens_used = 1;           // Current context token count
+  uint32 token_limit = 2;           // Compaction threshold (180000)
+  float percentage_used = 3;        // 0.0 - 1.0
+  bool compaction_in_progress = 4;  // True during compaction
+}
+
+// Information about compaction that occurred
+message CompactionInfo {
+  repeated Message compacted_history = 1;  // New history for client to use
+  string summary = 2;                      // Generated summary
+  uint32 tokens_before = 3;
+  uint32 tokens_after = 4;
+  bool fallback_used = 5;                  // True if truncation fallback was used
+}
+
+// Usage statistics request
+message GetUsageRequest {
+  string session_id = 1;
+}
+
+// Usage statistics response
+message UsageStats {
+  int64 input_tokens_used = 1;
+  int64 output_tokens_used = 2;
+  int64 token_limit = 3;           // Combined token limit from subscription
+  string billing_period_start = 4;
+  string billing_period_end = 5;
+  string subscription_tier = 6;
+}
+
+// Request for manual context compaction
+message CompactContextRequest {
+  repeated Message conversation_history = 1;
+  string session_id = 2;
+  string auth_token = 3;
+}
+
+// Response for context compaction
+message CompactContextResponse {
+  CompactionInfo compaction_info = 1;
+}
+
+// ============================================================================
+// Web Search Service
+// ============================================================================
+
+service WebSearchService {
+  // Search for recipes using Exa API
+  rpc SearchRecipes(SearchRequest) returns (SearchResponse);
+
+  // Fetch content from a URL
+  rpc FetchUrl(FetchUrlRequest) returns (FetchUrlResponse);
+}
+
+message SearchRequest {
+  string query = 1;
+  int32 max_results = 2;  // Default: 5
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message SearchResult {
+  string title = 1;
+  string url = 2;
+  string snippet = 3;
+}
+
+message FetchUrlRequest {
+  string url = 1;
+}
+
+message FetchUrlResponse {
+  string content = 1;
+  string title = 2;
+}
+
+// ============================================================================
+// Connection Service (for COOK.md distribution)
+// ============================================================================
+
+service Connection {
+  // Initialize session and send custom instructions (COOK.md)
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+
+  // Logout and invalidate session
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+message InitializeRequest {
+  string custom_instructions = 1;  // Content of COOK.md (optional)
+  string client_version = 2;       // Client version for compatibility
+  string recipes_dir = 3;          // Path to recipes directory for system prompt
+  string auth_token = 4;           // JWT token for authentication
+}
+
+message InitializeResponse {
+  bool success = 1;
+  string server_version = 2;       // Server version
+  string session_id = 3;           // Unique session identifier
+  int64 user_id = 4;               // User ID from subscription
+  string email = 5;                // User email
+  int64 token_limit = 6;           // Monthly token limit
+}
+
+message LogoutRequest {
+  string session_id = 1;
+}
+
+message LogoutResponse {
+  bool success = 1;
+}
+
+// ============================================================================
+// Tool Execution Service (bidirectional streaming)
+// ============================================================================
+
+service ToolExecutionService {
+  // Bidirectional streaming for tool execution
+  // Client sends results as it executes tools
+  // Server sends requests as Claude needs tools
+  rpc ExecuteTools(stream ToolExecutionResult) returns (stream ToolExecutionRequest);
+}
+
+// Tool execution request from server to client
+message ToolExecutionRequest {
+  string execution_id = 1;           // Unique ID to match results
+  string tool_name = 2;              // Name of tool to execute
+  map<string, string> parameters = 3; // Tool parameters as key-value pairs
+  bool internal = 4;                  // If true, don't display in UI (nested tool calls)
+}
+
+// Tool execution result from client to server
+message ToolExecutionResult {
+  string execution_id = 1;           // Matches request ID
+  bool success = 2;                  // True if execution succeeded
+  string result = 3;                 // Tool output (JSON or plain text)
+  string error = 4;                  // Error message if failed (empty if success)
+}

@@ -21,7 +21,7 @@
   ],
   "keywords": ["theia-extension"],
   "license": "MIT",
-  "files": ["data", "lib", "src"],
+  "files": ["data", "lib", "proto", "src"],
   "scripts": {
     "build": "theiaext build",
     "clean": "theiaext clean",
