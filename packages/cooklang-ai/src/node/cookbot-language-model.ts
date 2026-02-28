@@ -22,6 +22,7 @@ import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
+import { CookbotToolExecutor } from './cookbot-tool-executor';
 import { CookbotChatChunk } from '../common/cookbot-protocol';
 
 @injectable()
@@ -51,6 +52,8 @@ export class CookbotLanguageModel implements LanguageModel {
         await this.initPromise;
     }
 
+    private toolExecutor: CookbotToolExecutor | undefined;
+
     private async doInitialize(): Promise<void> {
         let recipesDir = '';
         try {
@@ -62,6 +65,9 @@ export class CookbotLanguageModel implements LanguageModel {
             // Workspace may not be set yet
         }
         await this.grpcClient.initialize(recipesDir);
+        if (!this.toolExecutor && recipesDir) {
+            this.toolExecutor = new CookbotToolExecutor(this.grpcClient, recipesDir);
+        }
         this.grpcClient.connectToolStream();
     }
 
