@@ -6,7 +6,7 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
-import { ChatAgent } from '@theia/ai-chat/lib/common';
+import { ChatAgent, DefaultChatAgentId } from '@theia/ai-chat/lib/common';
 import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
@@ -21,6 +21,7 @@ export default new ContainerModule(bind => {
     bind(CookbotChatAgent).toSelf().inSingletonScope();
     bind(Agent).toService(CookbotChatAgent);
     bind(ChatAgent).toService(CookbotChatAgent);
+    bind(DefaultChatAgentId).toConstantValue({ id: 'cookbot' });
 
     // File tools
     bindToolProvider(CookbotListFilesTool, bind);
