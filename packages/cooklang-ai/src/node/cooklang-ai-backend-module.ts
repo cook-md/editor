@@ -14,6 +14,7 @@ import { CookbotAuthServiceImpl } from './cookbot-auth-service';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
+import { CookbotToolExecutor } from './cookbot-tool-executor';
 
 /**
  * Connection-scoped bindings for the Cookbot language model.
@@ -24,6 +25,7 @@ const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
     bind(CookbotGrpcClient).toSelf().inSingletonScope();
     bind(CookbotLanguageModel).toSelf().inSingletonScope();
     bind(CookbotLanguageModelProvider).toSelf().inSingletonScope();
+    bind(CookbotToolExecutor).toSelf().inSingletonScope();
 
     bind(LanguageModelProvider).toDynamicValue(ctx => {
         const provider = ctx.container.get(CookbotLanguageModelProvider);

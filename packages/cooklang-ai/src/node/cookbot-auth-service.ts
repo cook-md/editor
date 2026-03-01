@@ -118,6 +118,15 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
             });
         });
 
+        this.callbackServer.on('error', (err: NodeJS.ErrnoException) => {
+            if (err.code === 'EADDRINUSE') {
+                console.error(`Cook.md auth callback port ${CALLBACK_PORT} is already in use. Please close any other application using this port and try again.`);
+            } else {
+                console.error('Cook.md auth callback server error:', err.message);
+            }
+            this.cleanupCallbackServer();
+        });
+
         this.callbackServer.listen(CALLBACK_PORT, '127.0.0.1');
 
         this.callbackTimeout = setTimeout(() => {

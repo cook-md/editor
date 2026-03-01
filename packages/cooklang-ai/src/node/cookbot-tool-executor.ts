@@ -5,8 +5,12 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
+import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import * as fs from 'fs';
 import * as path from 'path';
+import { minimatch } from 'minimatch';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotToolRequest } from '../common/cookbot-protocol';
 
@@ -17,19 +21,47 @@ import { CookbotToolRequest } from '../common/cookbot-protocol';
  * str_replace_editor, etc.) to the client via the ToolExecutionService
  * gRPC stream. This class listens for those requests, executes them
  * against the local filesystem, and sends results back.
+ *
+ * NOTE: File operations use Node.js `fs` directly rather than Theia's
+ * FileService. This is intentional — the tool executor runs in the backend
+ * (per coding guidelines: "use Node.js APIs to manipulate the file system
+ * on the backend") and operates on behalf of the cookbot AI server, not
+ * the user's editor. This means changes won't appear in the editor's
+ * undo stack. If undo/redo integration is needed in the future, these
+ * operations would need to be routed through the frontend via RPC.
  */
+@injectable()
 export class CookbotToolExecutor {
 
-    private readonly rootDir: string;
-    private readonly grpcClient: CookbotGrpcClient;
+    @inject(CookbotGrpcClient)
+    protected readonly grpcClient: CookbotGrpcClient;
 
-    constructor(grpcClient: CookbotGrpcClient, rootDir: string) {
-        this.grpcClient = grpcClient;
-        this.rootDir = rootDir;
+    @inject(WorkspaceServer)
+    protected readonly workspaceServer: WorkspaceServer;
 
+    private rootDir: string | undefined;
+
+    @postConstruct()
+    protected init(): void {
         this.grpcClient.onToolRequest(request => {
             this.handleToolRequest(request);
         });
+    }
+
+    private async resolveRootDir(): Promise<string> {
+        if (this.rootDir) {
+            return this.rootDir;
+        }
+        try {
+            const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
+            if (workspaceUri) {
+                this.rootDir = FileUri.fsPath(workspaceUri);
+                return this.rootDir;
+            }
+        } catch {
+            // Workspace may not be set yet
+        }
+        throw new Error('No workspace is open');
     }
 
     private async handleToolRequest(request: CookbotToolRequest): Promise<void> {
@@ -57,17 +89,16 @@ export class CookbotToolExecutor {
             case 'delete_path':
                 return this.deletePath(parameters);
             case 'exit_app':
-                return 'Application exit requested.';
             case 'clear_conversation':
-                return 'Conversation cleared.';
+                throw new Error(`Tool '${toolName}' is not supported in the Theia client`);
             default:
                 throw new Error(`Unknown tool: ${toolName}`);
         }
     }
 
-    private resolveSafe(relativePath: string): string {
-        const resolved = path.resolve(this.rootDir, relativePath);
-        if (!resolved.startsWith(this.rootDir + path.sep) && resolved !== this.rootDir) {
+    private resolveSafe(rootDir: string, relativePath: string): string {
+        const resolved = path.resolve(rootDir, relativePath);
+        if (!resolved.startsWith(rootDir + path.sep) && resolved !== rootDir) {
             throw new Error('Path escapes workspace root');
         }
         return resolved;
@@ -99,7 +130,8 @@ export class CookbotToolExecutor {
         if (!filePath) {
             throw new Error("Missing 'path' parameter");
         }
-        const fullPath = this.resolveSafe(filePath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, filePath);
         const stat = await fs.promises.stat(fullPath);
 
         if (stat.isDirectory()) {
@@ -138,7 +170,8 @@ export class CookbotToolExecutor {
             throw new Error("Missing 'new_str' parameter");
         }
 
-        const fullPath = this.resolveSafe(filePath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, filePath);
         const content = await fs.promises.readFile(fullPath, 'utf8');
         const idx = content.indexOf(oldStr);
         if (idx === -1) {
@@ -159,7 +192,8 @@ export class CookbotToolExecutor {
             throw new Error("Missing 'file_text' parameter");
         }
 
-        const fullPath = this.resolveSafe(filePath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, filePath);
         await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
         await fs.promises.writeFile(fullPath, fileText, 'utf8');
         return `File created successfully: ${filePath}`;
@@ -179,7 +213,8 @@ export class CookbotToolExecutor {
             throw new Error("Missing 'new_str' parameter");
         }
         const insertLine = parseInt(insertLineStr, 10);
-        const fullPath = this.resolveSafe(filePath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, filePath);
         const content = await fs.promises.readFile(fullPath, 'utf8');
         const lines = content.split('\n');
 
@@ -204,8 +239,9 @@ export class CookbotToolExecutor {
     private async listFiles(params: Record<string, string>): Promise<string> {
         const pattern = params.pattern;
         const recursive = params.recursive !== 'false';
-        const files = await this.collectFiles(this.rootDir, this.rootDir, recursive);
-        const filtered = pattern ? files.filter(f => this.matchGlob(f, pattern)) : files;
+        const rootDir = await this.resolveRootDir();
+        const files = await this.collectFiles(rootDir, rootDir, recursive);
+        const filtered = pattern ? files.filter(f => minimatch(f, pattern)) : files;
         return filtered.length > 0 ? filtered.join('\n') : 'No files found.';
     }
 
@@ -235,23 +271,14 @@ export class CookbotToolExecutor {
         return results;
     }
 
-    private matchGlob(filePath: string, pattern: string): boolean {
-        // Simple glob matching: * matches any non-separator, ** matches anything
-        const regexStr = pattern
-            .replace(/\./g, '\\.')
-            .replace(/\*\*/g, '{{GLOBSTAR}}')
-            .replace(/\*/g, '[^/]*')
-            .replace(/\{\{GLOBSTAR\}\}/g, '.*');
-        return new RegExp(`^${regexStr}$`).test(filePath);
-    }
-
     private async listDirectory(params: Record<string, string>): Promise<string> {
         const dirPath = params.path || '.';
         return this.listDirectoryImpl(dirPath);
     }
 
     private async listDirectoryImpl(dirPath: string): Promise<string> {
-        const fullPath = this.resolveSafe(dirPath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, dirPath);
         const entries = await fs.promises.readdir(fullPath, { withFileTypes: true });
         const results = entries
             .filter(e => !e.name.startsWith('.'))
@@ -264,12 +291,21 @@ export class CookbotToolExecutor {
         if (!pattern) {
             throw new Error("Missing 'pattern' parameter");
         }
+        if (pattern.length > 1000) {
+            throw new Error('Search pattern too long (max 1000 characters)');
+        }
         const globPattern = params.glob;
         const caseInsensitive = params.case_insensitive === 'true';
-        const regex = new RegExp(pattern, caseInsensitive ? 'i' : '');
+        let regex: RegExp;
+        try {
+            regex = new RegExp(pattern, caseInsensitive ? 'i' : '');
+        } catch (err) {
+            throw new Error(`Invalid search pattern: ${err instanceof Error ? err.message : String(err)}`);
+        }
 
-        const files = await this.collectFiles(this.rootDir, this.rootDir, true);
-        const filtered = globPattern ? files.filter(f => this.matchGlob(f, globPattern)) : files;
+        const rootDir = await this.resolveRootDir();
+        const files = await this.collectFiles(rootDir, rootDir, true);
+        const filtered = globPattern ? files.filter(f => minimatch(f, globPattern)) : files;
 
         const matches: string[] = [];
         for (const file of filtered) {
@@ -277,7 +313,7 @@ export class CookbotToolExecutor {
                 break;
             }
             try {
-                const fullPath = path.join(this.rootDir, file);
+                const fullPath = path.join(rootDir, file);
                 const content = await fs.promises.readFile(fullPath, 'utf8');
                 const lines = content.split('\n');
                 for (let i = 0; i < lines.length; i++) {
@@ -304,8 +340,9 @@ export class CookbotToolExecutor {
         if (!to) {
             throw new Error("Missing 'to' parameter");
         }
-        const fromFull = this.resolveSafe(from);
-        const toFull = this.resolveSafe(to);
+        const rootDir = await this.resolveRootDir();
+        const fromFull = this.resolveSafe(rootDir, from);
+        const toFull = this.resolveSafe(rootDir, to);
         await fs.promises.mkdir(path.dirname(toFull), { recursive: true });
         await fs.promises.rename(fromFull, toFull);
         return `Renamed ${from} to ${to}`;
@@ -316,10 +353,19 @@ export class CookbotToolExecutor {
         if (!filePath) {
             throw new Error("Missing 'path' parameter");
         }
-        const fullPath = this.resolveSafe(filePath);
+        const rootDir = await this.resolveRootDir();
+        const fullPath = this.resolveSafe(rootDir, filePath);
+        if (fullPath === rootDir) {
+            throw new Error('Cannot delete workspace root');
+        }
         const stat = await fs.promises.stat(fullPath);
         if (stat.isDirectory()) {
-            await fs.promises.rm(fullPath, { recursive: true });
+            // Only allow deleting empty directories to prevent accidental data loss
+            const entries = await fs.promises.readdir(fullPath);
+            if (entries.length > 0) {
+                throw new Error('Cannot delete non-empty directory');
+            }
+            await fs.promises.rmdir(fullPath);
         } else {
             await fs.promises.unlink(fullPath);
         }

@@ -98,6 +98,8 @@ export class CookbotGrpcClient {
         cancellationToken?: CancellationToken
     ): { stream: AsyncIterable<CookbotChatChunk> } {
         this.ensureConnected();
+        // Auth token is sent as a proto field rather than gRPC metadata because
+        // the cookbot server expects it in the message body for simplicity.
         const call = this.chatService.SendMessage({
             message,
             conversationHistory,
@@ -180,8 +182,10 @@ export class CookbotGrpcClient {
 
         call.on('data', (chunk: any) => {
             const parsed = this.parseChatChunk(chunk);
-            queue.push(parsed);
-            resolve?.();
+            if (parsed) {
+                queue.push(parsed);
+                resolve?.();
+            }
         });
         call.on('error', (err: Error) => {
             queue.push(err);
@@ -207,7 +211,7 @@ export class CookbotGrpcClient {
         }
     }
 
-    private parseChatChunk(chunk: any): CookbotChatChunk {
+    private parseChatChunk(chunk: any): CookbotChatChunk | undefined {
         if (chunk.textDelta !== undefined && chunk.textDelta !== '') {
             return { type: 'text_delta', textDelta: chunk.textDelta };
         }
@@ -293,6 +297,6 @@ export class CookbotGrpcClient {
             return { type: 'stream_end', streamEnd: true };
         }
         console.warn('Unknown cookbot chunk type, skipping:', Object.keys(chunk));
-        return { type: 'stream_end', streamEnd: true };
+        return undefined;
     }
 }
