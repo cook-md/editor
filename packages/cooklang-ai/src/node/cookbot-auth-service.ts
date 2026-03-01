@@ -14,7 +14,8 @@ import * as path from 'path';
 import { injectable } from '@theia/core/shared/inversify';
 import { CookbotAuthService, AuthData, AuthState, LoginResult } from '../common/cookbot-auth-protocol';
 
-const CALLBACK_PORT = 19285;
+const CALLBACK_PORT_START = 19285;
+const CALLBACK_PORT_RETRIES = 10;
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
 @injectable()
@@ -28,10 +29,9 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
         this.cleanupCallbackServer();
 
         const state = crypto.randomUUID();
+        const port = await this.startCallbackServer(state);
         const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        const authUrl = `${webBaseUrl}/auth/desktops?callback=http://localhost:${CALLBACK_PORT}/callback&state=${state}&app=theia`;
-
-        this.startCallbackServer(state);
+        const authUrl = `${webBaseUrl}/auth/desktops?callback=http://localhost:${port}/callback&state=${state}&app=theia`;
 
         return { authUrl };
     }
@@ -71,9 +71,9 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
         return { status: 'logged-out' };
     }
 
-    private startCallbackServer(expectedState: string): void {
+    private async startCallbackServer(expectedState: string): Promise<number> {
         this.callbackServer = http.createServer((req, res) => {
-            const url = new URL(req.url || '/', `http://localhost:${CALLBACK_PORT}`);
+            const url = new URL(req.url || '/', 'http://localhost');
 
             if (url.pathname !== '/callback') {
                 res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -118,20 +118,39 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
             });
         });
 
-        this.callbackServer.on('error', (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
-                console.error(`Cook.md auth callback port ${CALLBACK_PORT} is already in use. Please close any other application using this port and try again.`);
-            } else {
-                console.error('Cook.md auth callback server error:', err.message);
-            }
-            this.cleanupCallbackServer();
-        });
-
-        this.callbackServer.listen(CALLBACK_PORT, '127.0.0.1');
+        const port = await this.listenOnAvailablePort(this.callbackServer);
 
         this.callbackTimeout = setTimeout(() => {
             this.cleanupCallbackServer();
         }, CALLBACK_TIMEOUT_MS);
+
+        return port;
+    }
+
+    private listenOnAvailablePort(server: http.Server): Promise<number> {
+        return new Promise((resolve, reject) => {
+            let attempt = 0;
+
+            const tryPort = (port: number): void => {
+                const onError = (err: NodeJS.ErrnoException): void => {
+                    server.removeListener('error', onError);
+                    if (err.code === 'EADDRINUSE' && attempt < CALLBACK_PORT_RETRIES) {
+                        attempt++;
+                        tryPort(port + 1);
+                    } else {
+                        reject(new Error(`Failed to start auth callback server: ${err.message}`));
+                    }
+                };
+
+                server.once('error', onError);
+                server.listen(port, '127.0.0.1', () => {
+                    server.removeListener('error', onError);
+                    resolve(port);
+                });
+            };
+
+            tryPort(CALLBACK_PORT_START);
+        });
     }
 
     private cleanupCallbackServer(): void {
