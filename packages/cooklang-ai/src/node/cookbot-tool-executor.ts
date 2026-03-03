@@ -13,6 +13,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotToolRequest } from '../common/cookbot-protocol';
+import { CookbotFileOperationsServer, CookbotFileOperationsClient } from '../common/cookbot-file-operations-protocol';
 
 /**
  * Handles internal tool execution requests from the cookbot server.
@@ -22,16 +23,14 @@ import { CookbotToolRequest } from '../common/cookbot-protocol';
  * gRPC stream. This class listens for those requests, executes them
  * against the local filesystem, and sends results back.
  *
- * NOTE: File operations use Node.js `fs` directly rather than Theia's
- * FileService. This is intentional — the tool executor runs in the backend
- * (per coding guidelines: "use Node.js APIs to manipulate the file system
- * on the backend") and operates on behalf of the cookbot AI server, not
- * the user's editor. This means changes won't appear in the editor's
- * undo stack. If undo/redo integration is needed in the future, these
- * operations would need to be routed through the frontend via RPC.
+ * NOTE: Write operations (str_replace, insert) are routed through the
+ * frontend via RPC when a CookbotFileOperationsClient is connected, so
+ * that edits go through Monaco and participate in the editor's undo stack.
+ * When no client is connected, operations fall back to direct Node.js `fs`
+ * access. Read-only operations (view, list, search) always use `fs` directly.
  */
 @injectable()
-export class CookbotToolExecutor {
+export class CookbotToolExecutor implements CookbotFileOperationsServer {
 
     @inject(CookbotGrpcClient)
     protected readonly grpcClient: CookbotGrpcClient;
@@ -40,6 +39,19 @@ export class CookbotToolExecutor {
     protected readonly workspaceServer: WorkspaceServer;
 
     private rootDir: string | undefined;
+    private client: CookbotFileOperationsClient | undefined;
+
+    setClient(client: CookbotFileOperationsClient | undefined): void {
+        this.client = client;
+    }
+
+    getClient(): CookbotFileOperationsClient | undefined {
+        return this.client;
+    }
+
+    dispose(): void {
+        this.client = undefined;
+    }
 
     @postConstruct()
     protected init(): void {
@@ -170,6 +182,11 @@ export class CookbotToolExecutor {
             throw new Error("Missing 'new_str' parameter");
         }
 
+        // Route through frontend for undo/redo support when available
+        if (this.client) {
+            return this.client.replaceText(filePath, oldStr, newStr);
+        }
+
         const rootDir = await this.resolveRootDir();
         const fullPath = this.resolveSafe(rootDir, filePath);
         const content = await fs.promises.readFile(fullPath, 'utf8');
@@ -213,6 +230,12 @@ export class CookbotToolExecutor {
             throw new Error("Missing 'new_str' parameter");
         }
         const insertLine = parseInt(insertLineStr, 10);
+
+        // Route through frontend for undo/redo support when available
+        if (this.client) {
+            return this.client.insertText(filePath, insertLine, newStr);
+        }
+
         const rootDir = await this.resolveRootDir();
         const fullPath = this.resolveSafe(rootDir, filePath);
         const content = await fs.promises.readFile(fullPath, 'utf8');
