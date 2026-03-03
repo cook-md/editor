@@ -10,6 +10,7 @@ import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connec
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { LanguageModelProvider } from '@theia/ai-core/lib/common';
 import { CookbotAuthService, CookbotAuthServicePath } from '../common/cookbot-auth-protocol';
+import { CookbotFileOperationsPath, CookbotFileOperationsClient } from '../common/cookbot-file-operations-protocol';
 import { CookbotAuthServiceImpl } from './cookbot-auth-service';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
@@ -26,6 +27,17 @@ const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
     bind(CookbotLanguageModel).toSelf().inSingletonScope();
     bind(CookbotLanguageModelProvider).toSelf().inSingletonScope();
     bind(CookbotToolExecutor).toSelf().inSingletonScope();
+
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new RpcConnectionHandler<CookbotFileOperationsClient>(
+            CookbotFileOperationsPath,
+            client => {
+                const executor = ctx.container.get(CookbotToolExecutor);
+                executor.setClient(client);
+                return executor;
+            }
+        )
+    ).inSingletonScope();
 
     bind(LanguageModelProvider).toDynamicValue(ctx => {
         const provider = ctx.container.get(CookbotLanguageModelProvider);
