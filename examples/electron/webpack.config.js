@@ -3,6 +3,8 @@
  * To reset delete this file and rerun theia build again.
  */
 // @ts-check
+const path = require('path');
+const CopyPlugin = require('copy-webpack-plugin');
 const configs = require('./gen-webpack.config.js');
 const nodeConfig = require('./gen-webpack.node.config.js');
 
@@ -22,6 +24,19 @@ configs[0].module.rules.push({
 nodeConfig.config.externals = Object.assign({}, nodeConfig.config.externals, {
     '@theia/cooklang-native': 'commonjs @theia/cooklang-native'
 });
+
+// Copy the cookbot gRPC proto file to where the bundled backend expects it.
+// The backend webpack bundle outputs to lib/backend/ and sets __dirname: false,
+// so CookbotGrpcClient resolves the proto as ../../proto/cookbot.proto relative
+// to lib/backend/, which lands at examples/electron/proto/.
+nodeConfig.config.plugins.push(
+    new CopyPlugin({
+        patterns: [{
+            from: path.resolve(__dirname, '../../packages/cooklang-ai/proto/cookbot.proto'),
+            to: path.resolve(__dirname, 'proto/cookbot.proto')
+        }]
+    })
+);
 
 module.exports = [
     ...configs,
