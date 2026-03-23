@@ -61,7 +61,8 @@
   },
   "scripts": {
     "all": "npm -s install && npm run -s lint && npm run -s build",
-    "build": "npm run compile && npm run build:applications",
+    "build": "npm run build:native && npm run compile && npm run build:applications",
+    "build:native": "cd packages/cooklang-native && npm run build",
     "build:applications": "npm run build:browser && npm run build:browser-only && npm run build:electron",
     "build:browser": "cd examples/browser && npm run build",
     "build:browser-only": "cd examples/browser-only && npm run build",

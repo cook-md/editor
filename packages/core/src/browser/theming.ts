@@ -173,28 +173,28 @@ export class BuiltinThemeProvider {
     static readonly darkTheme: Theme = {
         id: 'dark',
         type: 'dark',
-        label: 'Dark (Theia)',
+        label: 'Dark (Cooklang)',
         editorTheme: 'dark-theia' // loaded in /packages/monaco/src/browser/textmate/monaco-theme-registry.ts
     };
 
     static readonly lightTheme: Theme = {
         id: 'light',
         type: 'light',
-        label: 'Light (Theia)',
+        label: 'Light (Cooklang)',
         editorTheme: 'light-theia' // loaded in /packages/monaco/src/browser/textmate/monaco-theme-registry.ts
     };
 
     static readonly hcTheme: Theme = {
         id: 'hc-theia',
         type: 'hc',
-        label: 'High Contrast (Theia)',
+        label: 'High Contrast (Cooklang)',
         editorTheme: 'hc-theia' // loaded in /packages/monaco/src/browser/textmate/monaco-theme-registry.ts
     };
 
     static readonly hcLightTheme: Theme = {
         id: 'hc-theia-light',
         type: 'hcLight',
-        label: 'High Contrast Light (Theia)',
+        label: 'High Contrast Light (Cooklang)',
         editorTheme: 'hc-theia-light' // loaded in /packages/monaco/src/browser/textmate/monaco-theme-registry.ts
     };
 

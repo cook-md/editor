@@ -228,7 +228,7 @@ export const corePreferenceSchema: PreferenceSchema = {
         'workbench.colorTheme': {
             type: 'string',
             enum: ['dark', 'light', 'hc-theia'],
-            enumItemLabels: ['Dark (Theia)', 'Light (Theia)', 'High Contrast (Theia)'],
+            enumItemLabels: ['Dark (Cooklang)', 'Light (Cooklang)', 'High Contrast (Cooklang)'],
             default: 'light',
             description: nls.localizeByDefault('Specifies the color theme used in the workbench when {0} is not enabled.', '`#window.autoDetectColorScheme#`')
         },
