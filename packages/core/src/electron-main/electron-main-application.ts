@@ -255,9 +255,12 @@ export class ElectronMainApplication {
         }
         const iconPath = config.electron?.windowOptions?.icon;
         if (iconPath && typeof iconPath === 'string') {
-            const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
             if (isOSX && app.dock) {
-                app.dock.setIcon(resolvedIcon);
+                // Prefer .icns for macOS Dock icon to avoid sizing issues with transparent PNG padding
+                const icnsPath = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, path.dirname(iconPath), 'icon.icns');
+                const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
+                const fs = require('fs');
+                app.dock.setIcon(fs.existsSync(icnsPath) ? icnsPath : resolvedIcon);
             }
         }
     }
