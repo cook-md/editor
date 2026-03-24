@@ -1,0 +1,90 @@
+appId: org.cooklang.cookmd
+productName: CookMD
+copyright: Copyright © 2026 Cooklang
+electronDist: ../../node_modules/electron/dist
+electronVersion: 38.4.0
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/cooklang-native/**"
+nodeGypRebuild: false
+npmRebuild: false
+
+directories:
+  buildResources: resources
+
+# node_modules and package.json are copied automatically by electron-builder.
+# Theia apps need node_modules at runtime (src-gen requires packages from it).
+# Exclude only source files and tests within node_modules to reduce size.
+files:
+  - src-gen
+  - lib
+  - resources/icon-256.png
+  - resources/cookmd-logo.svg
+  - "!node_modules/**/@theia/**/src/**"
+  - "!node_modules/**/@theia/**/lib/**/*.spec.*"
+
+extraResources:
+  - from: ../../plugins
+    to: app/plugins
+
+publish:
+  provider: github
+  owner: cook-md
+  repo: editor
+
+# --- macOS ---
+mac:
+  icon: resources/icon.icns
+  category: public.app-category.lifestyle
+  darkModeSupport: true
+  protocols:
+    - name: cookmd
+      schemes:
+        - cookmd
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  sign: false
+  artifactName: ${productName}.${ext}
+
+# --- Windows ---
+win:
+  icon: resources/icon.ico
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+  artifactName: ${productName}Setup.${ext}
+
+# --- Linux ---
+linux:
+  icon: resources/icon-256.png
+  category: Utility
+  target:
+    - AppImage
+    - deb
+
+appImage:
+  artifactName: ${productName}.${ext}
+
+deb:
+  artifactName: ${productName}.${ext}
+  depends:
+    - libnotify4
+    - libxtst6
+    - libnss3
+
+afterPack: ./scripts/after-pack.js
