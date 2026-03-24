@@ -1,0 +1,97 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to GitHub Releases'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: macos-13
+            platform: mac
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout cooklang-language-server
+        uses: actions/checkout@v4
+        with:
+          repository: cook-md/cooklang-language-server
+          token: ${{ secrets.PUBLIC_REPO_PAT }}
+          path: ../cooklang-language-server
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/cooklang-native/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/cooklang-native/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build native addon
+        working-directory: packages/cooklang-native
+        run: npm run build
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Bundle Electron app
+        working-directory: examples/electron
+        run: npm run bundle
+
+      - name: Package & Publish
+        working-directory: examples/electron
+        run: npx electron-builder --publish ${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_PAT }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CookMD-${{ matrix.platform }}-${{ runner.arch }}
+          path: |
+            examples/electron/dist/*.dmg
+            examples/electron/dist/*.zip
+            examples/electron/dist/*.exe
+            examples/electron/dist/*.AppImage
+            examples/electron/dist/*.deb
+            examples/electron/dist/*.yml
+          if-no-files-found: warn
