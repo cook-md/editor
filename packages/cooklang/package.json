@@ -17,7 +17,8 @@
   "theiaExtensions": [
     {
       "frontend": "lib/browser/cooklang-frontend-module",
-      "backend": "lib/node/cooklang-backend-module"
+      "backend": "lib/node/cooklang-backend-module",
+      "electronMain": "lib/electron-main/cooklang-electron-main-module"
     }
   ],
   "keywords": [
