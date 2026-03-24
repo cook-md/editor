@@ -9,6 +9,7 @@
     "@theia/monaco": "1.68.0",
     "@theia/monaco-editor-core": "1.96.302",
     "@theia/navigator": "1.68.0",
+    "@theia/cooklang-native": "0.1.0",
     "@theia/workspace": "1.68.0",
     "tslib": "^2.6.2",
     "vscode-languageserver-protocol": "^3.17.2"

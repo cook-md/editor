@@ -4,6 +4,11 @@
   "description": "Cooklang native bindings via NAPI-RS",
   "main": "index.js",
   "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
   "napi": {
     "name": "cooklang-native",
     "triples": {}

@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "cooklang-language-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "cooklang 0.18.3",
