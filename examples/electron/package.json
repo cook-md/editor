@@ -62,12 +62,16 @@
     "@theia/userstorage": "1.68.0",
     "@theia/variable-resolver": "1.68.0",
     "@theia/vsx-registry": "1.68.0",
-    "@theia/workspace": "1.68.0"
+    "@theia/workspace": "1.68.0",
+    "electron-updater": "^6.3.0"
   },
   "scripts": {
     "build": "theiaext build && npm run -s bundle",
     "bundle": "npm run rebuild && theia build --mode development",
     "clean": "theiaext clean",
+    "deploy": "electron-builder --publish always",
+    "package": "electron-builder --publish never",
+    "package:dir": "electron-builder --dir",
     "compile": "tsc -b",
     "copy:plugins": "rm -rf ./plugins && cp -r ../../plugins ./plugins",
     "lint": "theiaext lint",
@@ -82,6 +86,7 @@
   },
   "devDependencies": {
     "@theia/cli": "1.68.0",
-    "electron": "38.4.0"
+    "electron": "38.4.0",
+    "electron-builder": "^26.0.0"
   }
 }
