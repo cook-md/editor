@@ -23,6 +23,10 @@ Owns authentication, subscription checking, sync lifecycle, and the account side
 - `cookbot-auth-protocol.ts` → `auth-protocol.ts`
 - Rename `CookbotAuth*` → `Auth*` (no longer AI-specific)
 
+**Auth changes during extraction (not just a move):**
+- Add `onDidChangeAuth: Event<AuthState>` event to `AuthService` — replaces the current polling-based approach (the existing auth contribution polls every 2 seconds; this is replaced with an event-driven pattern)
+- Change token renewal from lazy (renew on `getToken()` when near expiry) to eager (renew on app start, then every 24 hours on a timer)
+
 **New code:**
 - `SubscriptionService` (backend) — fetches and caches subscription state
 - `SubscriptionFrontendService` (browser) — RPC proxy for frontend access
@@ -107,9 +111,13 @@ interface SubscriptionState {
 Add `cooklang-sync-client` crate as dependency. The sync client runs as an async Tokio task inside the native addon process.
 
 Functions exposed to Node.js:
-- `startSync(recipesDir, dbPath, syncEndpoint, jwt, namespaceId)` — starts continuous bidirectional sync
-- `stopSync()` — gracefully cancels the running sync
-- `getSyncStatus()` — returns current sync state
+- `startSync(recipesDir, dbPath, syncEndpoint, jwt, namespaceId)` — spawns async Tokio task for continuous bidirectional sync, returns immediately
+- `stopSync()` — gracefully cancels the running sync task
+- `getSyncStatus()` — returns current sync state (polling-based)
+
+**Status notification mechanism:** `SyncService` in Node.js polls `getSyncStatus()` on a short interval (e.g. every 5 seconds) to detect status changes and forward them to the frontend via RPC events. This is simpler than a callback-based NAPI binding and sufficient given sync status changes are infrequent. The `cooklang-sync-client` crate already tracks status internally; we just read it.
+
+**Note:** `cooklang-sync-client` is an existing published crate (v0.4.9) already used by the `sync-agent` project. It is not new work.
 
 ### Backend: `SyncService`
 
