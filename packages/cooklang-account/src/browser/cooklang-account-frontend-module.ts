@@ -7,6 +7,7 @@ import { bindViewContribution } from '@theia/core/lib/browser/shell/view-contrib
 import { AuthService, AuthServicePath } from '../common/auth-protocol';
 import { AuthContribution } from './auth-contribution';
 import { SubscriptionService, SubscriptionServicePath } from '../common/subscription-protocol';
+import { SyncService, SyncServicePath } from '../common/sync-protocol';
 import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from './subscription-frontend-service';
 import { AccountWidget, ACCOUNT_WIDGET_ID } from './account-widget';
 import { AccountContribution } from './account-contribution';
@@ -25,6 +26,11 @@ export default new ContainerModule(bind => {
     // Subscription service RPC proxy
     bind(SubscriptionService).toDynamicValue(ctx =>
         ServiceConnectionProvider.createProxy<SubscriptionService>(ctx.container, SubscriptionServicePath)
+    ).inSingletonScope();
+
+    // Sync service RPC proxy
+    bind(SyncService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy<SyncService>(ctx.container, SyncServicePath)
     ).inSingletonScope();
 
     // Subscription frontend service (caches state for synchronous access)

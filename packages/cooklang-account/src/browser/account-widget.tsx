@@ -13,6 +13,7 @@ import * as React from '@theia/core/shared/react';
 import { AuthService, AuthState } from '../common/auth-protocol';
 import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from './subscription-frontend-service';
 import { SubscriptionState } from '../common/subscription-protocol';
+import { SyncService, SyncStatus } from '../common/sync-protocol';
 import { CookmdLoginCommand } from './auth-contribution';
 
 export const ACCOUNT_WIDGET_ID = 'account-widget';
@@ -35,7 +36,12 @@ export class AccountWidget extends ReactWidget {
     @inject(WindowService)
     protected readonly windowService: WindowService;
 
+    @inject(SyncService)
+    protected readonly syncService: SyncService;
+
     private authState: AuthState = { status: 'logged-out' };
+    private syncEnabled = false;
+    private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: null, error: null };
 
     @postConstruct()
     protected init(): void {
@@ -56,6 +62,15 @@ export class AccountWidget extends ReactWidget {
             this.update();
         });
         this.subscriptionFrontendService.onDidChangeSubscription(() => {
+            this.update();
+        });
+
+        this.syncService.isSyncEnabled().then(enabled => {
+            this.syncEnabled = enabled;
+            this.update();
+        });
+        this.syncService.onDidChangeSyncStatus(status => {
+            this.syncStatus = status;
             this.update();
         });
 
@@ -171,9 +186,24 @@ export class AccountWidget extends ReactWidget {
     }
 
     protected renderSyncControls(): React.ReactNode {
+        const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
         return (
-            <div className='theia-account-sync-placeholder'>
-                <span>Sync controls coming soon</span>
+            <div className='sync-controls'>
+                <div className='sync-toggle-row'>
+                    <span>Sync enabled</span>
+                    <input
+                        type='checkbox'
+                        checked={this.syncEnabled}
+                        onChange={this.handleSyncToggle}
+                    />
+                </div>
+                <div className='sync-status'>Status: {statusLabel}</div>
+                {this.syncStatus.lastSyncedAt &&
+                    <div className='sync-last'>Last synced: {this.syncStatus.lastSyncedAt}</div>
+                }
+                {this.syncStatus.error &&
+                    <div className='sync-error'>Error: {this.syncStatus.error}</div>
+                }
             </div>
         );
     }
@@ -205,6 +235,17 @@ export class AccountWidget extends ReactWidget {
 
     private handleLogin = (): void => {
         this.commandService.executeCommand(CookmdLoginCommand.id);
+    };
+
+    private handleSyncToggle = async (): Promise<void> => {
+        if (this.syncEnabled) {
+            await this.syncService.disableSync();
+            this.syncEnabled = false;
+        } else {
+            await this.syncService.enableSync();
+            this.syncEnabled = true;
+        }
+        this.update();
     };
 
     private handleManageSubscription = (e: React.MouseEvent): void => {
