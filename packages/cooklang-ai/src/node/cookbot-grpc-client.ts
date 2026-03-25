@@ -12,13 +12,13 @@ import * as path from 'path';
 import { Emitter, Event } from '@theia/core';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { CookbotChatChunk, CookbotInitResult, CookbotToolRequest } from '../common/cookbot-protocol';
-import { CookbotAuthService } from '../common/cookbot-auth-protocol';
+import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 
 @injectable()
 export class CookbotGrpcClient {
 
-    @inject(CookbotAuthService)
-    protected readonly authService: CookbotAuthService;
+    @inject(AuthService)
+    protected readonly authService: AuthService;
 
     private chatService: any;
     private connectionService: any;

@@ -9,9 +9,8 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connection-container-module';
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { LanguageModelProvider } from '@theia/ai-core/lib/common';
-import { CookbotAuthService, CookbotAuthServicePath } from '../common/cookbot-auth-protocol';
+import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { CookbotFileOperationsPath, CookbotFileOperationsClient } from '../common/cookbot-file-operations-protocol';
-import { CookbotAuthServiceImpl } from './cookbot-auth-service';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
@@ -44,19 +43,11 @@ const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
         return () => provider.getModels();
     }).inSingletonScope();
 
-    bind(CookbotAuthService).toDynamicValue(ctx =>
-        ctx.container.parent!.get(CookbotAuthService)
+    bind(AuthService).toDynamicValue(ctx =>
+        ctx.container.parent!.get(AuthService)
     ).inSingletonScope();
 });
 
 export default new ContainerModule(bind => {
     bind(ConnectionContainerModule).toConstantValue(cookbotConnectionModule);
-
-    bind(CookbotAuthServiceImpl).toSelf().inSingletonScope();
-    bind(CookbotAuthService).toService(CookbotAuthServiceImpl);
-    bind(ConnectionHandler).toDynamicValue(ctx =>
-        new RpcConnectionHandler(CookbotAuthServicePath, () =>
-            ctx.container.get(CookbotAuthService)
-        )
-    ).inSingletonScope();
 });
