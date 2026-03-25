@@ -1,3 +1,10 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import * as http from 'http';
 import * as https from 'https';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
@@ -67,9 +74,9 @@ export class SubscriptionServiceImpl implements SubscriptionService {
                 status: data.status ?? 'none',
                 hasAccess: data.has_access ?? false,
                 features: data.features ?? [],
-                plan: data.plan ?? null,
-                expiresAt: data.expires_at ?? null,
-                trialDaysRemaining: data.trial_days_remaining ?? null,
+                plan: data.plan ?? undefined,
+                expiresAt: data.expires_at ?? undefined,
+                trialDaysRemaining: data.trial_days_remaining ?? undefined,
             };
             this.cacheTimestamp = Date.now();
             this.onDidChangeSubscriptionEmitter.fire(this.cachedState);

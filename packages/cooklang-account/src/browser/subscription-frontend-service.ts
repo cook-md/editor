@@ -1,3 +1,10 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
 import { SubscriptionService, SubscriptionState } from '../common/subscription-protocol';

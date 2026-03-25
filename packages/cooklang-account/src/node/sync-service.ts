@@ -1,3 +1,10 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -22,7 +29,7 @@ export class SyncServiceImpl implements SyncService {
 
     private syncEnabled = false;
     private statusPollTimer: ReturnType<typeof setInterval> | undefined;
-    private lastStatus: SyncStatus = { status: 'stopped', lastSyncedAt: null, error: null };
+    private lastStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
 
     private readonly onDidChangeSyncStatusEmitter = new Emitter<SyncStatus>();
     readonly onDidChangeSyncStatus: Event<SyncStatus> = this.onDidChangeSyncStatusEmitter.event;
@@ -51,7 +58,7 @@ export class SyncServiceImpl implements SyncService {
 
     async getSyncStatus(): Promise<SyncStatus> {
         if (!this.syncEnabled) {
-            return { status: 'stopped', lastSyncedAt: null, error: null };
+            return { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         }
         try {
             const native = require('@theia/cooklang-native');
@@ -59,8 +66,8 @@ export class SyncServiceImpl implements SyncService {
             const nativeStatus = JSON.parse(rawJson);
             return {
                 status: nativeStatus.status,
-                lastSyncedAt: nativeStatus.lastSynced ?? null,
-                error: nativeStatus.lastError ?? null,
+                lastSyncedAt: nativeStatus.lastSynced ?? undefined,
+                error: nativeStatus.lastError ?? undefined,
             };
         } catch {
             return this.lastStatus;
@@ -113,7 +120,7 @@ export class SyncServiceImpl implements SyncService {
         } catch {
             // Native module not available
         }
-        this.lastStatus = { status: 'stopped', lastSyncedAt: null, error: null };
+        this.lastStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
     }
 

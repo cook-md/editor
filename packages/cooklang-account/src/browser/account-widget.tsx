@@ -41,7 +41,7 @@ export class AccountWidget extends ReactWidget {
 
     private authState: AuthState = { status: 'logged-out' };
     private syncEnabled = false;
-    private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: null, error: null };
+    private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
 
     @postConstruct()
     protected init(): void {
@@ -143,7 +143,7 @@ export class AccountWidget extends ReactWidget {
             <div className='theia-account-section'>
                 <div className='theia-account-plan-status'>
                     <span className='theia-account-plan-badge'>{planLabel}</span>
-                    {subscription.trialDaysRemaining !== null && subscription.trialDaysRemaining > 0 && (
+                    {subscription.trialDaysRemaining !== undefined && subscription.trialDaysRemaining > 0 && (
                         <span className='theia-account-trial-remaining'>
                             {subscription.trialDaysRemaining} days remaining
                         </span>

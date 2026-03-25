@@ -1,3 +1,10 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import { Event } from '@theia/core/lib/common';
 
 export const SubscriptionServicePath = '/services/cookmd-subscription';
@@ -7,9 +14,9 @@ export interface SubscriptionState {
     status: 'trial' | 'active' | 'expired' | 'grandfathered' | 'canceled' | 'paused' | 'none';
     hasAccess: boolean;
     features: string[];
-    plan: 'monthly' | 'annual' | null;
-    expiresAt: string | null;
-    trialDaysRemaining: number | null;
+    plan: 'monthly' | 'annual' | undefined;
+    expiresAt: string | undefined;
+    trialDaysRemaining: number | undefined;
 }
 
 export interface SubscriptionService {

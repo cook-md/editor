@@ -1,3 +1,10 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import { Event } from '@theia/core/lib/common';
 
 export const AuthServicePath = '/services/cookmd-auth';
