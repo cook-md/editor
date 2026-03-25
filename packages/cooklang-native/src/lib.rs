@@ -3,6 +3,85 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+// ── Sync globals ─────────────────────────────────────────────────────────────
+
+/// Shared state that tracks the current sync status, updated by the listener.
+struct SyncStatusState {
+    status: String,
+    last_error: Option<String>,
+    last_synced: Option<String>,
+}
+
+impl Default for SyncStatusState {
+    fn default() -> Self {
+        Self {
+            status: "idle".to_string(),
+            last_error: None,
+            last_synced: None,
+        }
+    }
+}
+
+/// Listener that receives callbacks from `cooklang-sync-client` and updates
+/// the shared `SyncStatusState`.
+struct NapiSyncStatusListener {
+    state: Arc<std::sync::Mutex<SyncStatusState>>,
+}
+
+impl cooklang_sync_client::SyncStatusListener for NapiSyncStatusListener {
+    fn on_status_changed(&self, status: cooklang_sync_client::SyncStatus) {
+        let mut state = self.state.lock().unwrap();
+        match status {
+            cooklang_sync_client::SyncStatus::Idle => {
+                state.status = "idle".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Syncing => {
+                state.status = "syncing".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Indexing => {
+                state.status = "indexing".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Downloading => {
+                state.status = "downloading".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Uploading => {
+                state.status = "uploading".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Error { message } => {
+                state.status = "error".to_string();
+                state.last_error = Some(message);
+            }
+        }
+    }
+
+    fn on_complete(&self, success: bool, message: Option<String>) {
+        let mut state = self.state.lock().unwrap();
+        if success {
+            state.status = "idle".to_string();
+            state.last_error = None;
+            // Record the completion time as ISO 8601 UTC.
+            state.last_synced = Some(chrono::Utc::now().to_rfc3339());
+        } else {
+            state.status = "error".to_string();
+            state.last_error = Some(message.unwrap_or_else(|| "Sync failed".to_string()));
+        }
+    }
+}
+
+/// Global sync context so we can cancel a running sync from `stop_sync`.
+static SYNC_CONTEXT: std::sync::Mutex<Option<Arc<cooklang_sync_client::SyncContext>>> =
+    std::sync::Mutex::new(None);
+
+/// Global shared status state so `get_sync_status` can read the latest values.
+static SYNC_STATUS_STATE: std::sync::OnceLock<Arc<std::sync::Mutex<SyncStatusState>>> =
+    std::sync::OnceLock::new();
+
+fn get_sync_status_state() -> Arc<std::sync::Mutex<SyncStatusState>> {
+    SYNC_STATUS_STATE
+        .get_or_init(|| Arc::new(std::sync::Mutex::new(SyncStatusState::default())))
+        .clone()
+}
+
 #[derive(Serialize)]
 pub struct ParseResult {
     pub recipe: Option<serde_json::Value>,
@@ -576,4 +655,106 @@ impl LspServer {
             None => Ok(None),
         }
     }
+}
+
+// ── CookCloud sync ───────────────────────────────────────────────────────────
+
+/// Start a background sync task.
+///
+/// Creates a `SyncContext`, attaches a status listener, stores the context
+/// globally (so `stop_sync` can cancel it), and spawns a tokio task that
+/// calls `cooklang_sync_client::run_async`.
+#[napi]
+pub fn start_sync(
+    recipes_dir: String,
+    db_path: String,
+    sync_endpoint: String,
+    jwt: String,
+    namespace_id: i32,
+) -> napi::Result<()> {
+    // Cancel any previous sync before starting a new one.
+    let _ = stop_sync();
+
+    let sync_context = cooklang_sync_client::SyncContext::new();
+
+    // Wire up the status listener.
+    let shared_state = get_sync_status_state();
+    {
+        let mut state = shared_state.lock().unwrap();
+        state.status = "syncing".to_string();
+        state.last_error = None;
+    }
+    let listener = Arc::new(NapiSyncStatusListener {
+        state: shared_state,
+    });
+    sync_context.set_listener(listener);
+
+    // Store context globally so `stop_sync` can reach it.
+    {
+        let mut global = SYNC_CONTEXT.lock().unwrap();
+        *global = Some(Arc::clone(&sync_context));
+    }
+
+    // Spawn the async sync task on the napi tokio runtime.
+    tokio::spawn(async move {
+        let result = cooklang_sync_client::run_async(
+            sync_context,
+            &recipes_dir,
+            &db_path,
+            &sync_endpoint,
+            &jwt,
+            namespace_id,
+            false, // bidirectional sync
+        )
+        .await;
+
+        if let Err(e) = result {
+            let shared_state = get_sync_status_state();
+            let mut state = shared_state.lock().unwrap();
+            state.status = "error".to_string();
+            state.last_error = Some(format!("{:?}", e));
+        }
+
+        // Clear the global context when the task finishes.
+        let mut global = SYNC_CONTEXT.lock().unwrap();
+        *global = None;
+    });
+
+    Ok(())
+}
+
+/// Cancel a running sync operation.
+///
+/// Retrieves the global `SyncContext` and calls `cancel()` on it, which
+/// triggers cancellation of all child tokens inside the sync client.
+#[napi]
+pub fn stop_sync() -> napi::Result<()> {
+    let global = SYNC_CONTEXT.lock().unwrap();
+    if let Some(ref ctx) = *global {
+        ctx.cancel();
+    }
+    Ok(())
+}
+
+/// Return the current sync status as a JSON string.
+///
+/// The returned JSON has the shape:
+/// ```json
+/// { "status": "idle"|"syncing"|"indexing"|"downloading"|"uploading"|"error",
+///   "lastError": "..." | null,
+///   "lastSynced": "2025-01-01T00:00:00Z" | null }
+/// ```
+#[napi]
+pub fn get_sync_status() -> napi::Result<String> {
+    let shared_state = get_sync_status_state();
+    let state = shared_state.lock().unwrap();
+
+    let value = serde_json::json!({
+        "status": state.status,
+        "lastError": state.last_error,
+        "lastSynced": state.last_synced,
+    });
+
+    serde_json::to_string(&value)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
 }

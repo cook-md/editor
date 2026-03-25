@@ -17,6 +17,32 @@ export declare function parse(input: string): string
 export declare function generateShoppingList(recipesJson: string, aisleConf?: string | undefined | null, pantryConf?: string | undefined | null): string
 /** Parse a Cooklang menu file and return a menu-specific JSON structure. */
 export declare function parseMenu(input: string, scale: number): string
+/**
+ * Start a background sync task.
+ *
+ * Creates a `SyncContext`, attaches a status listener, stores the context
+ * globally (so `stop_sync` can cancel it), and spawns a tokio task that
+ * calls `cooklang_sync_client::run_async`.
+ */
+export declare function startSync(recipesDir: string, dbPath: string, syncEndpoint: string, jwt: string, namespaceId: number): void
+/**
+ * Cancel a running sync operation.
+ *
+ * Retrieves the global `SyncContext` and calls `cancel()` on it, which
+ * triggers cancellation of all child tokens inside the sync client.
+ */
+export declare function stopSync(): void
+/**
+ * Return the current sync status as a JSON string.
+ *
+ * The returned JSON has the shape:
+ * ```json
+ * { "status": "idle"|"syncing"|"indexing"|"downloading"|"uploading"|"error",
+ *   "lastError": "..." | null,
+ *   "lastSynced": "2025-01-01T00:00:00Z" | null }
+ * ```
+ */
+export declare function getSyncStatus(): string
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
