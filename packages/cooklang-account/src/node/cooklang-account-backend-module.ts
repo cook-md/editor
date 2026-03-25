@@ -4,6 +4,8 @@ import { AuthService, AuthServicePath } from '../common/auth-protocol';
 import { AuthServiceImpl } from './auth-service';
 import { SubscriptionService, SubscriptionServicePath } from '../common/subscription-protocol';
 import { SubscriptionServiceImpl } from './subscription-service';
+import { SyncService, SyncServicePath } from '../common/sync-protocol';
+import { SyncServiceImpl } from './sync-service';
 
 export default new ContainerModule(bind => {
     bind(AuthServiceImpl).toSelf().inSingletonScope();
@@ -19,6 +21,14 @@ export default new ContainerModule(bind => {
     bind(ConnectionHandler).toDynamicValue(ctx =>
         new RpcConnectionHandler(SubscriptionServicePath, () =>
             ctx.container.get(SubscriptionService)
+        )
+    ).inSingletonScope();
+
+    bind(SyncServiceImpl).toSelf().inSingletonScope();
+    bind(SyncService).toService(SyncServiceImpl);
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new RpcConnectionHandler(SyncServicePath, () =>
+            ctx.container.get(SyncService)
         )
     ).inSingletonScope();
 });
