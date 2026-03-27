@@ -10,6 +10,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { AuthService, AuthState } from '../common/auth-protocol';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
@@ -186,10 +187,6 @@ export class SyncServiceImpl implements SyncService {
         if (!uri) {
             return undefined;
         }
-        try {
-            return new URL(uri).pathname;
-        } catch {
-            return uri;
-        }
+        return FileUri.fsPath(uri);
     }
 }

@@ -420,7 +420,8 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
             message.textContent = 'The AI assistant requires the AI addon. Add it to your subscription to get started.';
             button.textContent = 'Get AI Addon \u2192';
             button.addEventListener('click', () => {
-                this.windowService.openNewWindow('https://cook.md/pricing', { external: true });
+                const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
+                this.windowService.openNewWindow(`${webBaseUrl}/pricing`, { external: true });
             });
             const note = document.createElement('div');
             note.style.fontSize = '11px';

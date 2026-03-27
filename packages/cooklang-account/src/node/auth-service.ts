@@ -70,9 +70,6 @@ export class AuthServiceImpl implements AuthService {
         if (!this.authData) {
             await this.loadFromDisk();
         }
-        if (this.authData) {
-            await this.tryRenewToken();
-        }
         return this.authData?.token;
     }
 
@@ -200,9 +197,14 @@ export class AuthServiceImpl implements AuthService {
                 await this.saveToDisk(renewed);
                 this.authData = renewed;
             }
-        } catch {
-            console.warn('Token renewal failed, clearing session');
-            await this.logout();
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes('status 401') || message.includes('status 403')) {
+                console.warn('Token renewal returned auth error, clearing session');
+                await this.logout();
+            } else {
+                console.warn('Token renewal failed (will retry later):', message);
+            }
         }
     }
 

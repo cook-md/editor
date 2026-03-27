@@ -30,6 +30,7 @@ export class SubscriptionFrontendServiceImpl {
         });
         this.subscriptionService.getSubscription().then(state => {
             this.cachedState = state;
+            this.onDidChangeSubscriptionEmitter.fire(state);
         });
     }
 
