@@ -139,6 +139,12 @@
     flex-shrink: 0;
 }
 
+/* Sync status */
+
+.theia-account-sync-status {
+    color: var(--theia-descriptionForeground);
+}
+
 /* Sync error */
 
 .theia-account-sync-error {

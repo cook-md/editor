@@ -211,12 +211,12 @@ export class AccountWidget extends ReactWidget {
                         onChange={this.handleSyncToggle}
                     />
                 </div>
-                <div className='theia-account-row'>
+                <div className='theia-account-row theia-account-sync-status'>
                     <i className='codicon codicon-info' />
                     <span className='theia-account-row-label'>{statusLabel}</span>
                 </div>
                 {this.syncStatus.lastSyncedAt && (
-                    <div className='theia-account-row'>
+                    <div className='theia-account-row theia-account-sync-status'>
                         <i className='codicon codicon-history' />
                         <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/lastSynced', 'Last synced')}</span>
                         <span className='theia-account-row-detail'>{this.syncStatus.lastSyncedAt}</span>
@@ -275,16 +275,25 @@ export class AccountWidget extends ReactWidget {
     };
 
     private handleSyncToggle = async (): Promise<void> => {
-        if (this.syncEnabled) {
-            await this.syncService.disableSync();
-            this.syncEnabled = false;
-            this.stopSyncPolling();
-            this.syncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
-        } else {
-            await this.syncService.enableSync();
-            this.syncEnabled = true;
-            await this.refreshSyncStatus();
-            this.startSyncPolling();
+        const enabling = !this.syncEnabled;
+        // Optimistically update UI before the RPC call completes
+        this.syncEnabled = enabling;
+        this.update();
+
+        try {
+            if (enabling) {
+                await this.syncService.enableSync();
+                await this.refreshSyncStatus();
+                this.startSyncPolling();
+            } else {
+                await this.syncService.disableSync();
+                this.stopSyncPolling();
+                this.syncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
+            }
+        } catch (err) {
+            console.error('Failed to toggle sync:', err);
+            // Revert on failure
+            this.syncEnabled = !enabling;
         }
         this.update();
     };
