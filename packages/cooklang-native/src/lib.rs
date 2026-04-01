@@ -704,7 +704,7 @@ pub fn start_sync(
             &sync_endpoint,
             &jwt,
             namespace_id,
-            false, // bidirectional sync
+            false, // download_only = false → bidirectional sync
         )
         .await;
 

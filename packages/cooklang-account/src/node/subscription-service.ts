@@ -82,7 +82,13 @@ export class SubscriptionServiceImpl implements SubscriptionService {
             this.cacheTimestamp = Date.now();
             this.onDidChangeSubscriptionEmitter.fire(this.cachedState);
         } catch (err) {
-            console.warn('Failed to fetch subscription:', err);
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes('status 401') || message.includes('status 403')) {
+                console.warn('Subscription fetch returned auth error, clearing session');
+                await this.authService.logout();
+            } else {
+                console.warn('Failed to fetch subscription:', message);
+            }
         }
     }
 

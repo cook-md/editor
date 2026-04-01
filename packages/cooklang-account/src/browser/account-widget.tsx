@@ -57,9 +57,11 @@ export class AccountWidget extends ReactWidget {
         this.addClass('theia-account-widget');
         this.scrollOptions = { suppressScrollX: true };
 
-        // Use AuthContribution's local event instead of broken RPC proxy event
         this.authContribution.onDidChangeAuth(() => {
-            this.update();
+            this.syncService.isSyncEnabled().then(enabled => {
+                this.syncEnabled = enabled;
+                this.refreshSyncStatus().then(() => this.update());
+            });
         });
         this.subscriptionFrontendService.onDidChangeSubscription(() => {
             this.update();

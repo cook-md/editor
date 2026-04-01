@@ -5,6 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
+import '../../src/browser/style/index.css';
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
@@ -45,7 +46,7 @@ export default new ContainerModule(bind => {
     bind(SubscriptionFrontendService).toService(SubscriptionFrontendServiceImpl);
 
     // Account widget
-    bind(AccountWidget).toSelf();
+    bind(AccountWidget).toSelf().inSingletonScope();
     bind(WidgetFactory).toDynamicValue(ctx => ({
         id: ACCOUNT_WIDGET_ID,
         createWidget: () => ctx.container.get(AccountWidget),

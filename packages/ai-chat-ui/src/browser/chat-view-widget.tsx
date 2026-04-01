@@ -384,7 +384,7 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
 
         // Show overlay
         this.gateOverlay.style.display = 'flex';
-        this.gateOverlay.innerHTML = '';
+        this.gateOverlay.replaceChildren();
 
         const icon = document.createElement('div');
         icon.className = 'ai-chat-gate-icon';
