@@ -8,6 +8,7 @@
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
+import { nls } from '@theia/core/lib/common/nls';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import * as React from '@theia/core/shared/react';
 import { SubscriptionFrontendService } from './subscription-frontend-service';
@@ -121,13 +122,13 @@ export class AccountWidget extends ReactWidget {
                 </div>
 
                 <div className='theia-account-login-message'>
-                    Log in to access sync, AI assistance, and other features.
+                    {nls.localize('theia/cooklang-account/loginMessage', 'Log in to access sync, AI assistance, and other features.')}
                 </div>
                 <button
                     className='theia-button main theia-account-login-button'
                     onClick={this.handleLogin}
                 >
-                    Log In
+                    {nls.localize('theia/cooklang-account/loginButton', 'Log In')}
                 </button>
             </div>
         );
@@ -159,7 +160,7 @@ export class AccountWidget extends ReactWidget {
         return (
             <div className='theia-account-loading'>
                 <div className='theia-account-spinner' />
-                <span>Loading...</span>
+                <span>{nls.localize('theia/cooklang-account/loading', 'Loading...')}</span>
             </div>
         );
     }
@@ -175,18 +176,18 @@ export class AccountWidget extends ReactWidget {
                     <span className='theia-account-plan-badge'>{planLabel}</span>
                     {subscription.trialDaysRemaining !== undefined && subscription.trialDaysRemaining > 0 && (
                         <span className='theia-account-row-detail'>
-                            {subscription.trialDaysRemaining} days left
+                            {nls.localize('theia/cooklang-account/trialDaysLeft', '{0} days left', subscription.trialDaysRemaining)}
                         </span>
                     )}
                 </div>
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleManageSubscription}>
                     <i className='codicon codicon-link-external' />
-                    <span className='theia-account-row-label'>Manage Subscription</span>
+                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
-                <div className='theia-account-section-header'>CookCloud Sync</div>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
                 <div className='theia-account-row'>
                     <i className='codicon codicon-sync' />
-                    <span className='theia-account-row-label'>Enabled</span>
+                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/syncEnabled', 'Enabled')}</span>
                     <input
                         className='theia-account-sync-toggle'
                         type='checkbox'
@@ -201,7 +202,7 @@ export class AccountWidget extends ReactWidget {
                 {this.syncStatus.lastSyncedAt && (
                     <div className='theia-account-row'>
                         <i className='codicon codicon-history' />
-                        <span className='theia-account-row-label'>Last synced</span>
+                        <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/lastSynced', 'Last synced')}</span>
                         <span className='theia-account-row-detail'>{this.syncStatus.lastSyncedAt}</span>
                     </div>
                 )}
@@ -214,7 +215,7 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-section-header'></div>
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
-                    <span className='theia-account-row-label'>Log Out</span>
+                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/logOut', 'Log Out')}</span>
                 </div>
             </React.Fragment>
         );
@@ -223,22 +224,22 @@ export class AccountWidget extends ReactWidget {
     protected renderSubscriptionUpgrade(): React.ReactNode {
         return (
             <React.Fragment>
-                <div className='theia-account-section-header'>Subscription</div>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/subscriptionHeader', 'Subscription')}</div>
                 <div className='theia-account-upgrade-section'>
                     <div className='theia-account-upgrade-message'>
-                        Upgrade to unlock sync, AI assistance, and more features.
+                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock sync, AI assistance, and more features.')}
                     </div>
                     <button
                         className='theia-button main theia-account-upgrade-button'
                         onClick={this.handleUpgrade}
                     >
-                        Upgrade to Pro
+                        {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
                     </button>
                 </div>
                 <div className='theia-account-section-header'></div>
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
-                    <span className='theia-account-row-label'>Log Out</span>
+                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/logOut', 'Log Out')}</span>
                 </div>
             </React.Fragment>
         );

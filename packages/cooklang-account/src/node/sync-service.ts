@@ -35,9 +35,12 @@ export class SyncServiceImpl implements SyncService {
     readonly onDidChangeSyncStatus: Event<SyncStatus> = this.onDidChangeSyncStatusEmitter.event;
 
     @postConstruct()
-    protected init(): void {
-        this.loadPreferences();
+    protected async init(): Promise<void> {
+        await this.loadPreferences();
         this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
+        if (this.syncEnabled) {
+            await this.startSyncIfReady();
+        }
     }
 
     async enableSync(): Promise<void> {

@@ -230,6 +230,7 @@ p { color: #666; }
     }
 
     private startRenewalTimer(): void {
+        // Singleton — runs for the app lifetime, no need to store the handle
         setInterval(async () => {
             if (this.authData) {
                 await this.tryRenewToken();
