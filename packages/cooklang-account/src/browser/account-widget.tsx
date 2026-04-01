@@ -167,6 +167,7 @@ export class AccountWidget extends ReactWidget {
 
     protected renderSubscriptionActive(subscription: SubscriptionState): React.ReactNode {
         const planLabel = this.getPlanLabel(subscription);
+        const hasSyncFeature = subscription.features.includes('sync');
         const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
 
         return (
@@ -184,6 +185,19 @@ export class AccountWidget extends ReactWidget {
                     <i className='codicon codicon-link-external' />
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
+                {hasSyncFeature && this.renderSyncSection(statusLabel)}
+                <div className='theia-account-divider' />
+                <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
+                    <i className='codicon codicon-sign-out' />
+                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/logOut', 'Log Out')}</span>
+                </div>
+            </React.Fragment>
+        );
+    }
+
+    protected renderSyncSection(statusLabel: string): React.ReactNode {
+        return (
+            <React.Fragment>
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
                 <div className='theia-account-row'>
                     <i className='codicon codicon-sync' />
@@ -212,11 +226,6 @@ export class AccountWidget extends ReactWidget {
                         <span className='theia-account-row-label'>{this.syncStatus.error}</span>
                     </div>
                 )}
-                <div className='theia-account-section-header'></div>
-                <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
-                    <i className='codicon codicon-sign-out' />
-                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/logOut', 'Log Out')}</span>
-                </div>
             </React.Fragment>
         );
     }
@@ -236,7 +245,7 @@ export class AccountWidget extends ReactWidget {
                         {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
                     </button>
                 </div>
-                <div className='theia-account-section-header'></div>
+                <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/logOut', 'Log Out')}</span>
@@ -247,13 +256,15 @@ export class AccountWidget extends ReactWidget {
 
     private getPlanLabel(subscription: SubscriptionState): string {
         switch (subscription.status) {
-            case 'trial': return 'Trial';
-            case 'active': return subscription.plan === 'annual' ? 'Pro (Annual)' : 'Pro (Monthly)';
-            case 'grandfathered': return 'Pro (Grandfathered)';
-            case 'canceled': return 'Canceled';
-            case 'paused': return 'Paused';
-            case 'expired': return 'Expired';
-            default: return 'Free';
+            case 'trial': return nls.localize('theia/cooklang-account/planTrial', 'Trial');
+            case 'active': return subscription.plan === 'annual'
+                ? nls.localize('theia/cooklang-account/planAnnual', 'Pro (Annual)')
+                : nls.localize('theia/cooklang-account/planMonthly', 'Pro (Monthly)');
+            case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
+            case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
+            case 'paused': return nls.localize('theia/cooklang-account/planPaused', 'Paused');
+            case 'expired': return nls.localize('theia/cooklang-account/planExpired', 'Expired');
+            default: return nls.localize('theia/cooklang-account/planFree', 'Free');
         }
     }
 

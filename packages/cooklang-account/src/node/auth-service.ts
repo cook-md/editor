@@ -34,6 +34,7 @@ export interface AuthServiceBackend extends AuthService {
 export class AuthServiceImpl implements AuthServiceBackend {
 
     private authData: AuthData | undefined;
+    private authDataLoaded = false;
     private callbackServer: http.Server | undefined;
     private callbackTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -64,6 +65,7 @@ export class AuthServiceImpl implements AuthServiceBackend {
     async logout(): Promise<void> {
         this.cleanupCallbackServer();
         this.authData = undefined;
+        this.authDataLoaded = false;
 
         const authFilePath = this.getAuthFilePath();
         try {
@@ -78,14 +80,14 @@ export class AuthServiceImpl implements AuthServiceBackend {
     }
 
     async getToken(): Promise<string | undefined> {
-        if (!this.authData) {
+        if (!this.authDataLoaded) {
             await this.loadFromDisk();
         }
         return this.authData?.token;
     }
 
     async getAuthState(): Promise<AuthState> {
-        if (!this.authData) {
+        if (!this.authDataLoaded) {
             await this.loadFromDisk();
         }
         if (this.authData) {
@@ -280,6 +282,7 @@ p { color: #666; }
                 }
             }
         }
+        this.authDataLoaded = true;
     }
 
     private async saveToDisk(data: AuthData): Promise<void> {

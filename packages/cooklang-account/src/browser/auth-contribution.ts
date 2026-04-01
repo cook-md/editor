@@ -8,6 +8,7 @@
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Command, CommandContribution, CommandRegistry, CommandService } from '@theia/core/lib/common/command';
 import { Emitter, Event } from '@theia/core/lib/common';
+import { nls } from '@theia/core/lib/common/nls';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { StatusBar, StatusBarAlignment } from '@theia/core/lib/browser/status-bar/status-bar';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
@@ -87,15 +88,15 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
             this.statusBar.setElement(AUTH_STATUS_ID, {
                 text: `$(account) ${this._authState.email}`,
                 command: 'cookmd.manageSubscription',
-                tooltip: 'Manage Subscription',
+                tooltip: nls.localize('theia/cooklang-account/manageSubscriptionTooltip', 'Manage Subscription'),
                 alignment: StatusBarAlignment.LEFT,
                 priority: 100,
             });
         } else {
             this.statusBar.setElement(AUTH_STATUS_ID, {
-                text: '$(account) Login',
+                text: `$(account) ${nls.localize('theia/cooklang-account/statusBarLogin', 'Login')}`,
                 command: CookmdLoginCommand.id,
-                tooltip: 'Click to login to Cook.md',
+                tooltip: nls.localize('theia/cooklang-account/statusBarLoginTooltip', 'Click to login to Cook.md'),
                 alignment: StatusBarAlignment.LEFT,
                 priority: 100,
             });

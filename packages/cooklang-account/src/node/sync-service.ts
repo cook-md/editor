@@ -30,6 +30,7 @@ export class SyncServiceImpl implements SyncService {
 
     private syncEnabled = false;
     private lastStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
+    private nativeModule: typeof import('@theia/cooklang-native') | undefined;
 
     private readonly onDidChangeSyncStatusEmitter = new Emitter<SyncStatus>();
     readonly onDidChangeSyncStatus: Event<SyncStatus> = this.onDidChangeSyncStatusEmitter.event;
@@ -64,7 +65,7 @@ export class SyncServiceImpl implements SyncService {
             return { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         }
         try {
-            const native = require('@theia/cooklang-native');
+            const native = this.getNativeModule();
             const rawJson = native.getSyncStatus();
             const nativeStatus = JSON.parse(rawJson);
             return {
@@ -101,7 +102,7 @@ export class SyncServiceImpl implements SyncService {
         const syncEndpoint = `${webBaseUrl}/api`;
 
         try {
-            const native = require('@theia/cooklang-native');
+            const native = this.getNativeModule();
             native.startSync(
                 recipesDir,
                 SYNC_DB_PATH,
@@ -116,7 +117,7 @@ export class SyncServiceImpl implements SyncService {
 
     private async stopSync(): Promise<void> {
         try {
-            const native = require('@theia/cooklang-native');
+            const native = this.getNativeModule();
             native.stopSync();
         } catch {
             // Native module not available
@@ -132,6 +133,14 @@ export class SyncServiceImpl implements SyncService {
         } else if (this.syncEnabled) {
             await this.startSyncIfReady();
         }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private getNativeModule(): any {
+        if (!this.nativeModule) {
+            this.nativeModule = require('@theia/cooklang-native');
+        }
+        return this.nativeModule;
     }
 
     private extractUserId(token: string): number | undefined {

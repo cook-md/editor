@@ -30,6 +30,8 @@ import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 
+const WEB_BASE_URL = 'https://cook.md';
+
 export namespace ChatViewWidget {
     export interface State {
         locked?: boolean;
@@ -409,8 +411,7 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
                 'The AI assistant requires the AI addon. Add it to your subscription to get started.');
             button.textContent = nls.localize('theia/ai-chat/gate/upgradeButton', 'Get AI Addon \u2192');
             button.addEventListener('click', () => {
-                const webBaseUrl = process.env['WEB_BASE_URL'] || 'https://cook.md';
-                this.windowService.openNewWindow(`${webBaseUrl}/pricing`, { external: true });
+                this.windowService.openNewWindow(`${WEB_BASE_URL}/pricing`, { external: true });
             });
             const note = document.createElement('div');
             note.className = 'ai-chat-gate-note';
