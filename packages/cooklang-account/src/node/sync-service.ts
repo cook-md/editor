@@ -46,6 +46,7 @@ export class SyncServiceImpl implements SyncService {
 
     async enableSync(): Promise<void> {
         this.syncEnabled = true;
+        this.lastStatus = { status: 'idle', lastSyncedAt: undefined, error: undefined };
         await this.savePreferences();
         await this.startSyncIfReady();
     }
@@ -68,12 +69,17 @@ export class SyncServiceImpl implements SyncService {
             const native = this.getNativeModule();
             const rawJson = native.getSyncStatus();
             const nativeStatus = JSON.parse(rawJson);
-            return {
+            this.lastStatus = {
                 status: nativeStatus.status,
                 lastSyncedAt: nativeStatus.lastSynced ?? undefined,
                 error: nativeStatus.lastError ?? undefined,
             };
+            return this.lastStatus;
         } catch {
+            // Native module unavailable — if sync is enabled, report idle rather than stopped
+            if (this.lastStatus.status === 'stopped') {
+                return { status: 'idle', lastSyncedAt: undefined, error: undefined };
+            }
             return this.lastStatus;
         }
     }
