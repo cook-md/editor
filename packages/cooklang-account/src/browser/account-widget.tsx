@@ -278,6 +278,9 @@ export class AccountWidget extends ReactWidget {
         const enabling = !this.syncEnabled;
         // Optimistically update UI before the RPC call completes
         this.syncEnabled = enabling;
+        if (enabling) {
+            this.syncStatus = { status: 'idle', lastSyncedAt: undefined, error: undefined };
+        }
         this.update();
 
         try {
