@@ -20,8 +20,18 @@ const CALLBACK_PORT_RETRIES = 10;
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 const RENEWAL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Node-only extension of AuthService that exposes the auth-change event.
+ * Backend services should inject this symbol instead of AuthService when
+ * they need to react to auth state changes.
+ */
+export const AuthServiceBackend = Symbol('AuthServiceBackend');
+export interface AuthServiceBackend extends AuthService {
+    readonly onDidChangeAuth: Event<AuthState>;
+}
+
 @injectable()
-export class AuthServiceImpl implements AuthService {
+export class AuthServiceImpl implements AuthServiceBackend {
 
     private authData: AuthData | undefined;
     private callbackServer: http.Server | undefined;
@@ -31,11 +41,12 @@ export class AuthServiceImpl implements AuthService {
     readonly onDidChangeAuth: Event<AuthState> = this.onDidChangeAuthEmitter.event;
 
     @postConstruct()
-    protected async init(): Promise<void> {
-        await this.loadFromDisk();
-        if (this.authData) {
-            await this.tryRenewToken();
-        }
+    protected init(): void {
+        this.loadFromDisk().then(() => {
+            if (this.authData) {
+                this.tryRenewToken();
+            }
+        });
         this.startRenewalTimer();
     }
 
@@ -52,17 +63,17 @@ export class AuthServiceImpl implements AuthService {
 
     async logout(): Promise<void> {
         this.cleanupCallbackServer();
+        this.authData = undefined;
 
         const authFilePath = this.getAuthFilePath();
         try {
             await fs.promises.unlink(authFilePath);
         } catch (err: unknown) {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw err;
+                console.warn('Failed to remove auth file:', (err as Error).message);
             }
         }
 
-        this.authData = undefined;
         this.onDidChangeAuthEmitter.fire({ status: 'logged-out' });
     }
 
@@ -121,12 +132,22 @@ export class AuthServiceImpl implements AuthService {
                 this.authData = authData;
 
                 res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end('<html><body><h1>Login successful!</h1><p>You can close this tab and return to the editor.</p></body></html>');
+                res.end(`<html><head><style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+.container { text-align: center; }
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+p { color: #666; }
+</style></head><body><div class="container"><h1>Login successful!</h1><p>You can close this tab and return to the editor.</p></div></body></html>`);
                 this.cleanupCallbackServer();
                 this.onDidChangeAuthEmitter.fire({ status: 'logged-in', email: authData.email });
             }).catch(() => {
                 res.writeHead(500, { 'Content-Type': 'text/html' });
-                res.end('<html><body><h1>Error</h1><p>Failed to save authentication data. Please try again.</p></body></html>');
+                res.end(`<html><head><style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+.container { text-align: center; }
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; color: #c44; }
+p { color: #666; }
+</style></head><body><div class="container"><h1>Error</h1><p>Failed to save authentication data. Please try again.</p></div></body></html>`);
                 this.cleanupCallbackServer();
             });
         });

@@ -8,14 +8,25 @@
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
 import { SubscriptionService, SubscriptionState } from '../common/subscription-protocol';
+import { AuthContribution } from './auth-contribution';
 
 export const SubscriptionFrontendService = Symbol('SubscriptionFrontendService');
 
+export interface SubscriptionFrontendService {
+    readonly onDidChangeSubscription: Event<SubscriptionState | undefined>;
+    readonly subscription: SubscriptionState | undefined;
+    hasFeature(name: string): Promise<boolean>;
+    refresh(): Promise<void>;
+}
+
 @injectable()
-export class SubscriptionFrontendServiceImpl {
+export class SubscriptionFrontendServiceImpl implements SubscriptionFrontendService {
 
     @inject(SubscriptionService)
     protected readonly subscriptionService: SubscriptionService;
+
+    @inject(AuthContribution)
+    protected readonly authContribution: AuthContribution;
 
     private cachedState: SubscriptionState | undefined;
 
@@ -24,9 +35,18 @@ export class SubscriptionFrontendServiceImpl {
 
     @postConstruct()
     protected init(): void {
-        this.subscriptionService.onDidChangeSubscription(state => {
-            this.cachedState = state;
-            this.onDidChangeSubscriptionEmitter.fire(state);
+        // NOTE: Do NOT subscribe to subscriptionService.onDidChangeSubscription.
+        // Events don't work over the simple RpcConnectionHandler.
+        // Instead, listen to local auth changes and re-fetch subscription.
+        this.authContribution.onDidChangeAuth(async state => {
+            if (state.status === 'logged-in') {
+                const sub = await this.subscriptionService.getSubscription();
+                this.cachedState = sub;
+                this.onDidChangeSubscriptionEmitter.fire(sub);
+            } else {
+                this.cachedState = undefined;
+                this.onDidChangeSubscriptionEmitter.fire(undefined);
+            }
         });
         this.subscriptionService.getSubscription().then(state => {
             this.cachedState = state;

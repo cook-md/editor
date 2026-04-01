@@ -31,7 +31,7 @@ export interface LoginResult {
  * treated as RPC notifications by Theia's proxy factory — the listener
  * function cannot be serialised, arrives as `undefined`, and corrupts the
  * backend emitter.  Backend services that need the auth-change event should
- * inject `AuthServiceImpl` directly.
+ * inject `AuthServiceBackend` instead.
  */
 export interface AuthService {
     login(): Promise<LoginResult>;

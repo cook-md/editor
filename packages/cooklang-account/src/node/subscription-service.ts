@@ -10,7 +10,7 @@ import * as https from 'https';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
 import { AuthState } from '../common/auth-protocol';
-import { AuthServiceImpl } from './auth-service';
+import { AuthServiceBackend } from './auth-service';
 import { SubscriptionService, SubscriptionState } from '../common/subscription-protocol';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -18,8 +18,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 @injectable()
 export class SubscriptionServiceImpl implements SubscriptionService {
 
-    @inject(AuthServiceImpl)
-    protected readonly authService: AuthServiceImpl;
+    @inject(AuthServiceBackend)
+    protected readonly authService: AuthServiceBackend;
 
     private cachedState: SubscriptionState | undefined;
     private cacheTimestamp = 0;

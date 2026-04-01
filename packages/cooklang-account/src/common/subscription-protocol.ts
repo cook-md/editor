@@ -5,8 +5,6 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-import { Event } from '@theia/core/lib/common';
-
 export const SubscriptionServicePath = '/services/cookmd-subscription';
 export const SubscriptionService = Symbol('SubscriptionService');
 
@@ -19,9 +17,11 @@ export interface SubscriptionState {
     trialDaysRemaining: number | undefined;
 }
 
+/**
+ * RPC-safe interface — no Event properties (see auth-protocol.ts for why).
+ */
 export interface SubscriptionService {
     getSubscription(): Promise<SubscriptionState | undefined>;
     hasFeature(name: string): Promise<boolean>;
     refresh(): Promise<void>;
-    readonly onDidChangeSubscription: Event<SubscriptionState | undefined>;
 }

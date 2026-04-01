@@ -27,8 +27,8 @@ import { ProgressBarFactory } from '@theia/core/lib/browser/progress-bar-factory
 import { FrontendVariableService } from '@theia/ai-core/lib/browser';
 import { FrontendLanguageModelRegistry } from '@theia/ai-core/lib/common';
 import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
-import { AuthContribution } from '@theia/cooklang-account/lib/browser/auth-contribution';
-import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
+import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
+import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 
 export namespace ChatViewWidget {
     export interface State {
@@ -71,7 +71,7 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
     protected readonly authContribution: AuthContribution;
 
     @inject(SubscriptionFrontendService)
-    protected readonly subscriptionFrontendService: SubscriptionFrontendServiceImpl;
+    protected readonly subscriptionFrontendService: SubscriptionFrontendService;
 
     @inject(WindowService)
     protected readonly windowService: WindowService;
@@ -381,52 +381,39 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
         }
 
         // Show overlay
-        this.gateOverlay.style.display = 'flex';
-        this.gateOverlay.style.flexDirection = 'column';
-        this.gateOverlay.style.alignItems = 'center';
-        this.gateOverlay.style.justifyContent = 'center';
-        this.gateOverlay.style.height = '100%';
+        this.gateOverlay.style.display = '';
         this.gateOverlay.innerHTML = '';
 
         const icon = document.createElement('div');
-        icon.style.fontSize = '32px';
-        icon.style.marginBottom = '12px';
-        icon.style.opacity = '0.5';
+        icon.className = 'ai-chat-gate-icon';
         icon.textContent = '\u{1F916}';
 
         const title = document.createElement('div');
-        title.style.fontSize = '15px';
-        title.style.marginBottom = '6px';
-        title.textContent = 'AI Assistant';
+        title.className = 'ai-chat-gate-title';
+        title.textContent = nls.localize('theia/ai-chat/gate/title', 'AI Assistant');
 
         const message = document.createElement('div');
-        message.style.fontSize = '12px';
-        message.style.color = '#888';
-        message.style.marginBottom = '20px';
-        message.style.maxWidth = '220px';
-        message.style.textAlign = 'center';
+        message.className = 'ai-chat-gate-message';
 
         const button = document.createElement('button');
         button.className = 'theia-button main';
 
         if (type === 'login') {
-            message.textContent = 'Log in to your Cook.md account to use the AI recipe assistant.';
-            button.textContent = 'Log In';
+            message.textContent = nls.localize('theia/ai-chat/gate/loginMessage', 'Log in to your Cook.md account to use the AI recipe assistant.');
+            button.textContent = nls.localize('theia/ai-chat/gate/loginButton', 'Log In');
             button.addEventListener('click', () => {
-                this.commandService.executeCommand('cookmd.login');
+                this.commandService.executeCommand(CookmdLoginCommand.id);
             });
         } else {
-            message.textContent = 'The AI assistant requires the AI addon. Add it to your subscription to get started.';
-            button.textContent = 'Get AI Addon \u2192';
+            message.textContent = nls.localize('theia/ai-chat/gate/upgradeMessage',
+                'The AI assistant requires the AI addon. Add it to your subscription to get started.');
+            button.textContent = nls.localize('theia/ai-chat/gate/upgradeButton', 'Get AI Addon \u2192');
             button.addEventListener('click', () => {
-                const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-                this.windowService.openNewWindow(`${webBaseUrl}/pricing`, { external: true });
+                this.windowService.openNewWindow('https://cook.md/pricing', { external: true });
             });
             const note = document.createElement('div');
-            note.style.fontSize = '11px';
-            note.style.color = '#555';
-            note.style.marginTop = '8px';
-            note.textContent = 'Opens cook.md in your browser';
+            note.className = 'ai-chat-gate-note';
+            note.textContent = nls.localize('theia/ai-chat/gate/upgradeNote', 'Opens cook.md in your browser');
             this.gateOverlay.append(icon, title, message, button, note);
             return;
         }

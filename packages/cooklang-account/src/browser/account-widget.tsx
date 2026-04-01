@@ -10,11 +10,12 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import * as React from '@theia/core/shared/react';
-import { AuthService, AuthState } from '../common/auth-protocol';
-import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from './subscription-frontend-service';
+import { SubscriptionFrontendService } from './subscription-frontend-service';
 import { SubscriptionState } from '../common/subscription-protocol';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
-import { CookmdLoginCommand } from './auth-contribution';
+import { AuthContribution, CookmdLoginCommand, CookmdLogoutCommand } from './auth-contribution';
+
+const WEB_BASE_URL = 'https://cook.md';
 
 export const ACCOUNT_WIDGET_ID = 'account-widget';
 
@@ -24,11 +25,11 @@ export class AccountWidget extends ReactWidget {
     static readonly ID = ACCOUNT_WIDGET_ID;
     static readonly LABEL = 'Account';
 
-    @inject(AuthService)
-    protected readonly authService: AuthService;
+    @inject(AuthContribution)
+    protected readonly authContribution: AuthContribution;
 
     @inject(SubscriptionFrontendService)
-    protected readonly subscriptionFrontendService: SubscriptionFrontendServiceImpl;
+    protected readonly subscriptionFrontendService: SubscriptionFrontendService;
 
     @inject(CommandService)
     protected readonly commandService: CommandService;
@@ -39,7 +40,6 @@ export class AccountWidget extends ReactWidget {
     @inject(SyncService)
     protected readonly syncService: SyncService;
 
-    private authState: AuthState = { status: 'logged-out' };
     private syncEnabled = false;
     private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
 
@@ -53,12 +53,8 @@ export class AccountWidget extends ReactWidget {
         this.addClass('theia-account-widget');
         this.scrollOptions = { suppressScrollX: true };
 
-        this.authService.getAuthState().then(state => {
-            this.authState = state;
-            this.update();
-        });
-        this.authService.onDidChangeAuth(state => {
-            this.authState = state;
+        // Use AuthContribution's local event instead of broken RPC proxy event
+        this.authContribution.onDidChangeAuth(() => {
             this.update();
         });
         this.subscriptionFrontendService.onDidChangeSubscription(() => {
@@ -69,16 +65,17 @@ export class AccountWidget extends ReactWidget {
             this.syncEnabled = enabled;
             this.update();
         });
-        this.syncService.onDidChangeSyncStatus(status => {
-            this.syncStatus = status;
-            this.update();
-        });
 
         this.update();
     }
 
+    override dispose(): void {
+        super.dispose();
+    }
+
     protected render(): React.ReactNode {
-        if (this.authState.status === 'logged-out') {
+        const authState = this.authContribution.authState;
+        if (authState.status === 'logged-out') {
             return this.renderLoginPrompt();
         }
         return this.renderAccountPanel();
@@ -90,7 +87,7 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-login-icon'>
                     <i className='codicon codicon-account' />
                 </div>
-                <div className='theia-account-login-title'>Cook.md Account</div>
+
                 <div className='theia-account-login-message'>
                     Log in to access sync, AI assistance, and other features.
                 </div>
@@ -106,15 +103,15 @@ export class AccountWidget extends ReactWidget {
 
     protected renderAccountPanel(): React.ReactNode {
         const subscription = this.subscriptionFrontendService.subscription;
-        const email = this.authState.status === 'logged-in' ? this.authState.email : undefined;
+        const email = this.authContribution.authState.status === 'logged-in'
+            ? this.authContribution.authState.email
+            : undefined;
 
         return (
             <div className='theia-account-panel'>
-                <div className='theia-account-section'>
-                    <div className='theia-account-email'>
-                        <i className='codicon codicon-account' />
-                        <span>{email}</span>
-                    </div>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-account' />
+                    <span className='theia-account-row-label'>{email}</span>
                 </div>
                 {subscription === undefined
                     ? this.renderSubscriptionLoading()
@@ -128,7 +125,7 @@ export class AccountWidget extends ReactWidget {
 
     protected renderSubscriptionLoading(): React.ReactNode {
         return (
-            <div className='theia-account-section theia-account-loading'>
+            <div className='theia-account-loading'>
                 <div className='theia-account-spinner' />
                 <span>Loading...</span>
             </div>
@@ -137,87 +134,81 @@ export class AccountWidget extends ReactWidget {
 
     protected renderSubscriptionActive(subscription: SubscriptionState): React.ReactNode {
         const planLabel = this.getPlanLabel(subscription);
-        const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
+        const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
 
         return (
-            <div className='theia-account-section'>
-                <div className='theia-account-plan-status'>
+            <React.Fragment>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-credit-card' />
                     <span className='theia-account-plan-badge'>{planLabel}</span>
                     {subscription.trialDaysRemaining !== undefined && subscription.trialDaysRemaining > 0 && (
-                        <span className='theia-account-trial-remaining'>
-                            {subscription.trialDaysRemaining} days remaining
+                        <span className='theia-account-row-detail'>
+                            {subscription.trialDaysRemaining} days left
                         </span>
                     )}
                 </div>
-                {subscription.features.length > 0 && (
-                    <div className='theia-account-features'>
-                        {subscription.features.map(feature => (
-                            <span key={feature} className='theia-account-feature-badge'>
-                                {feature}
-                            </span>
-                        ))}
-                    </div>
-                )}
-                <div className='theia-account-sync-section'>
-                    {this.renderSyncControls()}
+                <div className='theia-account-row theia-account-row-interactive' onClick={this.handleManageSubscription}>
+                    <i className='codicon codicon-link-external' />
+                    <span className='theia-account-row-label'>Manage Subscription</span>
                 </div>
-                <div className='theia-account-manage'>
-                    <a
-                        href={`${webBaseUrl}/account`}
-                        onClick={this.handleManageSubscription}
-                        className='theia-account-manage-link'
-                    >
-                        Manage Subscription
-                    </a>
-                </div>
-            </div>
-        );
-    }
-
-    protected renderSubscriptionUpgrade(): React.ReactNode {
-        return (
-            <div className='theia-account-section theia-account-upgrade'>
-                <div className='theia-account-upgrade-message'>
-                    Upgrade to unlock sync, AI assistance, and more features.
-                </div>
-                {this.renderSyncUpgrade()}
-            </div>
-        );
-    }
-
-    protected renderSyncControls(): React.ReactNode {
-        const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
-        return (
-            <div className='sync-controls'>
-                <div className='sync-toggle-row'>
-                    <span>Sync enabled</span>
+                <div className='theia-account-section-header'>CookCloud Sync</div>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-sync' />
+                    <span className='theia-account-row-label'>Enabled</span>
                     <input
+                        className='theia-account-sync-toggle'
                         type='checkbox'
                         checked={this.syncEnabled}
                         onChange={this.handleSyncToggle}
                     />
                 </div>
-                <div className='sync-status'>Status: {statusLabel}</div>
-                {this.syncStatus.lastSyncedAt &&
-                    <div className='sync-last'>Last synced: {this.syncStatus.lastSyncedAt}</div>
-                }
-                {this.syncStatus.error &&
-                    <div className='sync-error'>Error: {this.syncStatus.error}</div>
-                }
-            </div>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-info' />
+                    <span className='theia-account-row-label'>{statusLabel}</span>
+                </div>
+                {this.syncStatus.lastSyncedAt && (
+                    <div className='theia-account-row'>
+                        <i className='codicon codicon-history' />
+                        <span className='theia-account-row-label'>Last synced</span>
+                        <span className='theia-account-row-detail'>{this.syncStatus.lastSyncedAt}</span>
+                    </div>
+                )}
+                {this.syncStatus.error && (
+                    <div className='theia-account-row theia-account-sync-error'>
+                        <i className='codicon codicon-error' />
+                        <span className='theia-account-row-label'>{this.syncStatus.error}</span>
+                    </div>
+                )}
+                <div className='theia-account-section-header'></div>
+                <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
+                    <i className='codicon codicon-sign-out' />
+                    <span className='theia-account-row-label'>Log Out</span>
+                </div>
+            </React.Fragment>
         );
     }
 
-    protected renderSyncUpgrade(): React.ReactNode {
+    protected renderSubscriptionUpgrade(): React.ReactNode {
         return (
-            <div className='theia-account-sync-upgrade'>
-                <button
-                    className='theia-button theia-account-upgrade-button'
-                    onClick={this.handleUpgrade}
-                >
-                    Upgrade to Pro
-                </button>
-            </div>
+            <React.Fragment>
+                <div className='theia-account-section-header'>Subscription</div>
+                <div className='theia-account-upgrade-section'>
+                    <div className='theia-account-upgrade-message'>
+                        Upgrade to unlock sync, AI assistance, and more features.
+                    </div>
+                    <button
+                        className='theia-button main theia-account-upgrade-button'
+                        onClick={this.handleUpgrade}
+                    >
+                        Upgrade to Pro
+                    </button>
+                </div>
+                <div className='theia-account-section-header'></div>
+                <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
+                    <i className='codicon codicon-sign-out' />
+                    <span className='theia-account-row-label'>Log Out</span>
+                </div>
+            </React.Fragment>
         );
     }
 
@@ -248,14 +239,16 @@ export class AccountWidget extends ReactWidget {
         this.update();
     };
 
-    private handleManageSubscription = (e: React.MouseEvent): void => {
-        e.preventDefault();
-        const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        this.windowService.openNewWindow(`${webBaseUrl}/account`, { external: true });
+    private handleManageSubscription = (): void => {
+        this.windowService.openNewWindow(`${WEB_BASE_URL}/subscription`, { external: true });
+    };
+
+    private handleLogout = (): void => {
+        this.commandService.executeCommand(CookmdLogoutCommand.id);
     };
 
     private handleUpgrade = (): void => {
-        const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        this.windowService.openNewWindow(`${webBaseUrl}/pricing`, { external: true });
+        this.windowService.openNewWindow(`${WEB_BASE_URL}/pricing`, { external: true });
     };
+
 }

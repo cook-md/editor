@@ -13,7 +13,7 @@ import { Emitter, Event } from '@theia/core/lib/common';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { AuthState } from '../common/auth-protocol';
-import { AuthServiceImpl } from './auth-service';
+import { AuthServiceBackend } from './auth-service';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
 
 const SYNC_PREFS_PATH = path.join(os.homedir(), '.theia', 'cookcloud-sync.json');
@@ -22,8 +22,8 @@ const SYNC_DB_PATH = path.join(os.homedir(), '.theia', 'cookcloud-sync.db');
 @injectable()
 export class SyncServiceImpl implements SyncService {
 
-    @inject(AuthServiceImpl)
-    protected readonly authService: AuthServiceImpl;
+    @inject(AuthServiceBackend)
+    protected readonly authService: AuthServiceBackend;
 
     @inject(WorkspaceServer)
     protected readonly workspaceServer: WorkspaceServer;
@@ -42,13 +42,13 @@ export class SyncServiceImpl implements SyncService {
 
     async enableSync(): Promise<void> {
         this.syncEnabled = true;
-        this.savePreferences();
+        await this.savePreferences();
         await this.startSyncIfReady();
     }
 
     async disableSync(): Promise<void> {
         this.syncEnabled = false;
-        this.savePreferences();
+        await this.savePreferences();
         await this.stopSync();
     }
 
@@ -142,9 +142,9 @@ export class SyncServiceImpl implements SyncService {
         }
     }
 
-    private loadPreferences(): void {
+    private async loadPreferences(): Promise<void> {
         try {
-            const content = fs.readFileSync(SYNC_PREFS_PATH, 'utf8');
+            const content = await fs.promises.readFile(SYNC_PREFS_PATH, 'utf8');
             const prefs = JSON.parse(content);
             this.syncEnabled = prefs.enabled ?? false;
         } catch {
@@ -152,11 +152,11 @@ export class SyncServiceImpl implements SyncService {
         }
     }
 
-    private savePreferences(): void {
+    private async savePreferences(): Promise<void> {
         try {
             const dir = path.dirname(SYNC_PREFS_PATH);
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(SYNC_PREFS_PATH, JSON.stringify({ enabled: this.syncEnabled }, undefined, 2), 'utf8');
+            await fs.promises.mkdir(dir, { recursive: true });
+            await fs.promises.writeFile(SYNC_PREFS_PATH, JSON.stringify({ enabled: this.syncEnabled }, undefined, 2), 'utf8');
         } catch (err) {
             console.warn('Failed to save sync preferences:', err);
         }
