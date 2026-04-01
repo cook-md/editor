@@ -6,17 +6,20 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
-import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
+import { Command, CommandContribution, CommandRegistry, CommandService } from '@theia/core/lib/common/command';
+import { Emitter, Event } from '@theia/core/lib/common';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { StatusBar, StatusBarAlignment } from '@theia/core/lib/browser/status-bar/status-bar';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { AuthService, AuthState } from '../common/auth-protocol';
 
 const AUTH_STATUS_ID = 'cookbot-auth-status';
+const AUTH_POLL_INTERVAL_MS = 2000;
+const AUTH_POLL_MAX_ATTEMPTS = 150; // 5 minutes
 
 export const CookmdLoginCommand: Command = {
     id: 'cookmd.login',
-    label: 'Cook.md: Login',
+    label: 'Login',
 };
 
 export const CookmdLogoutCommand: Command = {
@@ -36,15 +39,22 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
     @inject(WindowService)
     protected readonly windowService: WindowService;
 
-    private authState: AuthState = { status: 'logged-out' };
+    @inject(CommandService)
+    protected readonly commandService: CommandService;
+
+    private _authState: AuthState = { status: 'logged-out' };
+    private pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+    private readonly onDidChangeAuthEmitter = new Emitter<AuthState>();
+    readonly onDidChangeAuth: Event<AuthState> = this.onDidChangeAuthEmitter.event;
+
+    get authState(): AuthState {
+        return this._authState;
+    }
 
     @postConstruct()
     protected init(): void {
         this.refreshAuthState();
-        this.authService.onDidChangeAuth(state => {
-            this.authState = state;
-            this.updateStatusBar();
-        });
     }
 
     async onStart(): Promise<void> {
@@ -58,29 +68,32 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         registry.registerCommand(CookmdLogoutCommand, {
             execute: () => this.doLogout(),
         });
+        registry.registerCommand({ id: 'cookmd.manageSubscription' }, {
+            execute: () => this.commandService.executeCommand('cookmd.openAccount'),
+        });
     }
 
     private async refreshAuthState(): Promise<void> {
         try {
-            this.authState = await this.authService.getAuthState();
+            this._authState = await this.authService.getAuthState();
         } catch {
-            this.authState = { status: 'logged-out' };
+            this._authState = { status: 'logged-out' };
         }
         this.updateStatusBar();
     }
 
     private updateStatusBar(): void {
-        if (this.authState.status === 'logged-in') {
+        if (this._authState.status === 'logged-in') {
             this.statusBar.setElement(AUTH_STATUS_ID, {
-                text: `$(account) ${this.authState.email}`,
-                command: CookmdLogoutCommand.id,
-                tooltip: 'Cook.md: Logout',
+                text: `$(account) ${this._authState.email}`,
+                command: 'cookmd.manageSubscription',
+                tooltip: 'Manage Subscription',
                 alignment: StatusBarAlignment.LEFT,
                 priority: 100,
             });
         } else {
             this.statusBar.setElement(AUTH_STATUS_ID, {
-                text: '$(account) Cook.md: Login',
+                text: '$(account) Login',
                 command: CookmdLoginCommand.id,
                 tooltip: 'Click to login to Cook.md',
                 alignment: StatusBarAlignment.LEFT,
@@ -93,6 +106,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         try {
             const result = await this.authService.login();
             this.windowService.openNewWindow(result.authUrl, { external: true });
+            this.startAuthPolling();
         } catch (err) {
             console.error('Cook.md login failed:', err);
         }
@@ -101,8 +115,44 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
     private async doLogout(): Promise<void> {
         try {
             await this.authService.logout();
+            this._authState = { status: 'logged-out' };
+            this.updateStatusBar();
+            this.onDidChangeAuthEmitter.fire(this._authState);
         } catch (err) {
             console.error('Cook.md logout failed:', err);
+        }
+    }
+
+    private startAuthPolling(): void {
+        this.stopAuthPolling();
+        let attempts = 0;
+        const poll = async (): Promise<void> => {
+            attempts++;
+            if (attempts > AUTH_POLL_MAX_ATTEMPTS) {
+                this.stopAuthPolling();
+                return;
+            }
+            try {
+                const state = await this.authService.getAuthState();
+                if (state.status !== this._authState.status) {
+                    this._authState = state;
+                    this.updateStatusBar();
+                    this.onDidChangeAuthEmitter.fire(this._authState);
+                    this.stopAuthPolling();
+                    return;
+                }
+            } catch {
+                // Ignore polling errors
+            }
+            this.pollTimer = setTimeout(poll, AUTH_POLL_INTERVAL_MS);
+        };
+        this.pollTimer = setTimeout(poll, AUTH_POLL_INTERVAL_MS);
+    }
+
+    private stopAuthPolling(): void {
+        if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = undefined;
         }
     }
 }

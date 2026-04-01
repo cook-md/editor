@@ -26,7 +26,8 @@ import { AIVariableResolutionRequest } from '@theia/ai-core';
 import { ProgressBarFactory } from '@theia/core/lib/browser/progress-bar-factory';
 import { FrontendVariableService } from '@theia/ai-core/lib/browser';
 import { FrontendLanguageModelRegistry } from '@theia/ai-core/lib/common';
-import { AuthService, AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
+import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
+import { AuthContribution } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 
 export namespace ChatViewWidget {
@@ -66,8 +67,8 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
     @inject(FrontendLanguageModelRegistry)
     protected readonly languageModelRegistry: FrontendLanguageModelRegistry;
 
-    @inject(AuthService)
-    protected readonly authService: AuthService;
+    @inject(AuthContribution)
+    protected readonly authContribution: AuthContribution;
 
     @inject(SubscriptionFrontendService)
     protected readonly subscriptionFrontendService: SubscriptionFrontendServiceImpl;
@@ -167,11 +168,9 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
         this.node.prepend(this.gateOverlay);
 
         // Auth and subscription listeners
-        this.authService.getAuthState().then(state => {
-            this.authState = state;
-            this.checkAiFeature();
-        });
-        this.authService.onDidChangeAuth(state => {
+        this.authState = this.authContribution.authState;
+        this.checkAiFeature();
+        this.authContribution.onDidChangeAuth(state => {
             this.authState = state;
             this.checkAiFeature();
         });

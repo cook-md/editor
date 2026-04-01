@@ -12,24 +12,23 @@ import { injectable, inject, postConstruct } from '@theia/core/shared/inversify'
 import { Emitter, Event } from '@theia/core/lib/common';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
-import { AuthService, AuthState } from '../common/auth-protocol';
+import { AuthState } from '../common/auth-protocol';
+import { AuthServiceImpl } from './auth-service';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
 
-const STATUS_POLL_INTERVAL_MS = 5000; // 5 seconds
 const SYNC_PREFS_PATH = path.join(os.homedir(), '.theia', 'cookcloud-sync.json');
 const SYNC_DB_PATH = path.join(os.homedir(), '.theia', 'cookcloud-sync.db');
 
 @injectable()
 export class SyncServiceImpl implements SyncService {
 
-    @inject(AuthService)
-    protected readonly authService: AuthService;
+    @inject(AuthServiceImpl)
+    protected readonly authService: AuthServiceImpl;
 
     @inject(WorkspaceServer)
     protected readonly workspaceServer: WorkspaceServer;
 
     private syncEnabled = false;
-    private statusPollTimer: ReturnType<typeof setInterval> | undefined;
     private lastStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
 
     private readonly onDidChangeSyncStatusEmitter = new Emitter<SyncStatus>();
@@ -107,14 +106,12 @@ export class SyncServiceImpl implements SyncService {
                 token,
                 namespaceId
             );
-            this.startStatusPolling();
         } catch (err) {
             console.error('Failed to start sync:', err);
         }
     }
 
     private async stopSync(): Promise<void> {
-        this.stopStatusPolling();
         try {
             const native = require('@theia/cooklang-native');
             native.stopSync();
@@ -125,23 +122,6 @@ export class SyncServiceImpl implements SyncService {
         this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
     }
 
-    private startStatusPolling(): void {
-        this.stopStatusPolling();
-        this.statusPollTimer = setInterval(async () => {
-            const status = await this.getSyncStatus();
-            if (status.status !== this.lastStatus.status || status.error !== this.lastStatus.error) {
-                this.lastStatus = status;
-                this.onDidChangeSyncStatusEmitter.fire(status);
-            }
-        }, STATUS_POLL_INTERVAL_MS);
-    }
-
-    private stopStatusPolling(): void {
-        if (this.statusPollTimer) {
-            clearInterval(this.statusPollTimer);
-            this.statusPollTimer = undefined;
-        }
-    }
 
     private async handleAuthChange(state: AuthState): Promise<void> {
         if (state.status === 'logged-out') {
