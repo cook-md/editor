@@ -43,6 +43,13 @@ export declare function stopSync(): void
  * ```
  */
 export declare function getSyncStatus(): string
+/**
+ * Register a JS callback that is invoked on every sync status change.
+ *
+ * The callback receives a JSON string with the same shape as `getSyncStatus`.
+ * Replaces any previously registered callback.
+ */
+export declare function onSyncStatusChanged(callback: (...args: any[]) => any): void
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void

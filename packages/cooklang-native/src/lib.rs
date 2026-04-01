@@ -1,3 +1,4 @@
+use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -22,8 +23,32 @@ impl Default for SyncStatusState {
     }
 }
 
+impl SyncStatusState {
+    /// Serialize current state to a JSON string for the JS callback.
+    fn to_json(&self) -> String {
+        serde_json::json!({
+            "status": self.status,
+            "lastError": self.last_error,
+            "lastSynced": self.last_synced,
+        })
+        .to_string()
+    }
+}
+
+/// Global JS callback invoked on every status change from the sync client.
+static SYNC_STATUS_CALLBACK: std::sync::Mutex<Option<ThreadsafeFunction<String, ErrorStrategy::Fatal>>> =
+    std::sync::Mutex::new(None);
+
+/// Notify the registered JS callback (if any) with the current state.
+fn notify_js_callback(state: &SyncStatusState) {
+    let cb = SYNC_STATUS_CALLBACK.lock().unwrap();
+    if let Some(ref tsfn) = *cb {
+        tsfn.call(state.to_json(), ThreadsafeFunctionCallMode::NonBlocking);
+    }
+}
+
 /// Listener that receives callbacks from `cooklang-sync-client` and updates
-/// the shared `SyncStatusState`.
+/// the shared `SyncStatusState`, then notifies the JS callback.
 struct NapiSyncStatusListener {
     state: Arc<std::sync::Mutex<SyncStatusState>>,
 }
@@ -52,6 +77,7 @@ impl cooklang_sync_client::SyncStatusListener for NapiSyncStatusListener {
                 state.last_error = Some(message);
             }
         }
+        notify_js_callback(&state);
     }
 
     fn on_complete(&self, success: bool, message: Option<String>) {
@@ -59,12 +85,12 @@ impl cooklang_sync_client::SyncStatusListener for NapiSyncStatusListener {
         if success {
             state.status = "idle".to_string();
             state.last_error = None;
-            // Record the completion time as ISO 8601 UTC.
             state.last_synced = Some(chrono::Utc::now().to_rfc3339());
         } else {
             state.status = "error".to_string();
             state.last_error = Some(message.unwrap_or_else(|| "Sync failed".to_string()));
         }
+        notify_js_callback(&state);
     }
 }
 
@@ -757,4 +783,19 @@ pub fn get_sync_status() -> napi::Result<String> {
 
     serde_json::to_string(&value)
         .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+/// Register a JS callback that is invoked on every sync status change.
+///
+/// The callback receives a JSON string with the same shape as `getSyncStatus`.
+/// Replaces any previously registered callback.
+#[napi]
+pub fn on_sync_status_changed(callback: napi::JsFunction) -> napi::Result<()> {
+    let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> =
+        callback.create_threadsafe_function(0, |ctx: napi::threadsafe_function::ThreadSafeCallContext<String>| {
+            Ok(vec![ctx.env.create_string(&ctx.value)?])
+        })?;
+    let mut cb = SYNC_STATUS_CALLBACK.lock().unwrap();
+    *cb = Some(tsfn);
+    Ok(())
 }

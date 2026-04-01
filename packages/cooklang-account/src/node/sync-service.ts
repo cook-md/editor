@@ -35,9 +35,12 @@ export class SyncServiceImpl implements SyncService {
     private readonly onDidChangeSyncStatusEmitter = new Emitter<SyncStatus>();
     readonly onDidChangeSyncStatus: Event<SyncStatus> = this.onDidChangeSyncStatusEmitter.event;
 
+    private callbackRegistered = false;
+
     @postConstruct()
     protected async init(): Promise<void> {
         await this.loadPreferences();
+        this.registerNativeCallback();
         this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
         if (this.syncEnabled) {
             await this.startSyncIfReady();
@@ -47,6 +50,7 @@ export class SyncServiceImpl implements SyncService {
     async enableSync(): Promise<void> {
         this.syncEnabled = true;
         this.lastStatus = { status: 'idle', lastSyncedAt: undefined, error: undefined };
+        this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
         await this.savePreferences();
         await this.startSyncIfReady();
     }
@@ -65,22 +69,34 @@ export class SyncServiceImpl implements SyncService {
         if (!this.syncEnabled) {
             return { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         }
+        return this.lastStatus;
+    }
+
+    private registerNativeCallback(): void {
+        if (this.callbackRegistered) {
+            return;
+        }
         try {
             const native = this.getNativeModule();
-            const rawJson = native.getSyncStatus();
-            const nativeStatus = JSON.parse(rawJson);
-            this.lastStatus = {
-                status: nativeStatus.status,
-                lastSyncedAt: nativeStatus.lastSynced ?? undefined,
-                error: nativeStatus.lastError ?? undefined,
-            };
-            return this.lastStatus;
+            native.onSyncStatusChanged((statusJson: string) => {
+                if (!this.syncEnabled) {
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(statusJson);
+                    this.lastStatus = {
+                        status: parsed.status,
+                        lastSyncedAt: parsed.lastSynced ?? undefined,
+                        error: parsed.lastError ?? undefined,
+                    };
+                    this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
+                } catch {
+                    // Ignore malformed status JSON
+                }
+            });
+            this.callbackRegistered = true;
         } catch {
-            // Native module unavailable — if sync is enabled, report idle rather than stopped
-            if (this.lastStatus.status === 'stopped') {
-                return { status: 'idle', lastSyncedAt: undefined, error: undefined };
-            }
-            return this.lastStatus;
+            // Native module not available
         }
     }
 

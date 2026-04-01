@@ -41,7 +41,7 @@ export class AccountWidget extends ReactWidget {
     @inject(SyncService)
     protected readonly syncService: SyncService;
 
-    private static readonly SYNC_POLL_INTERVAL_MS = 5000;
+    private static readonly SYNC_POLL_INTERVAL_MS = 2000;
 
     private syncEnabled = false;
     private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
@@ -278,9 +278,9 @@ export class AccountWidget extends ReactWidget {
         const enabling = !this.syncEnabled;
         // Optimistically update UI before the RPC call completes
         this.syncEnabled = enabling;
-        if (enabling) {
-            this.syncStatus = { status: 'idle', lastSyncedAt: undefined, error: undefined };
-        }
+        this.syncStatus = enabling
+            ? { status: 'idle', lastSyncedAt: undefined, error: undefined }
+            : { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         this.update();
 
         try {
@@ -289,9 +289,8 @@ export class AccountWidget extends ReactWidget {
                 await this.refreshSyncStatus();
                 this.startSyncPolling();
             } else {
-                await this.syncService.disableSync();
                 this.stopSyncPolling();
-                this.syncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
+                await this.syncService.disableSync();
             }
         } catch (err) {
             console.error('Failed to toggle sync:', err);
