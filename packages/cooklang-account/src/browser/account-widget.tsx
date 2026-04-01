@@ -40,8 +40,11 @@ export class AccountWidget extends ReactWidget {
     @inject(SyncService)
     protected readonly syncService: SyncService;
 
+    private static readonly SYNC_POLL_INTERVAL_MS = 5000;
+
     private syncEnabled = false;
     private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
+    private syncPollTimer: ReturnType<typeof setInterval> | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -61,8 +64,10 @@ export class AccountWidget extends ReactWidget {
             this.update();
         });
 
-        this.syncService.isSyncEnabled().then(enabled => {
+        this.syncService.isSyncEnabled().then(async enabled => {
             this.syncEnabled = enabled;
+            await this.refreshSyncStatus();
+            this.startSyncPolling();
             this.update();
         });
 
@@ -70,7 +75,34 @@ export class AccountWidget extends ReactWidget {
     }
 
     override dispose(): void {
+        this.stopSyncPolling();
         super.dispose();
+    }
+
+    private startSyncPolling(): void {
+        this.stopSyncPolling();
+        if (!this.syncEnabled) {
+            return;
+        }
+        this.syncPollTimer = setInterval(async () => {
+            await this.refreshSyncStatus();
+            this.update();
+        }, AccountWidget.SYNC_POLL_INTERVAL_MS);
+    }
+
+    private stopSyncPolling(): void {
+        if (this.syncPollTimer) {
+            clearInterval(this.syncPollTimer);
+            this.syncPollTimer = undefined;
+        }
+    }
+
+    private async refreshSyncStatus(): Promise<void> {
+        try {
+            this.syncStatus = await this.syncService.getSyncStatus();
+        } catch {
+            // keep last known status
+        }
     }
 
     protected render(): React.ReactNode {
@@ -232,9 +264,13 @@ export class AccountWidget extends ReactWidget {
         if (this.syncEnabled) {
             await this.syncService.disableSync();
             this.syncEnabled = false;
+            this.stopSyncPolling();
+            this.syncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         } else {
             await this.syncService.enableSync();
             this.syncEnabled = true;
+            await this.refreshSyncStatus();
+            this.startSyncPolling();
         }
         this.update();
     };

@@ -381,7 +381,7 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
         }
 
         // Show overlay
-        this.gateOverlay.style.display = '';
+        this.gateOverlay.style.display = 'flex';
         this.gateOverlay.innerHTML = '';
 
         const icon = document.createElement('div');
@@ -409,7 +409,8 @@ export class ChatViewWidget extends BaseWidget implements ExtractableWidget, Sta
                 'The AI assistant requires the AI addon. Add it to your subscription to get started.');
             button.textContent = nls.localize('theia/ai-chat/gate/upgradeButton', 'Get AI Addon \u2192');
             button.addEventListener('click', () => {
-                this.windowService.openNewWindow('https://cook.md/pricing', { external: true });
+                const webBaseUrl = process.env['WEB_BASE_URL'] || 'https://cook.md';
+                this.windowService.openNewWindow(`${webBaseUrl}/pricing`, { external: true });
             });
             const note = document.createElement('div');
             note.className = 'ai-chat-gate-note';
