@@ -27,6 +27,9 @@
       "path": "../../packages/cooklang"
     },
     {
+      "path": "../../packages/cooklang-account"
+    },
+    {
       "path": "../../packages/cooklang-ai"
     },
     {

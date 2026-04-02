@@ -11,19 +11,45 @@ import * as http from 'http';
 import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
-import { injectable } from '@theia/core/shared/inversify';
-import { CookbotAuthService, AuthData, AuthState, LoginResult } from '../common/cookbot-auth-protocol';
+import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import { Emitter, Event } from '@theia/core/lib/common';
+import { AuthService, AuthData, AuthState, LoginResult } from '../common/auth-protocol';
 
 const CALLBACK_PORT_START = 19285;
 const CALLBACK_PORT_RETRIES = 10;
 const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+const RENEWAL_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Node-only extension of AuthService that exposes the auth-change event.
+ * Backend services should inject this symbol instead of AuthService when
+ * they need to react to auth state changes.
+ */
+export const AuthServiceBackend = Symbol('AuthServiceBackend');
+export interface AuthServiceBackend extends AuthService {
+    readonly onDidChangeAuth: Event<AuthState>;
+}
 
 @injectable()
-export class CookbotAuthServiceImpl implements CookbotAuthService {
+export class AuthServiceImpl implements AuthServiceBackend {
 
     private authData: AuthData | undefined;
+    private authDataLoaded = false;
     private callbackServer: http.Server | undefined;
     private callbackTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    private readonly onDidChangeAuthEmitter = new Emitter<AuthState>();
+    readonly onDidChangeAuth: Event<AuthState> = this.onDidChangeAuthEmitter.event;
+
+    @postConstruct()
+    protected init(): void {
+        this.loadFromDisk().then(() => {
+            if (this.authData) {
+                this.tryRenewToken();
+            }
+        });
+        this.startRenewalTimer();
+    }
 
     async login(): Promise<LoginResult> {
         this.cleanupCallbackServer();
@@ -38,31 +64,30 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
 
     async logout(): Promise<void> {
         this.cleanupCallbackServer();
+        this.authData = undefined;
+        this.authDataLoaded = false;
 
         const authFilePath = this.getAuthFilePath();
         try {
             await fs.promises.unlink(authFilePath);
         } catch (err: unknown) {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-                throw err;
+                console.warn('Failed to remove auth file:', (err as Error).message);
             }
         }
 
-        this.authData = undefined;
+        this.onDidChangeAuthEmitter.fire({ status: 'logged-out' });
     }
 
     async getToken(): Promise<string | undefined> {
-        if (!this.authData) {
+        if (!this.authDataLoaded) {
             await this.loadFromDisk();
-        }
-        if (this.authData) {
-            await this.tryRenewToken();
         }
         return this.authData?.token;
     }
 
     async getAuthState(): Promise<AuthState> {
-        if (!this.authData) {
+        if (!this.authDataLoaded) {
             await this.loadFromDisk();
         }
         if (this.authData) {
@@ -109,11 +134,22 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
                 this.authData = authData;
 
                 res.writeHead(200, { 'Content-Type': 'text/html' });
-                res.end('<html><body><h1>Login successful!</h1><p>You can close this tab and return to the editor.</p></body></html>');
+                res.end(`<html><head><style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+.container { text-align: center; }
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+p { color: #666; }
+</style></head><body><div class="container"><h1>Login successful!</h1><p>You can close this tab and return to the editor.</p></div></body></html>`);
                 this.cleanupCallbackServer();
+                this.onDidChangeAuthEmitter.fire({ status: 'logged-in', email: authData.email });
             }).catch(() => {
                 res.writeHead(500, { 'Content-Type': 'text/html' });
-                res.end('<html><body><h1>Error</h1><p>Failed to save authentication data. Please try again.</p></body></html>');
+                res.end(`<html><head><style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+.container { text-align: center; }
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; color: #c44; }
+p { color: #666; }
+</style></head><body><div class="container"><h1>Error</h1><p>Failed to save authentication data. Please try again.</p></div></body></html>`);
                 this.cleanupCallbackServer();
             });
         });
@@ -165,13 +201,8 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
     }
 
     private async tryRenewToken(): Promise<void> {
-        if (!this.authData?.expiresAt) {
+        if (!this.authData) {
             return;
-        }
-        const expiresAt = new Date(this.authData.expiresAt).getTime();
-        const oneDayMs = 24 * 60 * 60 * 1000;
-        if (Date.now() < expiresAt - oneDayMs) {
-            return; // Not close to expiry
         }
         try {
             const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
@@ -189,10 +220,24 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
                 await this.saveToDisk(renewed);
                 this.authData = renewed;
             }
-        } catch {
-            // Renewal failed, continue with existing token
-            console.warn('Token renewal failed, continuing with existing token');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (message.includes('status 401') || message.includes('status 403')) {
+                console.warn('Token renewal returned auth error, clearing session');
+                await this.logout();
+            } else {
+                console.warn('Token renewal failed (will retry later):', message);
+            }
         }
+    }
+
+    private startRenewalTimer(): void {
+        // Singleton — runs for the app lifetime, no need to store the handle
+        setInterval(async () => {
+            if (this.authData) {
+                await this.tryRenewToken();
+            }
+        }, RENEWAL_INTERVAL_MS);
     }
 
     private httpPost(url: URL, bearerToken: string): Promise<string> {
@@ -237,6 +282,7 @@ export class CookbotAuthServiceImpl implements CookbotAuthService {
                 }
             }
         }
+        this.authDataLoaded = true;
     }
 
     private async saveToDisk(data: AuthData): Promise<void> {
