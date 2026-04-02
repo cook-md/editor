@@ -237,6 +237,7 @@ export class ElectronMainApplication {
                     const port = await this.startBackend();
                     this._backendPort.resolve(port);
                     await app.whenReady();
+                    this.applyDockIcon(config);
                     await this.attachElectronSecurityToken(port);
                     await this.startContributions();
 
@@ -253,14 +254,21 @@ export class ElectronMainApplication {
         if (config.applicationName) {
             app.setName(config.applicationName);
         }
+    }
+
+    protected applyDockIcon(config: FrontendApplicationConfig): void {
         const iconPath = config.electron?.windowOptions?.icon;
         if (iconPath && typeof iconPath === 'string') {
             if (isOSX && app.dock) {
                 // Prefer .icns for macOS Dock icon to avoid sizing issues with transparent PNG padding
                 const icnsPath = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, path.dirname(iconPath), 'icon.icns');
                 const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
-                const fs = require('fs');
-                app.dock.setIcon(fs.existsSync(icnsPath) ? icnsPath : resolvedIcon);
+                const fsModule = require('fs');
+                try {
+                    app.dock.setIcon(fsModule.existsSync(icnsPath) ? icnsPath : resolvedIcon);
+                } catch (err) {
+                    console.warn('Failed to set dock icon:', err);
+                }
             }
         }
     }
@@ -411,10 +419,10 @@ export class ElectronMainApplication {
         };
         TheiaRendererAPI.onApplicationStateChanged(mainWindow.webContents, state => {
             if (state === 'ready') {
-                minTime.then(() => showWindowAndCloseSplashScreen());
+                minTime.then(() => showWindowAndCloseSplashScreen(), () => { /* cancelled */ });
             }
         });
-        maxTime.then(() => showWindowAndCloseSplashScreen());
+        maxTime.then(() => showWindowAndCloseSplashScreen(), () => { /* cancelled */ });
         return splashScreenWindow;
     }
 

@@ -16,8 +16,9 @@
             "icon": "resources/icon-256.png"
           },
           "splashScreenOptions": {
-            "content": "resources/cookmd-logo.svg",
-            "height": 90
+            "content": "resources/splash.html",
+            "width": 600,
+            "height": 400
           },
           "uriScheme": "cookmd"
         }

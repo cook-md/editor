@@ -17,6 +17,9 @@ export namespace AccountCommands {
         id: 'cookmd.toggleAccount',
         label: 'Cook.md: Toggle Account',
     };
+    export const OPEN_VIEW: Command = {
+        id: 'cookmd.openAccount',
+    };
 }
 
 @injectable()
@@ -39,5 +42,8 @@ export class AccountContribution
 
     override registerCommands(registry: CommandRegistry): void {
         super.registerCommands(registry);
+        registry.registerCommand(AccountCommands.OPEN_VIEW, {
+            execute: () => this.openView({ activate: true, reveal: true }),
+        });
     }
 }

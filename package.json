@@ -91,6 +91,7 @@
     "rebuild:electron": "cd examples/electron && npm run rebuild",
     "start:browser": "cd examples/browser && npm run start",
     "start:browser-only": "cd examples/browser-only && npm run start",
+    "dev": "npm run compile && cd examples/electron && npm run bundle && npm run start",
     "start:electron": "cd examples/electron && npm run start",
     "test": "npm run -s test:theia && npm run -s electron test && npm run -s browser test",
     "test:browser": "cd examples/browser && npm run test",
