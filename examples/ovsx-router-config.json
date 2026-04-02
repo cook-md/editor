@@ -1,16 +1,8 @@
 {
   "registries": {
-    "public": "https://open-vsx.org/",
-    "mock": "${self}/mock-open-vsx/"
+    "cooklang": "https://plugins.cook.md"
   },
   "use": [
-    "mock",
-    "public"
-  ],
-  "rules": [
-    {
-      "ifRequestContains": "\\bsample-namespace\\b",
-      "use": "mock"
-    }
+    "cooklang"
   ]
 }
