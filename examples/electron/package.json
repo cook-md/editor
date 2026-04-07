@@ -50,7 +50,6 @@
     "@theia/messages": "1.68.0",
     "@theia/monaco": "1.68.0",
     "@theia/navigator": "1.68.0",
-    "@theia/outline-view": "1.68.0",
     "@theia/output": "1.68.0",
     "@theia/plugin-ext": "1.68.0",
     "@theia/plugin-ext-headless": "1.68.0",

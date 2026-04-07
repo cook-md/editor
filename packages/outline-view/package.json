@@ -9,11 +9,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "theiaExtensions": [
-    {
-      "frontend": "lib/browser/outline-view-frontend-module"
-    }
-  ],
+  "theiaExtensions": [],
   "keywords": [
     "theia-extension"
   ],

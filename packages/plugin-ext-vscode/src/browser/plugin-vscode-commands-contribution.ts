@@ -64,7 +64,6 @@ import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import * as monaco from '@theia/monaco-editor-core';
 import { VSCodeExtensionUri } from '../common/plugin-vscode-uri';
 import { CodeEditorWidgetUtil } from '@theia/plugin-ext/lib/main/browser/menus/vscode-theia-menu-mappings';
-import { OutlineViewContribution } from '@theia/outline-view/lib/browser/outline-view-contribution';
 import { CompletionList, Range, Position as PluginPosition } from '@theia/plugin';
 import { MonacoLanguages } from '@theia/monaco/lib/browser/monaco-languages';
 
@@ -171,8 +170,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
     protected readonly windowService: WindowService;
     @inject(MessageService)
     protected readonly messageService: MessageService;
-    @inject(OutlineViewContribution)
-    protected outlineViewContribution: OutlineViewContribution;
     @inject(MonacoLanguages)
     protected monacoLanguages: MonacoLanguages;
 
@@ -839,11 +836,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
                     collections: device.collections
                 };
             }
-        });
-
-        // required by Jupyter for the show table of contents action
-        commands.registerCommand({ id: 'outline.focus' }, {
-            execute: () => this.outlineViewContribution.openView({ activate: true })
         });
 
     }

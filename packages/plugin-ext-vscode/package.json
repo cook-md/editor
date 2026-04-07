@@ -9,7 +9,6 @@
     "@theia/monaco": "1.68.0",
     "@theia/monaco-editor-core": "1.96.302",
     "@theia/navigator": "1.68.0",
-    "@theia/outline-view": "1.68.0",
     "@theia/plugin": "1.68.0",
     "@theia/plugin-ext": "1.68.0",
     "@theia/userstorage": "1.68.0",
