@@ -1,0 +1,40 @@
+{
+  "name": "@theia/cooklang-branding",
+  "version": "1.68.0",
+  "description": "CookMD branding overrides for Theia",
+  "dependencies": {
+    "@theia/ai-chat": "1.68.0",
+    "@theia/ai-chat-ui": "1.68.0",
+    "@theia/ai-core": "1.68.0",
+    "@theia/cooklang-account": "1.68.0",
+    "@theia/core": "1.68.0",
+    "@theia/monaco": "1.68.0",
+    "tslib": "^2.6.2"
+  },
+  "main": "lib/common",
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/cooklang-branding-frontend-module",
+      "electronMain": "lib/electron-main/cooklang-branding-electron-main-module"
+    }
+  ],
+  "keywords": [
+    "theia-extension"
+  ],
+  "license": "MIT",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "compile": "theiaext compile",
+    "lint": "theiaext lint",
+    "test": "theiaext test",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.68.0"
+  }
+}
