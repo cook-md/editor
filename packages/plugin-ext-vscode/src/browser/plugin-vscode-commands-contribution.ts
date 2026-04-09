@@ -838,6 +838,80 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             }
         });
 
+
+        interface OpenMergeEditorCommandArg {
+            base: UriComponents | string;
+            input1: MergeSideInputData | string;
+            input2: MergeSideInputData | string;
+            output: UriComponents | string;
+        }
+
+        interface MergeSideInputData {
+            uri: UriComponents;
+            title?: string;
+            description?: string;
+            detail?: string;
+        }
+
+        commands.registerCommand({ id: '_open.mergeEditor' }, {
+            execute: async (arg: OpenMergeEditorCommandArg): Promise<void> => {
+                const toTheiaUri = (o: UriComponents | string): TheiaURI => {
+                    if (typeof o === 'string') {
+                        return new TheiaURI(o);
+                    }
+                    return TheiaURI.fromComponents(o);
+                };
+
+                const baseUri = toTheiaUri(arg.base);
+                const resultUri = toTheiaUri(arg.output);
+                const side1Uri = typeof arg.input1 === 'string' ? toTheiaUri(arg.input1) : toTheiaUri(arg.input1.uri);
+                const side2Uri = typeof arg.input2 === 'string' ? toTheiaUri(arg.input2) : toTheiaUri(arg.input2.uri);
+                const uri = MergeEditorUri.encode({ baseUri, side1Uri, side2Uri, resultUri });
+
+                let side1State = undefined;
+                if (typeof arg.input1 !== 'string') {
+                    const { title, description, detail } = arg.input1;
+                    side1State = { title, description, detail };
+                }
+                let side2State = undefined;
+                if (typeof arg.input2 !== 'string') {
+                    const { title, description, detail } = arg.input2;
+                    side2State = { title, description, detail };
+                }
+                const options: MergeEditorOpenerOptions = { widgetState: { side1State, side2State } };
+
+                await open(this.openerService, uri, options);
+            }
+        });
+
+        // Temporary workaround: opens a single diff editor for the revealed resource.
+        // TODO: GH-16280 implement a proper MultiDiffEditor widget.
+        commands.registerCommand({ id: '_workbench.openMultiDiffEditor' }, {
+            execute: async (options: {
+                title: string;
+                resources?: { originalUri: UriComponents; modifiedUri: UriComponents }[];
+                reveal?: { modifiedUri: UriComponents };
+            }): Promise<void> => {
+                if (!options.resources?.length) {
+                    return;
+                }
+                const revealModified = options.reveal?.modifiedUri;
+                const revealStr = revealModified ? URI.revive(revealModified)?.toString() : undefined;
+                const target = revealStr
+                    ? options.resources.find(r => URI.revive(r.modifiedUri)?.toString() === revealStr)
+                    : undefined;
+                const resource = target ?? options.resources[0];
+                const left = URI.revive(resource.originalUri);
+                const right = URI.revive(resource.modifiedUri);
+                if (left && right) {
+                    await commands.executeCommand(VscodeCommands.DIFF.id, left, right, options.title);
+                } else if (right) {
+                    await commands.executeCommand(VscodeCommands.OPEN.id, right);
+                } else if (left) {
+                    await commands.executeCommand(VscodeCommands.OPEN.id, left);
+                }
+            },
+        });
     }
 
     private async deployPlugin(uri: TheiaURI | UriComponents): Promise<void> {

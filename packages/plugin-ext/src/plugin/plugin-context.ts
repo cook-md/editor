@@ -140,6 +140,7 @@ import {
     FileSystemError,
     CommentThreadState,
     CommentThreadCollapsibleState,
+    QuickInputButtonLocation,
     QuickInputButtons,
     QuickPickItemKind,
     CommentMode,
@@ -958,6 +959,7 @@ export function createAPIFactory(
             get appHost(): string { return envExt.appHost; },
             get language(): string { return envExt.language; },
             get isNewAppInstall(): boolean { return envExt.isNewAppInstall; },
+            get isAppPortable(): boolean { return envExt.isAppPortable; },
             get isTelemetryEnabled(): boolean { return telemetryExt.isTelemetryEnabled; },
             get onDidChangeTelemetryEnabled(): theia.Event<boolean> {
                 return telemetryExt.onDidChangeTelemetryEnabled;
@@ -1313,8 +1315,8 @@ export function createAPIFactory(
                     throw new Error('Input box not found!');
                 }
             },
-            createSourceControl(id: string, label: string, rootUri?: URI): theia.SourceControl {
-                return createAPIObject(scmExt.createSourceControl(plugin, id, label, rootUri));
+            createSourceControl(id: string, label: string, rootUri?: URI, iconPath?: theia.IconPath, parent?: theia.SourceControl): theia.SourceControl {
+                return createAPIObject(scmExt.createSourceControl(plugin, id, label, rootUri, iconPath, parent));
             }
         };
 
@@ -1559,6 +1561,7 @@ export function createAPIFactory(
             FileSystemError,
             CommentThreadState,
             CommentThreadCollapsibleState,
+            QuickInputButtonLocation,
             QuickInputButtons,
             CommentMode,
             CallHierarchyItem,

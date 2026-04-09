@@ -1,14 +1,14 @@
 {
   "name": "@theia/cooklang-branding",
-  "version": "1.68.0",
+  "version": "1.70.0",
   "description": "CookMD branding overrides for Theia",
   "dependencies": {
-    "@theia/ai-chat": "1.68.0",
-    "@theia/ai-chat-ui": "1.68.0",
-    "@theia/ai-core": "1.68.0",
-    "@theia/cooklang-account": "1.68.0",
-    "@theia/core": "1.68.0",
-    "@theia/monaco": "1.68.0",
+    "@theia/ai-chat": "1.70.0",
+    "@theia/ai-chat-ui": "1.70.0",
+    "@theia/ai-core": "1.70.0",
+    "@theia/cooklang-account": "1.70.0",
+    "@theia/core": "1.70.0",
+    "@theia/monaco": "1.70.0",
     "tslib": "^2.6.2"
   },
   "main": "lib/common",
@@ -35,6 +35,6 @@
     "watch": "theiaext watch"
   },
   "devDependencies": {
-    "@theia/ext-scripts": "1.68.0"
+    "@theia/ext-scripts": "1.70.0"
   }
 }

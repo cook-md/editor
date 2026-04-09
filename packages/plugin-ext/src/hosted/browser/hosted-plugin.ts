@@ -66,6 +66,7 @@ import {
     ALL_ACTIVATION_EVENT, isConnectionScopedBackendPlugin
 } from '../common/hosted-plugin';
 import { isRemote } from '@theia/core/lib/browser/browser';
+import { WorkspaceTrustService } from '@theia/workspace/lib/browser/workspace-trust-service';
 
 // Debug activation events removed - debug package deleted
 
@@ -146,6 +147,9 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
     @inject(ApplicationServer)
     protected readonly applicationServer: ApplicationServer;
 
+    @inject(WorkspaceTrustService)
+    protected readonly workspaceTrustService: WorkspaceTrustService;
+
     constructor() {
         super(generateUuid());
     }
@@ -221,12 +225,14 @@ export class HostedPluginSupport extends AbstractHostedPluginSupport<PluginManag
         // and core layout is initialized, i.e. explorer, scm, debug views are already added to the shell
         // but shell is not yet revealed
         await this.appState.reachedState('initialized_layout');
+        this.workspaceTrusted = await this.workspaceTrustService.getWorkspaceTrust();
     }
 
     protected override async afterLoadContributions(toDisconnect: DisposableCollection): Promise<void> {
         await this.viewRegistry.initWidgets();
         // remove restored plugin widgets which were not registered by contributions
         this.viewRegistry.removeStaleWidgets();
+        this.workspaceTrustService.refreshRestrictedModeIndicator();
     }
 
     protected handleContributions(plugin: DeployedPlugin): Disposable {
