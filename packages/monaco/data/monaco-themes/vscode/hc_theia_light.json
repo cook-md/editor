@@ -1,21 +1,5 @@
 {
   "$schema": "vscode://schemas/color-theme",
-  "name": "Light High Contrast (Cooklang)",
-  "include": "./hc_light.json",
-  "colors": {
-    "activityBarBadge.background": "#e15a29",
-    "activityBarBadge.foreground": "#ffffff",
-    "focusBorder": "#e15a29",
-    "statusBar.background": "#e15a29",
-    "statusBar.foreground": "#ffffff",
-    "progressBar.background": "#e15a29",
-    "textLink.foreground": "#d14e20",
-    "button.background": "#e15a29",
-    "button.foreground": "#ffffff",
-    "button.hoverBackground": "#d14e20",
-    "badge.background": "#e15a29",
-    "badge.foreground": "#ffffff",
-    "notificationLink.foreground": "#d14e20",
-    "editorCursor.foreground": "#e15a29"
-  }
+  "name": "Light High Contrast (Theia)",
+  "include": "./hc_light.json"
 }

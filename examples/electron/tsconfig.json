@@ -33,6 +33,9 @@
       "path": "../../packages/cooklang-ai"
     },
     {
+      "path": "../../packages/cooklang-branding"
+    },
+    {
       "path": "../../packages/core"
     },
     {
@@ -70,9 +73,6 @@
     },
     {
       "path": "../../packages/plugin-ext"
-    },
-    {
-      "path": "../../packages/plugin-ext-headless"
     },
     {
       "path": "../../packages/plugin-ext-vscode"

@@ -45,7 +45,7 @@ You are an example agent. Be nice and helpful to the user.
 ## Current Context
 Some files and other pieces of data may have been added by the user to the context of the chat. If any have, the details can be found below.
 {{contextDetails}}`,
-    defaultLLM: 'openai/gpt-4o',
+    defaultLLM: 'default/universal',
     showInChat: true
 };
 
@@ -240,6 +240,8 @@ export class DefaultPromptFragmentCustomizationService implements PromptFragment
             customizationId,
             origin,
             ...(metadata && {
+                name: metadata.name,
+                description: metadata.description,
                 isCommand: metadata.isCommand,
                 commandName: metadata.commandName,
                 commandDescription: metadata.commandDescription,
@@ -777,7 +779,9 @@ export class DefaultPromptFragmentCustomizationService implements PromptFragment
             template: entry.template,
             customizationId: entry.customizationId,
             priority: entry.priority,
-            // Pass through command metadata
+            // Pass through fragment metadata
+            name: entry.name,
+            description: entry.description,
             isCommand: entry.isCommand,
             commandName: entry.commandName,
             commandDescription: entry.commandDescription,
@@ -797,7 +801,9 @@ export class DefaultPromptFragmentCustomizationService implements PromptFragment
                     template: value.template,
                     customizationId: value.customizationId,
                     priority: value.priority,
-                    // Pass through command metadata
+                    // Pass through fragment metadata
+                    name: value.name,
+                    description: value.description,
                     isCommand: value.isCommand,
                     commandName: value.commandName,
                     commandDescription: value.commandDescription,

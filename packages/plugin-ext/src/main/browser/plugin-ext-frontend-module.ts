@@ -26,7 +26,7 @@ import {
     noopWidgetStatusBarContribution,
     WidgetStatusBarContribution
 } from '@theia/core/lib/browser';
-import { MaybePromise, CommandContribution, ResourceResolver, bindContributionProvider, URI, generateUuid, PreferenceContribution } from '@theia/core/lib/common';
+import { MaybePromise, CommandContribution, ResourceResolver, bindRootContributionProvider, URI, generateUuid, PreferenceContribution, nls } from '@theia/core/lib/common';
 import { WebSocketConnectionProvider } from '@theia/core/lib/browser/messaging';
 import { HostedPluginSupport } from '../../hosted/browser/hosted-plugin';
 import { HostedPluginWatcher } from '../../hosted/browser/hosted-plugin-watcher';
@@ -85,8 +85,10 @@ import { WebviewSecondaryWindowSupport } from './webview/webview-secondary-windo
 import { CustomEditorUndoRedoHandler } from './custom-editors/custom-editor-undo-redo-handler';
 import { CustomEditorNavigationContribution } from './custom-editors/custom-editor-navigation-contribution';
 import { bindWebviewPreferences } from '../common/webview-preferences';
+import { bindPluginHostEnvironmentPreferences } from '../common/plugin-host-environment-preferences';
 import { WebviewFrontendPreferenceContribution } from './webview/webview-frontend-preference-contribution';
 import { PluginExtToolbarItemArgumentProcessor } from './plugin-ext-argument-processor';
+import { WorkspaceRestriction, WorkspaceRestrictionContribution } from '@theia/workspace/lib/browser/workspace-trust-service';
 
 export default new ContainerModule((bind, unbind, isBound, rebind) => {
 
@@ -177,6 +179,7 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
     })).inSingletonScope();
 
     bindWebviewPreferences(bind);
+    bindPluginHostEnvironmentPreferences(bind);
     bind(WebviewFrontendPreferenceContribution).toSelf().inSingletonScope();
     bind(PreferenceContribution).toService(WebviewFrontendPreferenceContribution);
     bind(WebviewEnvironment).toSelf().inSingletonScope();
@@ -256,7 +259,7 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
 
     bind(TextContentResourceResolver).toSelf().inSingletonScope();
     bind(ResourceResolver).toService(TextContentResourceResolver);
-    bindContributionProvider(bind, MainPluginApiProvider);
+    bindRootContributionProvider(bind, MainPluginApiProvider);
 
     bind(CommentsService).to(PluginCommentService).inSingletonScope();
     bind(CommentingRangeDecorator).toSelf().inSingletonScope();
@@ -279,9 +282,36 @@ export default new ContainerModule((bind, unbind, isBound, rebind) => {
         return provider.createProxy<LanguagePackService>(languagePackServicePath);
     }).inSingletonScope();
 
-    bindContributionProvider(bind, ArgumentProcessorContribution);
+    bindRootContributionProvider(bind, ArgumentProcessorContribution);
 
     bind(PluginExtToolbarItemArgumentProcessor).toSelf().inSingletonScope();
     bind(ArgumentProcessorContribution).toService(PluginExtToolbarItemArgumentProcessor);
+
+    bind(WorkspaceRestrictionContribution).toDynamicValue(ctx => {
+        const hostedPlugin = ctx.container.get(HostedPluginSupport);
+        return {
+            getRestrictions(): WorkspaceRestriction[] {
+                if (hostedPlugin.disabledByTrust.size === 0) {
+                    return [];
+                }
+                return [{
+                    label: nls.localize('theia/plugin-ext/extensionsRestrictedMode',
+                        'Some extensions are disabled in Restricted Mode'),
+                    details: Array.from(hostedPlugin.disabledByTrust)
+                }];
+            },
+            requiresReloadOnTrustChange(newTrust: boolean): boolean {
+                if (newTrust) {
+                    // Granting trust: reload only if plugins were actually blocked.
+                    return hostedPlugin.disabledByTrust.size > 0;
+                }
+                // Revoking trust: reload only if any loaded plugin declares supported: false,
+                // meaning it must be stopped now that the workspace is no longer trusted.
+                return hostedPlugin.plugins.some(
+                    p => p.model.untrustedWorkspacesSupport === false
+                );
+            }
+        };
+    }).inSingletonScope();
 
 });

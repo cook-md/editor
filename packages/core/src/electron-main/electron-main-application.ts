@@ -231,13 +231,11 @@ export class ElectronMainApplication {
                     }
                     this.useNativeWindowFrame = this.getTitleBarStyle(config) === 'native';
                     this._config = config;
-                    this.applyBranding(config);
                     this.hookApplicationEvents();
                     this.showInitialWindow(argv.includes('--open-url') ? argv[argv.length - 1] : undefined);
                     const port = await this.startBackend();
                     this._backendPort.resolve(port);
                     await app.whenReady();
-                    this.applyDockIcon(config);
                     await this.attachElectronSecurityToken(port);
                     await this.startContributions();
 
@@ -248,29 +246,6 @@ export class ElectronMainApplication {
                     });
                 },
             ).parse();
-    }
-
-    protected applyBranding(config: FrontendApplicationConfig): void {
-        if (config.applicationName) {
-            app.setName(config.applicationName);
-        }
-    }
-
-    protected applyDockIcon(config: FrontendApplicationConfig): void {
-        const iconPath = config.electron?.windowOptions?.icon;
-        if (iconPath && typeof iconPath === 'string') {
-            if (isOSX && app.dock) {
-                // Prefer .icns for macOS Dock icon to avoid sizing issues with transparent PNG padding
-                const icnsPath = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, path.dirname(iconPath), 'icon.icns');
-                const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
-                const fsModule = require('fs');
-                try {
-                    app.dock.setIcon(fsModule.existsSync(icnsPath) ? icnsPath : resolvedIcon);
-                } catch (err) {
-                    console.warn('Failed to set dock icon:', err);
-                }
-            }
-        }
     }
 
     protected getTitleBarStyle(config: FrontendApplicationConfig): 'native' | 'custom' {
@@ -523,16 +498,15 @@ export class ElectronMainApplication {
                 backgroundThrottling: false,
                 enableDeprecatedPaste: true
             },
-            ...this.resolveWindowOptions(this.config.electron?.windowOptions || {}),
+            ...this.config.electron?.windowOptions || {},
         };
     }
 
-    protected resolveWindowOptions(windowOptions: BrowserWindowConstructorOptions): BrowserWindowConstructorOptions {
-        const resolved = { ...windowOptions };
-        if (resolved.icon && typeof resolved.icon === 'string') {
-            resolved.icon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, resolved.icon);
+    closeWindowById(webContentsId: number): void {
+        const window = this.windows.get(webContentsId);
+        if (window) {
+            window.close(StopReason.Close);
         }
-        return resolved;
     }
 
     async openDefaultWindow(params?: WindowSearchParams): Promise<BrowserWindow> {
