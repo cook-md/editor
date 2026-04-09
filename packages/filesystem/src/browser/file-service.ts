@@ -357,6 +357,7 @@ export class FileService {
 
     private readonly providers = new Map<string, FileSystemProvider>();
     private readonly activations = new Map<string, Promise<FileSystemProvider>>();
+    private readonly pendingActivations = new Map<string, Deferred<FileSystemProvider>>();
 
     /**
      * Registers a new {@link FileSystemProvider} for the given scheme.
@@ -371,6 +372,14 @@ export class FileService {
         }
 
         this.providers.set(scheme, provider);
+
+        // Resolve any pending activation for this scheme
+        const pending = this.pendingActivations.get(scheme);
+        if (pending) {
+            this.pendingActivations.delete(scheme);
+            pending.resolve(provider);
+        }
+
         this.onDidChangeFileSystemProviderRegistrationsEmitter.fire({ added: true, scheme, provider });
 
         const providerDisposables = new DisposableCollection();
@@ -403,17 +412,15 @@ export class FileService {
         let activation = this.activations.get(scheme);
         if (!activation) {
             const deferredActivation = new Deferred<FileSystemProvider>();
+            this.pendingActivations.set(scheme, deferredActivation);
             this.activations.set(scheme, activation = deferredActivation.promise);
             WaitUntilEvent.fire(this.onWillActivateFileSystemProviderEmitter, { scheme }).then(() => {
                 provider = this.providers.get(scheme);
-                if (!provider) {
-                    const error = new Error();
-                    error.name = 'ENOPRO';
-                    error.message = `No file system provider found for scheme ${scheme}`;
-                    throw error;
-                } else {
+                if (provider) {
                     deferredActivation.resolve(provider);
                 }
+                // If provider is not yet registered, pendingActivations entry
+                // will be resolved later by registerProvider()
             }).catch(e => deferredActivation.reject(e));
         }
         return activation;
