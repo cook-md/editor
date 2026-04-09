@@ -6,4 +6,4 @@
 // *****************************************************************************
 
 export { CookbotChatAgent } from './cookbot-chat-agent';
-export { CookbotListFilesTool, CookbotReadFileTool, CookbotWriteFileTool } from './cookbot-tool-provider';
+export { CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool } from './cookbot-server-tools';

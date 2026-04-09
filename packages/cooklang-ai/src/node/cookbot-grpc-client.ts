@@ -9,9 +9,18 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import * as path from 'path';
-import { Emitter, Event } from '@theia/core';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
-import { CookbotChatChunk, CookbotInitResult, CookbotToolRequest } from '../common/cookbot-protocol';
+import {
+    CookbotChatChunk,
+    CookbotInitResult,
+    CookbotMessageParam,
+    CookbotToolDefinition,
+} from '../common/cookbot-protocol';
+import {
+    CookbotSearchResult,
+    CookbotFetchResult,
+    CookbotConvertResult,
+} from '../common/cookbot-server-tools-protocol';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 
 @injectable()
@@ -20,9 +29,7 @@ export class CookbotGrpcClient {
     @inject(AuthService)
     protected readonly authService: AuthService;
 
-    private chatService: any;
-    private connectionService: any;
-    private toolExecutionService: any;
+    private service: any;
     private sessionId: string | undefined;
     private authToken: string = '';
 
@@ -36,7 +43,7 @@ export class CookbotGrpcClient {
     }
 
     protected ensureConnected(): void {
-        if (!this.chatService) {
+        if (!this.service) {
             this.connect();
         }
     }
@@ -58,16 +65,14 @@ export class CookbotGrpcClient {
         const cleanAddress = address.replace(/^https?:\/\//, '');
         const credentials = useSecure ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
-        this.chatService = new proto.cookbot.AIChatService(cleanAddress, credentials);
-        this.connectionService = new proto.cookbot.Connection(cleanAddress, credentials);
-        this.toolExecutionService = new proto.cookbot.ToolExecutionService(cleanAddress, credentials);
+        this.service = new proto.cookbot.CookbotService(cleanAddress, credentials);
     }
 
     async initialize(recipesDir: string, customInstructions?: string): Promise<CookbotInitResult> {
         this.ensureConnected();
         const token = await this.authService.getToken();
         return new Promise((resolve, reject) => {
-            this.connectionService.Initialize({
+            this.service.Initialize({
                 customInstructions: customInstructions || '',
                 clientVersion: '0.1.0',
                 recipesDir,
@@ -93,18 +98,39 @@ export class CookbotGrpcClient {
     }
 
     sendMessage(
-        message: string,
-        conversationHistory: Array<{ role: string; content: string }>,
+        messages: CookbotMessageParam[],
+        tools: CookbotToolDefinition[],
         cancellationToken?: CancellationToken
     ): { stream: AsyncIterable<CookbotChatChunk> } {
         this.ensureConnected();
-        // Auth token is sent as a proto field rather than gRPC metadata because
-        // the cookbot server expects it in the message body for simplicity.
-        const call = this.chatService.SendMessage({
-            message,
-            conversationHistory,
+
+        // Convert messages to proto format
+        const protoMessages = messages.map(msg => ({
+            role: msg.role,
+            content: msg.content.map(part => ({
+                type: part.type,
+                text: part.text || '',
+                toolUseId: part.toolUseId || '',
+                name: part.name || '',
+                input: part.input || '',
+                toolResultContent: part.toolResultContent || '',
+                isError: part.isError || false,
+                thinking: part.thinking || '',
+                signature: part.signature || '',
+            })),
+        }));
+
+        const protoTools = tools.map(t => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema,
+        }));
+
+        const call = this.service.SendMessage({
+            messages: protoMessages,
             sessionId: this.sessionId || '',
             authToken: this.authToken,
+            tools: protoTools,
         });
 
         if (cancellationToken) {
@@ -117,64 +143,88 @@ export class CookbotGrpcClient {
         return { stream };
     }
 
-    sendToolResult(executionId: string, success: boolean, result: string, error?: string): void {
-        if (!this.toolStream) {
-            console.warn('Cannot send tool result: tool stream not connected');
-            return;
-        }
-        this.toolStream.write({
-            executionId,
-            success,
-            result,
-            error: error || '',
-        });
-    }
+    // ── Server-side tools ────────────────────────────────────────────────
 
-    private toolStream: grpc.ClientDuplexStream<any, any> | undefined;
-
-    private readonly onToolRequestEmitter = new Emitter<CookbotToolRequest>();
-    readonly onToolRequest: Event<CookbotToolRequest> = this.onToolRequestEmitter.event;
-
-    connectToolStream(): void {
+    async searchWeb(query: string, maxResults?: number): Promise<CookbotSearchResult[]> {
         this.ensureConnected();
-        this.setupToolStream();
-    }
-
-    private toolStreamReconnectTimer: ReturnType<typeof setTimeout> | undefined;
-
-    private setupToolStream(): void {
-        if (this.toolStreamReconnectTimer) {
-            clearTimeout(this.toolStreamReconnectTimer);
-            this.toolStreamReconnectTimer = undefined;
-        }
-        this.toolStream = this.toolExecutionService.ExecuteTools();
-        this.toolStream!.on('data', (request: any) => {
-            this.onToolRequestEmitter.fire({
-                executionId: request.executionId,
-                toolName: request.toolName,
-                parameters: request.parameters || {},
-                internal: request.internal || false,
+        return new Promise((resolve, reject) => {
+            this.service.SearchWeb({
+                query,
+                maxResults: maxResults || 5,
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve((response.results || []).map((r: any) => ({
+                    title: r.title,
+                    url: r.url,
+                    snippet: r.snippet,
+                })));
             });
         });
-        this.toolStream!.on('error', (err: Error) => {
-            console.error('Tool execution stream error:', err.message);
-            this.toolStream = undefined;
-            this.scheduleToolStreamReconnect();
-        });
-        this.toolStream!.on('end', () => {
-            this.toolStream = undefined;
-            this.scheduleToolStreamReconnect();
+    }
+
+    async fetchUrl(url: string): Promise<CookbotFetchResult> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.FetchUrl({
+                url,
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve({
+                    content: response.content,
+                    title: response.title,
+                });
+            });
         });
     }
 
-    private scheduleToolStreamReconnect(): void {
-        if (!this.toolStreamReconnectTimer) {
-            this.toolStreamReconnectTimer = setTimeout(() => {
-                console.info('Reconnecting tool execution stream...');
-                this.setupToolStream();
-            }, 3000);
-        }
+    async convertUrlToCooklang(url: string): Promise<CookbotConvertResult> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.ConvertUrlToCooklang({
+                url,
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve({
+                    cooklangContent: response.cooklangContent,
+                    recipeName: response.recipeName,
+                });
+            });
+        });
     }
+
+    async convertTextToCooklang(name: string, text: string): Promise<CookbotConvertResult> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.ConvertTextToCooklang({
+                name,
+                text,
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve({
+                    cooklangContent: response.cooklangContent,
+                    recipeName: response.recipeName,
+                });
+            });
+        });
+    }
+
+    // ── Stream helpers ───────────────────────────────────────────────────
 
     private async *grpcStreamToAsync(call: grpc.ClientReadableStream<any>): AsyncIterable<CookbotChatChunk> {
         const queue: Array<CookbotChatChunk | Error | null> = [];
@@ -212,89 +262,92 @@ export class CookbotGrpcClient {
     }
 
     private parseChatChunk(chunk: any): CookbotChatChunk | undefined {
-        if (chunk.textDelta !== undefined && chunk.textDelta !== '') {
-            return { type: 'text_delta', textDelta: chunk.textDelta };
-        }
-        if (chunk.thinkingDelta) {
+        // The proto uses oneof "event" — proto-loader populates the active field
+        if (chunk.contentBlockStart) {
+            const cbs = chunk.contentBlockStart;
             return {
-                type: 'thinking_delta',
-                thinkingDelta: {
-                    thinkingText: chunk.thinkingDelta.thinkingText,
-                    isSignature: chunk.thinkingDelta.isSignature,
-                    signature: chunk.thinkingDelta.signature,
-                },
+                type: 'content_block_start',
+                index: cbs.index,
+                blockType: cbs.type,
+                text: cbs.text || undefined,
+                thinking: cbs.thinking || undefined,
+                id: cbs.id || undefined,
+                name: cbs.name || undefined,
             };
         }
-        if (chunk.toolCall) {
+        if (chunk.contentBlockDelta) {
+            const cbd = chunk.contentBlockDelta;
             return {
-                type: 'tool_call',
-                toolCall: {
-                    toolId: chunk.toolCall.toolId,
-                    toolName: chunk.toolCall.toolName,
-                    toolInput: chunk.toolCall.toolInput,
-                },
+                type: 'content_block_delta',
+                index: cbd.index,
+                deltaType: cbd.type,
+                text: cbd.text || undefined,
+                partialJson: cbd.partialJson || undefined,
+                signature: cbd.signature || undefined,
             };
         }
-        if (chunk.toolResult) {
+        if (chunk.contentBlockStop) {
             return {
-                type: 'tool_result',
-                toolResult: {
-                    toolId: chunk.toolResult.toolId,
-                    toolName: chunk.toolResult.toolName,
-                    success: chunk.toolResult.success,
-                    result: chunk.toolResult.result,
-                    error: chunk.toolResult.error,
-                },
+                type: 'content_block_stop',
+                index: chunk.contentBlockStop.index,
             };
         }
-        if (chunk.toolExecution) {
+        if (chunk.messageStart) {
+            const ms = chunk.messageStart;
             return {
-                type: 'tool_execution',
-                toolExecution: {
-                    toolName: chunk.toolExecution.toolName,
-                    status: chunk.toolExecution.status,
-                },
+                type: 'message_start',
+                id: ms.id,
+                model: ms.model,
+                inputTokens: ms.inputTokens,
             };
         }
-        if (chunk.usageInfo) {
+        if (chunk.messageDelta) {
+            const md = chunk.messageDelta;
             return {
-                type: 'usage_info',
-                usageInfo: {
-                    tokensUsed: chunk.usageInfo.tokensUsed,
-                    tokenLimit: chunk.usageInfo.tokenLimit,
-                    warning: chunk.usageInfo.warning,
-                    limitExceeded: chunk.usageInfo.limitExceeded,
-                },
+                type: 'message_delta',
+                stopReason: md.stopReason,
+                outputTokens: md.outputTokens,
             };
         }
-        if (chunk.contextStatus) {
-            return {
-                type: 'context_status',
-                contextStatus: {
-                    tokensUsed: chunk.contextStatus.tokensUsed,
-                    tokenLimit: chunk.contextStatus.tokenLimit,
-                    percentageUsed: chunk.contextStatus.percentageUsed,
-                    compactionInProgress: chunk.contextStatus.compactionInProgress,
-                },
-            };
-        }
-        if (chunk.compactionInfo) {
-            return {
-                type: 'compaction_info',
-                compactionInfo: {
-                    compactedHistory: chunk.compactionInfo.compactedHistory || [],
-                    summary: chunk.compactionInfo.summary,
-                    tokensBefore: chunk.compactionInfo.tokensBefore,
-                    tokensAfter: chunk.compactionInfo.tokensAfter,
-                    fallbackUsed: chunk.compactionInfo.fallbackUsed,
-                },
-            };
+        if (chunk.messageStop !== undefined && chunk.messageStop !== null) {
+            return { type: 'message_stop' };
         }
         if (chunk.error) {
             return { type: 'error', error: chunk.error };
         }
-        if (chunk.streamEnd) {
-            return { type: 'stream_end', streamEnd: true };
+        if (chunk.contextStatus) {
+            const cs = chunk.contextStatus;
+            return {
+                type: 'context_status',
+                tokensUsed: cs.tokensUsed,
+                tokenLimit: cs.tokenLimit,
+                percentageUsed: cs.percentageUsed,
+                compactionInProgress: cs.compactionInProgress,
+            };
+        }
+        if (chunk.compactionInfo) {
+            const ci = chunk.compactionInfo;
+            return {
+                type: 'compaction_info',
+                compactedHistory: (ci.compactedHistory || []).map((m: any) => ({
+                    role: m.role,
+                    content: (m.content || []).map((p: any) => ({
+                        type: p.type,
+                        text: p.text || undefined,
+                        toolUseId: p.toolUseId || undefined,
+                        name: p.name || undefined,
+                        input: p.input || undefined,
+                        toolResultContent: p.toolResultContent || undefined,
+                        isError: p.isError || undefined,
+                        thinking: p.thinking || undefined,
+                        signature: p.signature || undefined,
+                    })),
+                })),
+                summary: ci.summary,
+                tokensBefore: ci.tokensBefore,
+                tokensAfter: ci.tokensAfter,
+                fallbackUsed: ci.fallbackUsed,
+            };
         }
         console.warn('Unknown cookbot chunk type, skipping:', Object.keys(chunk));
         return undefined;

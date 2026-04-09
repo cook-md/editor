@@ -7,13 +7,9 @@
     "@theia/ai-core": "1.70.0",
     "@theia/cooklang-account": "1.70.0",
     "@theia/core": "1.70.0",
-    "@theia/editor": "1.70.0",
-    "@theia/filesystem": "1.70.0",
-    "@theia/monaco": "1.70.0",
     "@theia/workspace": "1.70.0",
     "@grpc/grpc-js": "^1.12.0",
     "@grpc/proto-loader": "^0.7.0",
-    "minimatch": "^10.0.3",
     "tslib": "^2.6.2"
   },
   "main": "lib/common",

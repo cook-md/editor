@@ -14,15 +14,27 @@ import {
     UserRequest,
     LanguageModelMessage,
     ToolCallResult,
-    ToolRequest,
+    ToolInvocationContext,
+    createToolCallError,
     isToolCallContent,
-    hasToolCallError,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
-import { CookbotChatChunk } from '../common/cookbot-protocol';
+import {
+    CookbotChatChunk,
+    CookbotMessageParam,
+    CookbotContentPart,
+    CookbotToolDefinition,
+} from '../common/cookbot-protocol';
+
+interface ToolCallback {
+    readonly name: string;
+    readonly id: string;
+    readonly index: number;
+    args: string;
+}
 
 @injectable()
 export class CookbotLanguageModel implements LanguageModel {
@@ -62,104 +74,331 @@ export class CookbotLanguageModel implements LanguageModel {
             // Workspace may not be set yet
         }
         await this.grpcClient.initialize(recipesDir);
-        // CookbotToolExecutor is now registered via DI and listens to
-        // grpcClient.onToolRequest in its @postConstruct.
-        this.grpcClient.connectToolStream();
     }
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
         await this.ensureInitialized();
-
-        // Wrap tool handlers to forward results back to cookbot via the ToolExecutionService stream.
-        // When Theia's delegate system calls a tool and gets a result, we also send it to cookbot
-        // so it can continue its internal conversation with Claude.
-        this.wrapToolHandlers(request.tools);
-
-        const messages = request.messages.map(msg => {
-            if (LanguageModelMessage.isTextMessage(msg)) {
-                return { role: msg.actor === 'ai' ? 'assistant' : 'user', content: msg.text };
-            }
-            if (LanguageModelMessage.isToolResultMessage(msg)) {
-                const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
-                return { role: 'user', content };
-            }
-            if (LanguageModelMessage.isThinkingMessage(msg)) {
-                return { role: 'assistant', content: msg.thinking };
-            }
-            return { role: 'user', content: '' };
-        });
-
-        // Last message is the current user input
-        const lastMessage = messages.pop();
-        const messageText = lastMessage?.content || '';
-
-        const token = cancellationToken ?? request.cancellationToken;
-
-        const { stream: grpcStream } = this.grpcClient.sendMessage(
-            messageText,
-            messages,
-            token
-        );
-
-        const stream = this.mapStream(grpcStream);
-        return { stream } as LanguageModelStreamResponse;
+        return this.handleStreamingRequest(request, cancellationToken);
     }
 
-    private readonly wrappedHandlers = new WeakSet<Function>();
-
     /**
-     * Wraps each tool handler so that its result is also forwarded to cookbot
-     * via `grpcClient.sendToolResult()`. The tool_call's `id` (from the stream chunk)
-     * is used as the `executionId` correlation key.
-     *
-     * Uses a WeakSet to avoid wrapping the same handler more than once across
-     * multiple `request()` calls that share the same ToolRequest objects.
-     *
-     * NOTE: This mutates `tool.handler` on the ToolRequest objects passed in.
-     * The WeakSet guard prevents double-wrapping but the original handler
-     * reference is replaced.
+     * Handles a streaming request with recursive tool loop, following the
+     * ai-anthropic pattern. When Claude returns tool_use blocks, executes
+     * them via Theia's tool system and re-calls self with results.
      */
-    protected wrapToolHandlers(tools: ToolRequest[] | undefined): void {
-        if (!tools) {
-            return;
-        }
-        for (const tool of tools) {
-            if (this.wrappedHandlers.has(tool.handler)) {
-                continue;
-            }
-            const originalHandler = tool.handler;
-            const wrapped = async (argString: string, ctx?: { toolCallId?: string }): Promise<ToolCallResult> => {
-                const toolCallId = ctx?.toolCallId;
+    protected async handleStreamingRequest(
+        request: UserRequest,
+        cancellationToken?: CancellationToken,
+        toolMessages?: CookbotMessageParam[]
+    ): Promise<LanguageModelStreamResponse> {
+        const messages = this.transformMessages(request.messages);
+        const allMessages = [...messages, ...(toolMessages ?? [])];
+        const tools = this.createToolDefinitions(request);
+        const token = cancellationToken ?? request.cancellationToken;
+
+        const { stream: grpcStream } = this.grpcClient.sendMessage(allMessages, tools, token);
+
+        const that = this;
+        const asyncIterator = {
+            async *[Symbol.asyncIterator](): AsyncIterableIterator<LanguageModelStreamResponsePart> {
+                const toolCalls: ToolCallback[] = [];
+                let toolCall: ToolCallback | undefined;
+                const currentMessages: CookbotMessageParam[] = [];
+                let currentInputTokens = 0;
+                let currentOutputTokens = 0;
+
                 try {
-                    const result = await originalHandler(argString, ctx);
-                    if (toolCallId) {
-                        const resultString = this.toolCallResultToString(result);
-                        const success = !hasToolCallError(result);
-                        this.grpcClient.sendToolResult(
-                            toolCallId,
-                            success,
-                            resultString,
-                            success ? undefined : resultString
-                        );
+                    for await (const chunk of grpcStream) {
+                        const parts = that.processChunk(chunk, toolCalls, toolCall, currentMessages);
+                        for (const part of parts.yields) {
+                            yield part;
+                        }
+                        toolCall = parts.toolCall;
+                        if (parts.inputTokens !== undefined) {
+                            currentInputTokens = parts.inputTokens;
+                        }
+                        if (parts.outputTokens !== undefined) {
+                            currentOutputTokens = parts.outputTokens;
+                        }
                     }
-                    return result;
-                } catch (error) {
-                    const errorMessage = error instanceof Error ? error.message : String(error);
-                    if (toolCallId) {
-                        this.grpcClient.sendToolResult(toolCallId, false, '', errorMessage);
+                } catch (error: unknown) {
+                    if (error instanceof Error && 'code' in error && (error as any).code === 16) {
+                        that.initPromise = undefined;
                     }
                     throw error;
                 }
-            };
-            this.wrappedHandlers.add(wrapped);
-            tool.handler = wrapped;
+
+                // Yield usage info
+                if (currentInputTokens || currentOutputTokens) {
+                    yield { input_tokens: currentInputTokens, output_tokens: currentOutputTokens };
+                }
+
+                // Tool loop: execute tools and recurse
+                if (toolCalls.length > 0) {
+                    const toolResults = await Promise.all(toolCalls.map(async tc => {
+                        const tool = request.tools?.find(t => t.name === tc.name);
+                        const argsObject = tc.args.length === 0 ? '{}' : tc.args;
+                        const handlerResult: ToolCallResult = tool
+                            ? await tool.handler(argsObject, ToolInvocationContext.create(tc.id))
+                            : createToolCallError(`Tool '${tc.name}' not found in the available tools for this request.`, 'tool-not-available');
+                        return { name: tc.name, result: handlerResult, id: tc.id, arguments: argsObject };
+                    }));
+
+                    // Yield finished tool calls with results
+                    const calls = toolResults.map(tr => ({
+                        finished: true as const,
+                        id: tr.id,
+                        result: tr.result,
+                        function: { name: tr.name, arguments: tr.arguments },
+                    }));
+                    yield { tool_calls: calls };
+
+                    // Build tool result message for next turn
+                    const toolResponseMessage: CookbotMessageParam = {
+                        role: 'user',
+                        content: toolResults.map(call => ({
+                            type: 'tool_result',
+                            toolUseId: call.id,
+                            toolResultContent: that.formatToolCallResult(call.result),
+                            isError: that.hasError(call.result),
+                        })),
+                    };
+
+                    // Build assistant message from accumulated content blocks
+                    const assistantContent: CookbotContentPart[] = [];
+                    for (const msg of currentMessages) {
+                        assistantContent.push(...msg.content);
+                    }
+                    // Also add tool_use content parts for each tool call
+                    for (const tc of toolCalls) {
+                        assistantContent.push({
+                            type: 'tool_use',
+                            toolUseId: tc.id,
+                            name: tc.name,
+                            input: tc.args || '{}',
+                        });
+                    }
+                    const assistantMessage: CookbotMessageParam = {
+                        role: 'assistant',
+                        content: assistantContent,
+                    };
+
+                    // Recurse with accumulated messages
+                    const result = await that.handleStreamingRequest(
+                        request,
+                        cancellationToken,
+                        [
+                            ...(toolMessages ?? []),
+                            assistantMessage,
+                            toolResponseMessage,
+                        ]
+                    );
+
+                    for await (const nestedEvent of result.stream) {
+                        yield nestedEvent;
+                    }
+                }
+            },
+        };
+
+        return { stream: asyncIterator };
+    }
+
+    /**
+     * Process a single chunk from the gRPC stream, returning yield values
+     * and updated state.
+     */
+    private processChunk(
+        chunk: CookbotChatChunk,
+        toolCalls: ToolCallback[],
+        toolCall: ToolCallback | undefined,
+        currentMessages: CookbotMessageParam[],
+    ): {
+        yields: LanguageModelStreamResponsePart[];
+        toolCall: ToolCallback | undefined;
+        inputTokens?: number;
+        outputTokens?: number;
+    } {
+        const yields: LanguageModelStreamResponsePart[] = [];
+
+        switch (chunk.type) {
+            case 'content_block_start': {
+                if (chunk.blockType === 'thinking' && chunk.thinking) {
+                    yields.push({ thought: chunk.thinking, signature: '' });
+                }
+                if (chunk.blockType === 'text' && chunk.text) {
+                    yields.push({ content: chunk.text });
+                    currentMessages.push({
+                        role: 'assistant',
+                        content: [{ type: 'text', text: chunk.text }],
+                    });
+                }
+                if (chunk.blockType === 'tool_use') {
+                    toolCall = {
+                        name: chunk.name!,
+                        args: '',
+                        id: chunk.id!,
+                        index: chunk.index,
+                    };
+                    yields.push({
+                        tool_calls: [{
+                            finished: false,
+                            id: toolCall.id,
+                            function: { name: toolCall.name, arguments: toolCall.args },
+                        }],
+                    });
+                }
+                return { yields, toolCall };
+            }
+
+            case 'content_block_delta': {
+                if (chunk.deltaType === 'thinking_delta') {
+                    yields.push({ thought: chunk.text || '', signature: '' });
+                }
+                if (chunk.deltaType === 'signature_delta') {
+                    yields.push({ thought: '', signature: chunk.signature || '' });
+                }
+                if (chunk.deltaType === 'text_delta') {
+                    yields.push({ content: chunk.text || '' });
+                    // Append to last text message
+                    if (currentMessages.length > 0) {
+                        const lastMsg = currentMessages[currentMessages.length - 1];
+                        const lastPart = lastMsg.content[lastMsg.content.length - 1];
+                        if (lastPart && lastPart.type === 'text') {
+                            lastPart.text = (lastPart.text || '') + (chunk.text || '');
+                        }
+                    }
+                }
+                if (toolCall && chunk.deltaType === 'input_json_delta') {
+                    toolCall.args += chunk.partialJson || '';
+                    yields.push({
+                        tool_calls: [{ function: { arguments: chunk.partialJson || '' } }],
+                    });
+                }
+                return { yields, toolCall };
+            }
+
+            case 'content_block_stop': {
+                if (toolCall && toolCall.index === chunk.index) {
+                    toolCalls.push(toolCall);
+                    toolCall = undefined;
+                }
+                return { yields, toolCall };
+            }
+
+            case 'message_start': {
+                return {
+                    yields,
+                    toolCall,
+                    inputTokens: chunk.inputTokens,
+                };
+            }
+
+            case 'message_delta': {
+                if (chunk.stopReason === 'max_tokens') {
+                    if (toolCall) {
+                        yields.push({ tool_calls: [{ finished: true, id: toolCall.id }] });
+                    }
+                    throw new Error(`The response was stopped because it exceeded the max token limit of ${chunk.outputTokens}.`);
+                }
+                return {
+                    yields,
+                    toolCall,
+                    outputTokens: chunk.outputTokens,
+                };
+            }
+
+            case 'message_stop': {
+                return { yields, toolCall };
+            }
+
+            case 'error': {
+                throw new Error(chunk.error || 'Unknown cookbot error');
+            }
+
+            case 'context_status':
+            case 'compaction_info': {
+                // Context management handled transparently
+                return { yields, toolCall };
+            }
+
+            default:
+                return { yields, toolCall };
         }
     }
 
     /**
-     * Converts a ToolCallResult into a string suitable for sending to cookbot.
+     * Transform Theia LanguageModelMessages into CookbotMessageParams.
      */
-    protected toolCallResultToString(result: ToolCallResult): string {
+    private transformMessages(messages: readonly LanguageModelMessage[]): CookbotMessageParam[] {
+        const result: CookbotMessageParam[] = [];
+
+        for (const msg of messages) {
+            if (LanguageModelMessage.isTextMessage(msg)) {
+                if (msg.actor === 'system') {
+                    // System messages are handled server-side via custom instructions
+                    continue;
+                }
+                result.push({
+                    role: msg.actor === 'ai' ? 'assistant' : 'user',
+                    content: [{ type: 'text', text: msg.text }],
+                });
+                continue;
+            }
+
+            if (LanguageModelMessage.isToolResultMessage(msg)) {
+                const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
+                result.push({
+                    role: 'user',
+                    content: [{
+                        type: 'tool_result',
+                        toolUseId: msg.tool_use_id || '',
+                        toolResultContent: content,
+                    }],
+                });
+                continue;
+            }
+
+            if (LanguageModelMessage.isThinkingMessage(msg)) {
+                result.push({
+                    role: 'assistant',
+                    content: [{
+                        type: 'thinking',
+                        thinking: msg.thinking,
+                        signature: msg.signature || '',
+                    }],
+                });
+                continue;
+            }
+
+            // Fallback: unknown message type
+            result.push({
+                role: 'user',
+                content: [{ type: 'text', text: '' }],
+            });
+        }
+
+        return result;
+    }
+
+    /**
+     * Create tool definitions from the request's tools.
+     */
+    private createToolDefinitions(request: UserRequest): CookbotToolDefinition[] {
+        if (!request.tools || request.tools.length === 0) {
+            return [];
+        }
+        return request.tools.map(tool => ({
+            name: tool.name,
+            description: tool.description || '',
+            inputSchema: JSON.stringify(tool.parameters || {}),
+        }));
+    }
+
+    /**
+     * Format a tool call result into a string suitable for the tool_result content.
+     */
+    private formatToolCallResult(result: ToolCallResult): string {
         if (result === undefined) {
             return '';
         }
@@ -183,75 +422,10 @@ export class CookbotLanguageModel implements LanguageModel {
         return JSON.stringify(result);
     }
 
-    private async *mapStream(
-        grpcStream: AsyncIterable<CookbotChatChunk>
-    ): AsyncIterable<LanguageModelStreamResponsePart> {
-        try {
-            for await (const chunk of grpcStream) {
-                const part = this.mapChunkToPart(chunk);
-                if (part) {
-                    yield part;
-                }
-            }
-        } catch (error: unknown) {
-            if (error instanceof Error && 'code' in error && (error as any).code === 16) {
-                this.initPromise = undefined;
-            }
-            throw error;
-        }
-    }
-
-    private mapChunkToPart(
-        chunk: CookbotChatChunk
-    ): LanguageModelStreamResponsePart | undefined {
-        switch (chunk.type) {
-            case 'text_delta':
-                return { content: chunk.textDelta! };
-
-            case 'thinking_delta':
-                if (chunk.thinkingDelta && !chunk.thinkingDelta.isSignature) {
-                    return {
-                        thought: chunk.thinkingDelta.thinkingText,
-                        signature: '',
-                    };
-                }
-                if (chunk.thinkingDelta?.isSignature) {
-                    return {
-                        thought: '',
-                        signature: chunk.thinkingDelta.signature,
-                    };
-                }
-                return undefined;
-
-            case 'tool_call':
-                if (chunk.toolCall) {
-                    return {
-                        tool_calls: [{
-                            id: chunk.toolCall.toolId,
-                            function: {
-                                name: chunk.toolCall.toolName,
-                                arguments: chunk.toolCall.toolInput,
-                            },
-                            finished: true,
-                        }],
-                    };
-                }
-                return undefined;
-
-            case 'tool_result':
-                return undefined;
-
-            case 'usage_info':
-                return undefined;
-
-            case 'error':
-                throw new Error(chunk.error || 'Unknown cookbot error');
-
-            case 'stream_end':
-                return undefined;
-
-            default:
-                return undefined;
-        }
+    /**
+     * Check if a tool call result contains an error.
+     */
+    private hasError(result: ToolCallResult): boolean {
+        return isToolCallContent(result) && result.content.some(part => part.type === 'error');
     }
 }

@@ -11,9 +11,6 @@
     { "path": "../ai-core" },
     { "path": "../cooklang-account" },
     { "path": "../core" },
-    { "path": "../editor" },
-    { "path": "../filesystem" },
-    { "path": "../monaco" },
     { "path": "../workspace" }
   ]
 }

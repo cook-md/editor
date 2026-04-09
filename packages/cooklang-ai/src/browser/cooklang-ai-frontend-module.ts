@@ -9,10 +9,9 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { ChatAgent, DefaultChatAgentId } from '@theia/ai-chat/lib/common';
 import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
-import { CookbotFileOperationsPath, CookbotFileOperationsServer } from '../common/cookbot-file-operations-protocol';
+import { CookbotServerToolsPath, CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
 import { CookbotChatAgent } from './cookbot-chat-agent';
-import { CookbotFileOperationsClientImpl } from './cookbot-file-operations-client';
-import { CookbotListFilesTool, CookbotReadFileTool, CookbotWriteFileTool } from './cookbot-tool-provider';
+import { CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool } from './cookbot-server-tools';
 
 export default new ContainerModule(bind => {
     // Chat agent
@@ -21,15 +20,14 @@ export default new ContainerModule(bind => {
     bind(ChatAgent).toService(CookbotChatAgent);
     bind(DefaultChatAgentId).toConstantValue({ id: 'cookbot' });
 
-    // File tools
-    bindToolProvider(CookbotListFilesTool, bind);
-    bindToolProvider(CookbotReadFileTool, bind);
-    bindToolProvider(CookbotWriteFileTool, bind);
+    // Server tools — RPC proxy to backend
+    bind(CookbotServerToolsService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy(ctx.container, CookbotServerToolsPath)
+    ).inSingletonScope();
 
-    // File operations RPC — client handles write operations with undo/redo
-    bind(CookbotFileOperationsClientImpl).toSelf().inSingletonScope();
-    bind(CookbotFileOperationsServer).toDynamicValue(ctx => {
-        const client = ctx.container.get(CookbotFileOperationsClientImpl);
-        return ServiceConnectionProvider.createProxy(ctx.container, CookbotFileOperationsPath, client);
-    }).inSingletonScope();
+    // Server-side tool providers
+    bindToolProvider(CookbotSearchWebTool, bind);
+    bindToolProvider(CookbotFetchUrlTool, bind);
+    bindToolProvider(CookbotConvertUrlTool, bind);
+    bindToolProvider(CookbotConvertTextTool, bind);
 });
