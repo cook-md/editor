@@ -10,11 +10,11 @@ import { ConnectionContainerModule } from '@theia/core/lib/node/messaging/connec
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { LanguageModelProvider } from '@theia/ai-core/lib/common';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
-import { CookbotFileOperationsPath, CookbotFileOperationsClient } from '../common/cookbot-file-operations-protocol';
+import { CookbotServerToolsPath } from '../common/cookbot-server-tools-protocol';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
-import { CookbotToolExecutor } from './cookbot-tool-executor';
+import { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';
 
 /**
  * Connection-scoped bindings for the Cookbot language model.
@@ -25,16 +25,13 @@ const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
     bind(CookbotGrpcClient).toSelf().inSingletonScope();
     bind(CookbotLanguageModel).toSelf().inSingletonScope();
     bind(CookbotLanguageModelProvider).toSelf().inSingletonScope();
-    bind(CookbotToolExecutor).toSelf().inSingletonScope();
 
+    // Server tools service — exposed to browser via RPC
+    bind(CookbotServerToolsServiceImpl).toSelf().inSingletonScope();
     bind(ConnectionHandler).toDynamicValue(ctx =>
-        new RpcConnectionHandler<CookbotFileOperationsClient>(
-            CookbotFileOperationsPath,
-            client => {
-                const executor = ctx.container.get(CookbotToolExecutor);
-                executor.setClient(client);
-                return executor;
-            }
+        new RpcConnectionHandler(
+            CookbotServerToolsPath,
+            () => ctx.container.get(CookbotServerToolsServiceImpl)
         )
     ).inSingletonScope();
 

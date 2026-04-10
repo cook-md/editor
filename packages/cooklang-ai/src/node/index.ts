@@ -8,3 +8,4 @@
 export { CookbotGrpcClient } from './cookbot-grpc-client';
 export { CookbotLanguageModel } from './cookbot-language-model';
 export { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
+export { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';

@@ -5,9 +5,9 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { AbstractStreamParsingChatAgent } from '@theia/ai-chat/lib/common';
-import { LanguageModelRequirement } from '@theia/ai-core/lib/common';
+import { LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core/lib/common';
 
 @injectable()
 export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
@@ -23,6 +23,9 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
     ];
     protected override defaultLanguageModelPurpose = 'chat';
 
+    @inject(ToolInvocationRegistry)
+    protected readonly toolRegistry: ToolInvocationRegistry;
+
     @postConstruct()
     override init(): void {
         super.init();
@@ -34,5 +37,10 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
                 template: 'You are a helpful Cooklang recipe assistant integrated into a desktop editor.',
             },
         }];
+        // Include all registered tools (file ops + server tools) in every request
+        this.additionalToolRequests = this.toolRegistry.getAllFunctions();
+        this.toolRegistry.onDidChange(() => {
+            this.additionalToolRequests = this.toolRegistry.getAllFunctions();
+        });
     }
 }
