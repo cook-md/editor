@@ -21,6 +21,8 @@ import {
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceServer } from '@theia/workspace/lib/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import {
     CookbotChatChunk,
@@ -65,15 +67,22 @@ export class CookbotLanguageModel implements LanguageModel {
 
     private async doInitialize(): Promise<void> {
         let recipesDir = '';
+        let customInstructions = '';
         try {
             const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
             if (workspaceUri) {
                 recipesDir = FileUri.fsPath(workspaceUri);
+                const cookMdPath = path.join(recipesDir, 'COOK.md');
+                try {
+                    customInstructions = await fs.promises.readFile(cookMdPath, 'utf-8');
+                } catch {
+                    // COOK.md not present, that's fine
+                }
             }
         } catch {
             // Workspace may not be set yet
         }
-        await this.grpcClient.initialize(recipesDir);
+        await this.grpcClient.initialize(recipesDir, customInstructions);
     }
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
@@ -94,6 +103,10 @@ export class CookbotLanguageModel implements LanguageModel {
         const messages = this.transformMessages(request.messages);
         const allMessages = [...messages, ...(toolMessages ?? [])];
         const tools = this.createToolDefinitions(request);
+        console.info(`[CookbotLM] Sending request with ${request.tools?.length ?? 0} tool requests, ${tools.length} tool definitions, ${allMessages.length} messages`);
+        if (tools.length > 0) {
+            console.info(`[CookbotLM] Tools: ${tools.map(t => t.name).join(', ')}`);
+        }
         const token = cancellationToken ?? request.cancellationToken;
 
         const { stream: grpcStream } = this.grpcClient.sendMessage(allMessages, tools, token);
@@ -328,10 +341,11 @@ export class CookbotLanguageModel implements LanguageModel {
     }
 
     /**
-     * Transform Theia LanguageModelMessages into CookbotMessageParams.
+     * Transform Theia LanguageModelMessages into CookbotMessageParams,
+     * merging consecutive same-role messages into one (required by Anthropic API).
      */
     private transformMessages(messages: readonly LanguageModelMessage[]): CookbotMessageParam[] {
-        const result: CookbotMessageParam[] = [];
+        const raw: CookbotMessageParam[] = [];
 
         for (const msg of messages) {
             if (LanguageModelMessage.isTextMessage(msg)) {
@@ -339,28 +353,46 @@ export class CookbotLanguageModel implements LanguageModel {
                     // System messages are handled server-side via custom instructions
                     continue;
                 }
-                result.push({
+                if (!msg.text) {
+                    // Skip empty text messages — Anthropic rejects them
+                    continue;
+                }
+                raw.push({
                     role: msg.actor === 'ai' ? 'assistant' : 'user',
                     content: [{ type: 'text', text: msg.text }],
                 });
                 continue;
             }
 
+            if (LanguageModelMessage.isToolUseMessage(msg)) {
+                raw.push({
+                    role: 'assistant',
+                    content: [{
+                        type: 'tool_use',
+                        toolUseId: msg.id,
+                        name: msg.name,
+                        input: typeof msg.input === 'string' ? msg.input : JSON.stringify(msg.input ?? {}),
+                    }],
+                });
+                continue;
+            }
+
             if (LanguageModelMessage.isToolResultMessage(msg)) {
                 const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
-                result.push({
+                raw.push({
                     role: 'user',
                     content: [{
                         type: 'tool_result',
                         toolUseId: msg.tool_use_id || '',
                         toolResultContent: content,
+                        isError: msg.is_error,
                     }],
                 });
                 continue;
             }
 
             if (LanguageModelMessage.isThinkingMessage(msg)) {
-                result.push({
+                raw.push({
                     role: 'assistant',
                     content: [{
                         type: 'thinking',
@@ -371,14 +403,22 @@ export class CookbotLanguageModel implements LanguageModel {
                 continue;
             }
 
-            // Fallback: unknown message type
-            result.push({
-                role: 'user',
-                content: [{ type: 'text', text: '' }],
-            });
+            // Skip unknown message types (e.g. ImageMessage) rather than
+            // creating empty text blocks that Anthropic would reject.
         }
 
-        return result;
+        // Merge consecutive same-role messages into one
+        const merged: CookbotMessageParam[] = [];
+        for (const msg of raw) {
+            const last = merged[merged.length - 1];
+            if (last && last.role === msg.role) {
+                last.content.push(...msg.content);
+            } else {
+                merged.push({ role: msg.role, content: [...msg.content] });
+            }
+        }
+
+        return merged;
     }
 
     /**

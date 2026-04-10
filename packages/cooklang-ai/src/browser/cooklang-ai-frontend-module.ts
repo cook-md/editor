@@ -11,7 +11,10 @@ import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import { CookbotServerToolsPath, CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
 import { CookbotChatAgent } from './cookbot-chat-agent';
-import { CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool } from './cookbot-server-tools';
+import {
+    CookbotListFilesTool, CookbotReadFileTool, CookbotWriteFileTool, CookbotEditFileTool,
+    CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool,
+} from './cookbot-server-tools';
 
 export default new ContainerModule(bind => {
     // Chat agent
@@ -25,7 +28,13 @@ export default new ContainerModule(bind => {
         ServiceConnectionProvider.createProxy(ctx.container, CookbotServerToolsPath)
     ).inSingletonScope();
 
-    // Server-side tool providers
+    // File tools (execute locally via Theia FileService)
+    bindToolProvider(CookbotListFilesTool, bind);
+    bindToolProvider(CookbotReadFileTool, bind);
+    bindToolProvider(CookbotWriteFileTool, bind);
+    bindToolProvider(CookbotEditFileTool, bind);
+
+    // Server-side tool providers (execute via gRPC)
     bindToolProvider(CookbotSearchWebTool, bind);
     bindToolProvider(CookbotFetchUrlTool, bind);
     bindToolProvider(CookbotConvertUrlTool, bind);

@@ -38,13 +38,16 @@ export class SyncServiceImpl implements SyncService {
     private callbackRegistered = false;
 
     @postConstruct()
-    protected async init(): Promise<void> {
-        await this.loadPreferences();
-        this.registerNativeCallback();
-        this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
-        if (this.syncEnabled) {
-            await this.startSyncIfReady();
-        }
+    protected init(): void {
+        // Must be synchronous for InversifyJS 6.x — async @postConstruct makes
+        // the binding async, breaking synchronous Container.get() in RpcConnectionHandler.
+        this.loadPreferences().then(() => {
+            this.registerNativeCallback();
+            this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
+            if (this.syncEnabled) {
+                this.startSyncIfReady();
+            }
+        });
     }
 
     async enableSync(): Promise<void> {
