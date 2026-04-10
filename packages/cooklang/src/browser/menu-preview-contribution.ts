@@ -66,7 +66,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     readonly label = 'Cooklang: Menu Preview';
 
     canHandle(uri: URI): number {
-        if (uri.path.ext === '.menu') {
+        if (uri.scheme === 'file' && uri.path.ext === '.menu') {
             return 200;
         }
         return 0;

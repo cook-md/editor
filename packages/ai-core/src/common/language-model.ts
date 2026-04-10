@@ -122,6 +122,8 @@ export interface ToolRequestParameters {
 export interface ToolRequest<TContext extends ToolInvocationContext = ToolInvocationContext> {
     id: string;
     name: string;
+    /** Human-readable label shown in the chat UI instead of the raw tool name. */
+    displayName?: string;
     parameters: ToolRequestParameters
     description?: string;
     handler: (arg_string: string, ctx?: TContext) => Promise<ToolCallResult>;

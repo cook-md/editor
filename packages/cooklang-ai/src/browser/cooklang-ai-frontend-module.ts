@@ -8,13 +8,31 @@
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { ChatAgent, DefaultChatAgentId } from '@theia/ai-chat/lib/common';
 import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
+import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import { CookbotServerToolsPath, CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
 import { CookbotChatAgent } from './cookbot-chat-agent';
 import {
-    CookbotListFilesTool, CookbotReadFileTool, CookbotWriteFileTool, CookbotEditFileTool,
     CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool,
 } from './cookbot-server-tools';
+import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
+import { WorkspacePreferencesSchema } from './file-tools/workspace-preferences';
+import {
+    GetWorkspaceDirectoryStructure,
+    FileContentFunction,
+    GetWorkspaceFileList,
+    FindFilesByPattern,
+} from './file-tools/workspace-functions';
+import {
+    SuggestFileContent,
+    SuggestFileReplacements,
+    ReplaceContentInFileFunctionHelper,
+    ReplaceContentInFileFunctionHelperV2,
+    FileChangeSetTitleProvider,
+    DefaultFileChangeSetTitleProvider,
+    ClearFileChanges,
+    GetProposedFileState,
+} from './file-tools/file-changeset-functions';
 
 export default new ContainerModule(bind => {
     // Chat agent
@@ -28,11 +46,28 @@ export default new ContainerModule(bind => {
         ServiceConnectionProvider.createProxy(ctx.container, CookbotServerToolsPath)
     ).inSingletonScope();
 
-    // File tools (execute locally via Theia FileService)
-    bindToolProvider(CookbotListFilesTool, bind);
-    bindToolProvider(CookbotReadFileTool, bind);
-    bindToolProvider(CookbotWriteFileTool, bind);
-    bindToolProvider(CookbotEditFileTool, bind);
+    // Workspace function scope (shared helper for all file tools)
+    bind(WorkspaceFunctionScope).toSelf().inSingletonScope();
+
+    // Preferences
+    bind(PreferenceContribution).toConstantValue({ schema: WorkspacePreferencesSchema });
+
+    // File tools — workspace exploration
+    bindToolProvider(GetWorkspaceFileList, bind);
+    bindToolProvider(FileContentFunction, bind);
+    bindToolProvider(GetWorkspaceDirectoryStructure, bind);
+    bindToolProvider(FindFilesByPattern, bind);
+
+    // File tools — changeset infrastructure
+    bind(ReplaceContentInFileFunctionHelper).toSelf().inSingletonScope();
+    bind(ReplaceContentInFileFunctionHelperV2).toSelf().inSingletonScope();
+    bind(FileChangeSetTitleProvider).to(DefaultFileChangeSetTitleProvider).inSingletonScope();
+
+    // File tools — suggest & replace (user reviews before applying)
+    bindToolProvider(SuggestFileContent, bind);
+    bindToolProvider(SuggestFileReplacements, bind);
+    bindToolProvider(ClearFileChanges, bind);
+    bindToolProvider(GetProposedFileState, bind);
 
     // Server-side tool providers (execute via gRPC)
     bindToolProvider(CookbotSearchWebTool, bind);

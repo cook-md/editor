@@ -13,7 +13,7 @@ import { LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core
 export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
 
     override id = 'cookbot';
-    override name = 'Cooklang Assistant';
+    override name = 'Cookbot';
     override description = 'AI assistant for Cooklang recipe writing, meal planning, and recipe management';
     override languageModelRequirements: LanguageModelRequirement[] = [
         {

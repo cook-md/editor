@@ -69,7 +69,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     readonly label = 'Cooklang: Recipe Preview';
 
     canHandle(uri: URI): number {
-        if (uri.path.ext === '.cook' && this.preferences['cooklang.openInPreviewMode']) {
+        if (uri.scheme === 'file' && uri.path.ext === '.cook' && this.preferences['cooklang.openInPreviewMode']) {
             return 200;
         }
         return 0;
