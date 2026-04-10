@@ -12,6 +12,7 @@
     { "path": "../cooklang-account" },
     { "path": "../core" },
     { "path": "../filesystem" },
+    { "path": "../monaco" },
     { "path": "../workspace" }
   ]
 }

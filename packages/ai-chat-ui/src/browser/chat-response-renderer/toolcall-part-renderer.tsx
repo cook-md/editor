@@ -191,6 +191,7 @@ const ToolCallContent: React.FC<ToolCallContentProps> = ({
     const pendingRef = React.useRef<HTMLElement | undefined>(undefined);
     const allowedRef = React.useRef<HTMLElement | undefined>(undefined);
 
+    const displayName = toolRequest?.displayName ?? response.name;
     const argsLabel = getArgumentsLabel(response.name, response.arguments);
 
     const formatReason = (reason: unknown): string => {
@@ -234,16 +235,16 @@ const ToolCallContent: React.FC<ToolCallContentProps> = ({
         <div className='theia-toolCall'>
             {confirmationState === 'rejected' ? (
                 <span className='theia-toolCall-rejected'>
-                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/rejected', 'Execution canceled')}: {response.name}
+                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/rejected', 'Execution canceled')}: {displayName}
                     {reasonText ? <span> — {reasonText}</span> : undefined}
                 </span>
             ) : requestCanceled && !response.finished ? (
                 <span className='theia-toolCall-rejected'>
-                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/rejected', 'Execution canceled')}: {response.name}
+                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/rejected', 'Execution canceled')}: {displayName}
                 </span>
             ) : confirmationState === 'denied' ? (
                 <span className='theia-toolCall-denied'>
-                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/denied', 'Execution denied')}: {response.name}
+                    <span className={codicon('error')}></span> {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/denied', 'Execution denied')}: {displayName}
                     {ToolCallChatResponseContent.isDenialResult(response.result) && response.result.reason ? <span> — {response.result.reason}</span> : undefined}
                 </span>
             ) : response.finished ? (
@@ -252,7 +253,7 @@ const ToolCallContent: React.FC<ToolCallContentProps> = ({
                         ref={(el: HTMLElement | null) => { summaryRef.current = el ?? undefined; }}
                         onMouseEnter={() => showArgsTooltip(response, summaryRef.current)}
                     >
-                        {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/finished', 'Ran')} {response.name}
+                        {nls.localize('theia/ai/chat-ui/toolcall-part-renderer/finished', 'Ran')} {displayName}
                         (<span className='theia-toolCall-args-label'>{argsLabel}</span>)
                     </summary>
                     <div className='theia-toolCall-response-result'>
@@ -264,7 +265,7 @@ const ToolCallContent: React.FC<ToolCallContentProps> = ({
                     ref={(el: HTMLElement | null) => { pendingRef.current = el ?? undefined; }}
                     onMouseEnter={() => showArgsTooltip(response, pendingRef.current)}
                 >
-                    <Spinner /> {response.name}
+                    <Spinner /> {displayName}
                     (<span className='theia-toolCall-args-label'>{argsLabel}</span>)
                 </span>
             ) : (
@@ -273,7 +274,7 @@ const ToolCallContent: React.FC<ToolCallContentProps> = ({
                         ref={(el: HTMLElement | null) => { allowedRef.current = el ?? undefined; }}
                         onMouseEnter={() => showArgsTooltip(response, allowedRef.current)}
                     >
-                        <Spinner /> {nls.localizeByDefault('Running')} {response.name}
+                        <Spinner /> {nls.localizeByDefault('Running')} {displayName}
                         (<span className='theia-toolCall-args-label'>{argsLabel}</span>)
                     </span>
                 )
