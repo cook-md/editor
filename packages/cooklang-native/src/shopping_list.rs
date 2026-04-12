@@ -134,3 +134,46 @@ mod checked_tests {
         assert!(checked_set_from_log(&entries).is_empty());
     }
 }
+
+/// Return a compacted log: entries whose name is in `current_ingredients`
+/// (case-insensitive) are kept, others are dropped.
+///
+/// Delegates to cooklang-rs's `compact_checked`.
+pub fn compact_checked_log<'a, I>(
+    entries: &[CheckEntry],
+    current_ingredients: I,
+) -> Vec<CheckEntry>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    shopping_list::compact_checked(entries, current_ingredients)
+}
+
+#[cfg(test)]
+mod compact_tests {
+    use super::*;
+
+    #[test]
+    fn drops_entries_for_missing_ingredients() {
+        let entries = parse_checked_log("+ flour\n+ sugar\n+ milk\n");
+        let compacted = compact_checked_log(&entries, ["flour", "sugar"]);
+        let set = checked_set_from_log(&compacted);
+        assert!(set.contains("flour"));
+        assert!(set.contains("sugar"));
+        assert!(!set.contains("milk"));
+    }
+
+    #[test]
+    fn keeps_all_when_all_ingredients_present() {
+        let entries = parse_checked_log("+ flour\n+ sugar\n");
+        let compacted = compact_checked_log(&entries, ["flour", "sugar"]);
+        assert_eq!(compacted.len(), 2);
+    }
+
+    #[test]
+    fn empty_ingredients_drops_everything() {
+        let entries = parse_checked_log("+ flour\n");
+        let compacted = compact_checked_log(&entries, Vec::<&str>::new());
+        assert!(compacted.is_empty());
+    }
+}
