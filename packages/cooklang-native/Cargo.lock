@@ -280,35 +280,9 @@ dependencies = [
 
 [[package]]
 name = "cooklang"
-version = "0.17.14"
+version = "0.18.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4c4c23c94d7a3195645155ed76e9cb9ede0a549bfaf816b27c668de9237e090"
-dependencies = [
- "bitflags 2.11.0",
- "codesnake",
- "enum-map",
- "finl_unicode",
- "prettyplease",
- "proc-macro2",
- "quote",
- "serde",
- "serde_yaml",
- "smallvec",
- "strum",
- "syn",
- "thiserror",
- "toml 0.8.23",
- "tracing",
- "unicase",
- "unicode-width",
- "yansi",
-]
-
-[[package]]
-name = "cooklang"
-version = "0.18.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7c0354dc4f2405eadbb47a77e0f290bb0858234e8b533dd3bfbcfbbb6df1dde"
+checksum = "9c3a241ae9621d706658e24d626311057d09f0803b6bcc10ebbbe5f23816af8f"
 dependencies = [
  "bitflags 2.11.0",
  "codesnake",
@@ -325,6 +299,7 @@ dependencies = [
  "syn",
  "thiserror",
  "toml 0.8.23",
+ "toml_edit",
  "tracing",
  "unicase",
  "unicode-width",
@@ -336,7 +311,7 @@ name = "cooklang-language-server"
 version = "0.2.1"
 dependencies = [
  "anyhow",
- "cooklang 0.18.3",
+ "cooklang",
  "dashmap 6.1.0",
  "nohash-hasher",
  "ropey",
@@ -355,7 +330,7 @@ name = "cooklang-native"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "cooklang 0.17.14",
+ "cooklang",
  "cooklang-language-server",
  "cooklang-sync-client",
  "napi",
@@ -2418,6 +2393,7 @@ version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
 dependencies = [
+ "indexmap",
  "serde",
  "serde_spanned 0.6.9",
  "toml_datetime 0.6.11",
