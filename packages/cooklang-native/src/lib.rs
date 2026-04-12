@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+mod shopping_list;
+
 // ── Sync globals ─────────────────────────────────────────────────────────────
 
 /// Shared state that tracks the current sync status, updated by the listener.
