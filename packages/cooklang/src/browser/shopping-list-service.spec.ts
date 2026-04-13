@@ -244,8 +244,22 @@ describe('ShoppingListService', () => {
         expect(checkedContent.includes('milk')).to.equal(false);
         expect(checkedContent.includes('+ flour')).to.equal(true);
     });
-});
+    it('reloads when .shopping-list is updated externally', async () => {
+        const { svc, fs } = await makeServiceReady();
+        expect(svc.getItems().length).to.equal(0);
 
-// Suppress "unused" warnings for helpers that are called in Task 2.
-void makeServiceReady;
-void sleep;
+        let changeFires = 0;
+        svc.onDidChange(() => { changeFires += 1; });
+
+        // External write (simulates cloud sync / another process).
+        fs.files.set('file:///ws/.shopping-list', 'pasta.cook\nsoup.cook\n');
+        fs.fireChange('file:///ws/.shopping-list');
+
+        // Wait past the debounce window.
+        await sleep(30);
+
+        expect(svc.getItems().length).to.equal(2);
+        expect(svc.getItems()[0].path).to.equal('pasta.cook');
+        expect(changeFires).to.be.greaterThan(0);
+    });
+});
