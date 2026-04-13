@@ -143,18 +143,20 @@ function makeService(): { svc: ShoppingListService; fs: FakeFileService; ls: Fak
 }
 
 /**
- * Like `makeService()` but also invokes the `@postConstruct` initializer and
- * waits for initial `loadFromDisk()` + watcher registration to complete.
+ * Like `makeService()` but also drives the service through its initial load +
+ * watcher registration. Done by calling the protected methods directly — we
+ * intentionally do not call `init()`, which is a fire-and-forget `@postConstruct`
+ * (must return `void` so InversifyJS treats the binding as sync).
  */
 async function makeServiceReady(): Promise<{ svc: ShoppingListService; fs: FakeFileService; ls: FakeLanguageService }> {
     const { svc, fs, ls } = makeService();
     /* eslint-disable @typescript-eslint/no-explicit-any */
     // Shrink the debounce so tests don't wait 100ms per reload.
     (svc as any).reloadDebounceMs = 5;
-    // Invoke the @postConstruct init manually. It's a protected method, so we
-    // go through `as any`. `init()` fires-and-forgets an async loadFromDisk,
-    // so await its returned promise chain before handing back the service.
-    await (svc as any).init();
+    // Mirror init()'s steps awaitably: toDispose bookkeeping + load + watcher.
+    (svc as any).toDispose.push((svc as any).onDidChangeEmitter);
+    await (svc as any).loadFromDisk();
+    (svc as any).setupWatcher();
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { svc, fs, ls };
 }

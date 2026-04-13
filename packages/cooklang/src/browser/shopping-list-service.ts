@@ -62,15 +62,14 @@ export class ShoppingListService implements Disposable {
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
     @postConstruct()
-    protected async init(): Promise<void> {
+    protected init(): void {
         this.toDispose.push(this.onDidChangeEmitter);
-        try {
-            await this.workspaceService.roots;
-            await this.loadFromDisk();
-        } catch (err) {
-            console.error('ShoppingListService: initial load failed', err);
-        }
-        this.setupWatcher();
+        // Fire-and-forget: InversifyJS 6.x treats a Promise-returning @postConstruct
+        // as an async binding, which breaks synchronous container.get() callers.
+        this.workspaceService.roots
+            .then(() => this.loadFromDisk())
+            .catch(err => console.error('ShoppingListService: initial load failed', err))
+            .then(() => this.setupWatcher());
     }
 
     // -- Public getters --
