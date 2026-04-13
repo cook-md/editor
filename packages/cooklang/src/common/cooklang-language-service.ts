@@ -36,6 +36,25 @@ export interface CooklangLanguageService {
 
     // Shopping list generation
     generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string>;
+
+    // Shopping list format (new in 2026-04)
+    parseShoppingList(text: string): Promise<string>;
+    writeShoppingList(json: string): Promise<string>;
+    parseChecked(text: string): Promise<string>;
+    writeCheckEntry(entryJson: string): Promise<string>;
+    checkedSet(entriesJson: string): Promise<string[]>;
+    compactChecked(entriesJson: string, currentIngredients: string[]): Promise<string>;
+
+    /**
+     * Resolve a recipe by `name` (with or without extension) inside `baseDir` using
+     * cooklang-find's lookup rules (auto-tries `.cook` then `.menu`).
+     * Returns the file content, or `undefined` if no matching file is found.
+     *
+     * `baseDir` must be an OS filesystem path (not a URI) — this RPC reads from
+     * disk directly via `cooklang-find` and bypasses Theia's `FileService`.
+     * Electron-only by design; remote/virtual workspaces are not supported.
+     */
+    findRecipe(baseDir: string, name: string): Promise<string | undefined>;
 }
 
 // Plain JSON DTOs — subsets of vscode-languageserver-protocol types

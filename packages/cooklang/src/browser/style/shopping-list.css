@@ -206,3 +206,13 @@
     color: var(--theia-descriptionForeground);
     padding: 2px 0;
 }
+
+.shopping-list-recipe-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.shopping-list-recipe-sub {
+    font-size: 0.85em;
+    color: var(--theia-descriptionForeground);
+}

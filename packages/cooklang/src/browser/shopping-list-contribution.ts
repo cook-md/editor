@@ -14,9 +14,11 @@ import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import URI from '@theia/core/lib/common/uri';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { COOKLANG_LANGUAGE_ID } from '../common';
+import { CooklangLanguageService } from '../common/cooklang-language-service';
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -30,6 +32,11 @@ export namespace ShoppingListCommands {
     export const ADD_TO_LIST: Command = {
         id: 'cooklang.addToShoppingList',
         label: 'Cooklang: Add to Shopping List',
+        iconClass: 'theia-shopping-cart-icon',
+    };
+    export const ADD_MENU_TO_LIST: Command = {
+        id: 'cooklang.addMenuToShoppingList',
+        label: 'Cooklang: Add Menu to Shopping List',
         iconClass: 'theia-shopping-cart-icon',
     };
 }
@@ -51,6 +58,12 @@ export class ShoppingListContribution
 
     @inject(SelectionService)
     protected readonly selectionService: SelectionService;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
+    @inject(CooklangLanguageService)
+    protected readonly languageService: CooklangLanguageService;
 
     constructor() {
         super({
@@ -74,6 +87,11 @@ export class ShoppingListContribution
             isEnabled: (...args: unknown[]) => this.canAddRecipe(args),
             isVisible: (...args: unknown[]) => this.canAddRecipe(args),
         });
+        commands.registerCommand(ShoppingListCommands.ADD_MENU_TO_LIST, {
+            execute: (...args: unknown[]) => this.addMenu(args),
+            isEnabled: (...args: unknown[]) => this.canAddMenu(args),
+            isVisible: (...args: unknown[]) => this.canAddMenu(args),
+        });
     }
 
     override registerMenus(menus: MenuModelRegistry): void {
@@ -84,6 +102,11 @@ export class ShoppingListContribution
             label: 'Add to Shopping List',
             when: 'resourceExtname == .cook',
         });
+        menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, {
+            commandId: ShoppingListCommands.ADD_MENU_TO_LIST.id,
+            label: 'Add Menu to Shopping List',
+            when: 'resourceExtname == .menu',
+        });
     }
 
     registerToolbarItems(toolbar: TabBarToolbarRegistry): void {
@@ -93,6 +116,12 @@ export class ShoppingListContribution
             command: ShoppingListCommands.ADD_TO_LIST.id,
             tooltip: 'Add to Shopping List',
             when: `editorLangId == ${COOKLANG_LANGUAGE_ID}`,
+        });
+        toolbar.registerItem({
+            id: ShoppingListCommands.ADD_MENU_TO_LIST.id + '.editor',
+            command: ShoppingListCommands.ADD_MENU_TO_LIST.id,
+            tooltip: 'Add Menu to Shopping List',
+            when: `resourceExtname == .menu`,
         });
     }
 
@@ -154,18 +183,94 @@ export class ShoppingListContribution
 
     protected async addRecipe(args: unknown[] = []): Promise<void> {
         const targetUri = this.resolveTargetUri(args);
-        if (!targetUri) {
-            return;
-        }
+        if (!targetUri) { return; }
 
         const scale = this.resolveScale(args);
-        const name = targetUri.path.base.replace(/\.cook$/i, '');
         const workspaceRoot = this.shoppingListService.getWorkspaceRootUri();
         const relativePath = workspaceRoot
             ? workspaceRoot.relative(targetUri)?.toString() ?? targetUri.path.base
             : targetUri.path.base;
 
-        await this.shoppingListService.addRecipe(relativePath, name, scale);
+        await this.shoppingListService.addRecipe(relativePath, scale);
+        await this.openView({ activate: true });
+    }
+
+    protected resolveMenuUri(args: unknown[]): URI | undefined {
+        if (args.length > 0 && args[0] instanceof URI) {
+            const uri = args[0] as URI;
+            if (uri.path.ext === '.menu') { return uri; }
+        }
+        if (args.length > 0 && NavigatableWidget.is(args[0])) {
+            const uri = (args[0] as NavigatableWidget).getResourceUri();
+            if (uri && uri.path.ext === '.menu') { return uri; }
+        }
+        const selection = this.selectionService.selection;
+        const selectedUri = UriSelection.getUri(selection);
+        if (selectedUri && selectedUri.path.ext === '.menu') { return selectedUri; }
+        const currentWidget = this.shell?.currentWidget;
+        if (NavigatableWidget.is(currentWidget)) {
+            const uri = currentWidget.getResourceUri();
+            if (uri && uri.path.ext === '.menu') { return uri; }
+        }
+        return undefined;
+    }
+
+    protected canAddMenu(args: unknown[] = []): boolean {
+        return this.resolveMenuUri(args) !== undefined;
+    }
+
+    protected async addMenu(args: unknown[] = []): Promise<void> {
+        const menuUri = this.resolveMenuUri(args);
+        if (!menuUri) { return; }
+
+        const workspaceRoot = this.shoppingListService.getWorkspaceRootUri();
+        const relativePath = workspaceRoot
+            ? workspaceRoot.relative(menuUri)?.toString() ?? menuUri.path.base
+            : menuUri.path.base;
+
+        // Parse the menu to enumerate referenced recipes.
+        let menuContent: string;
+        try {
+            const root = this.shoppingListService.getWorkspaceRootUri();
+            if (!root) { return; }
+            const content = await this.fileService.read(root.resolve(relativePath));
+            menuContent = content.value;
+        } catch (e) {
+            console.error('[shopping-list] Failed to read menu file:', e);
+            return;
+        }
+
+        // Menu JSON shape from `parse_menu` in packages/cooklang-native/src/lib.rs:
+        // items are tagged by `type`: "text" | "recipeReference" | "ingredient".
+        // Only "recipeReference" items are real recipe references.
+        let parsed: { sections?: Array<{ lines?: Array<Array<{ type?: string; name?: string; scale?: number }>> }> };
+        try {
+            parsed = JSON.parse(await this.languageService.parseMenu(menuContent, 1));
+        } catch (e) {
+            console.error('[shopping-list] Failed to parse menu:', e);
+            return;
+        }
+
+        const recipes: Array<{ path: string; scale: number; includedRefs?: string[] }> = [];
+        for (const section of parsed.sections ?? []) {
+            for (const line of section.lines ?? []) {
+                for (const item of line) {
+                    if (item.type !== 'recipeReference') { continue; }
+                    if (!item.name) { continue; }
+                    recipes.push({
+                        path: item.name.replace(/^\.\//, ''),
+                        scale: typeof item.scale === 'number' && item.scale > 0 ? item.scale : 1,
+                    });
+                }
+            }
+        }
+
+        if (recipes.length === 0) {
+            console.warn('[shopping-list] Menu contained no recipe references:', relativePath);
+            return;
+        }
+
+        await this.shoppingListService.addMenu(relativePath, 1, recipes);
         await this.openView({ activate: true });
     }
 }
