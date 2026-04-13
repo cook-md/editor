@@ -9,7 +9,8 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 FrontendApplicationConfigProvider.set({});
 
 import { expect } from 'chai';
-import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Emitter } from '@theia/core/lib/common/event';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListRecipeItem } from '../common/shopping-list-types';
 
@@ -19,9 +20,17 @@ after(() => disableJSDOM());
 type WireShoppingItem = { Recipe: { path: string; multiplier: number | null; children: WireShoppingItem[] } };
 type WireCheckEntry = { Checked: string } | { Unchecked: string };
 
+/** Minimal shape the service uses from `FileChangesEvent`. */
+interface FakeFileChangesEvent {
+    contains(resource: { toString(): string }): boolean;
+}
+
 /** Minimal in-memory FileService stub — only the methods the service calls. */
 class FakeFileService {
     files = new Map<string, string>();
+    readonly onDidFilesChangeEmitter = new Emitter<FakeFileChangesEvent>();
+    readonly onDidFilesChange = this.onDidFilesChangeEmitter.event;
+
     async read(uri: { toString(): string }): Promise<{ value: string }> {
         const key = uri.toString();
         if (!this.files.has(key)) { throw new Error('ENOENT'); }
@@ -32,6 +41,16 @@ class FakeFileService {
     }
     async delete(uri: { toString(): string }): Promise<void> {
         this.files.delete(uri.toString());
+    }
+    watch(_uri: { toString(): string }): Disposable {
+        return Disposable.create(() => { /* no-op */ });
+    }
+
+    /** Test helper: fire a synthetic change event for a URI string. */
+    fireChange(uriString: string): void {
+        this.onDidFilesChangeEmitter.fire({
+            contains: (resource: { toString(): string }) => resource.toString() === uriString,
+        });
     }
 }
 
@@ -123,6 +142,28 @@ function makeService(): { svc: ShoppingListService; fs: FakeFileService; ls: Fak
     return { svc, fs, ls };
 }
 
+/**
+ * Like `makeService()` but also invokes the `@postConstruct` initializer and
+ * waits for initial `loadFromDisk()` + watcher registration to complete.
+ */
+async function makeServiceReady(): Promise<{ svc: ShoppingListService; fs: FakeFileService; ls: FakeLanguageService }> {
+    const { svc, fs, ls } = makeService();
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    // Shrink the debounce so tests don't wait 100ms per reload.
+    (svc as any).reloadDebounceMs = 5;
+    // Invoke the @postConstruct init manually. It's a protected method, so we
+    // go through `as any`. `init()` fires-and-forgets an async loadFromDisk,
+    // so await its returned promise chain before handing back the service.
+    await (svc as any).init();
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+    return { svc, fs, ls };
+}
+
+/** Sleep helper — used to let the debounce timer elapse in tests. */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 describe('ShoppingListService', () => {
     it('addRecipe appends to list and persists', async () => {
         const { svc, fs } = makeService();
@@ -204,3 +245,7 @@ describe('ShoppingListService', () => {
         expect(checkedContent.includes('+ flour')).to.equal(true);
     });
 });
+
+// Suppress "unused" warnings for helpers that are called in Task 2.
+void makeServiceReady;
+void sleep;
