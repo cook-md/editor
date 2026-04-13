@@ -289,13 +289,17 @@ export class ShoppingListService implements Disposable {
         } catch {
             existing = '';
         }
-        const next = existing + (existing.endsWith('\n') || existing.length === 0 ? '' : '\n') + line;
-        await this.fileService.write(root.resolve(CHECKED_FILE), next);
+        // `line` always ends with '\n' (upstream Rust uses writeln!).
+        await this.fileService.write(root.resolve(CHECKED_FILE), existing + line);
 
-        // Update in-memory state
+        // Update in-memory state locally — cooklang-rs normalizes names to lowercase.
         this.checkedLog.push(entry);
-        const setArr = await this.languageService.checkedSet(toWireCheckedLog(this.checkedLog));
-        this.checkedSet = new Set(setArr.map(s => s.toLowerCase()));
+        const key = entry.name.toLowerCase();
+        if (entry.type === 'checked') {
+            this.checkedSet.add(key);
+        } else {
+            this.checkedSet.delete(key);
+        }
         this.onDidChangeEmitter.fire();
     }
 
@@ -327,28 +331,34 @@ export class ShoppingListService implements Disposable {
         );
         const compacted: CheckEntry[] = fromWireCheckedLog(compactedJson);
 
-        // If nothing changed, skip the write.
-        if (compacted.length === this.checkedLog.length) { return; }
-        this.checkedLog = compacted;
-
         // Serialize each entry back to a line, join, write.
+        // Every line ends with '\n' (upstream Rust uses writeln!).
         const lines: string[] = [];
         for (const entry of compacted) {
             lines.push(await this.languageService.writeCheckEntry(toWireCheckEntryJson(entry)));
         }
-        const text = lines.length > 0 ? lines.join('') : '';
+        const text = lines.join('');
         if (text.length === 0) {
             try { await this.fileService.delete(root.resolve(CHECKED_FILE)); } catch { /* already gone */ }
         } else {
-            // writeCheckEntry already emits a trailing newline per entry; if it
-            // doesn't, ensure separation:
-            const needsNewlines = !lines.every(l => l.endsWith('\n'));
-            const joined = needsNewlines ? lines.join('\n') + '\n' : text;
-            await this.fileService.write(root.resolve(CHECKED_FILE), joined);
+            await this.fileService.write(root.resolve(CHECKED_FILE), text);
         }
 
-        // Rebuild in-memory set
-        const setArr = await this.languageService.checkedSet(compactedJson);
-        this.checkedSet = new Set(setArr.map(s => s.toLowerCase()));
+        // Persist to memory only after successful write/delete.
+        this.checkedLog = compacted;
+
+        // Rebuild in-memory set locally — cooklang-rs normalizes names to lowercase.
+        const rebuilt = new Set<string>();
+        for (const entry of compacted) {
+            const key = entry.name.toLowerCase();
+            if (entry.type === 'checked') {
+                rebuilt.add(key);
+            } else {
+                rebuilt.delete(key);
+            }
+        }
+        this.checkedSet = rebuilt;
+
+        this.onDidChangeEmitter.fire();
     }
 }
