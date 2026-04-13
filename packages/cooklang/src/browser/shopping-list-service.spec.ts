@@ -343,4 +343,24 @@ describe('ShoppingListService', () => {
         await sleep(30);
         expect(reloadCount).to.equal(0);
     });
+
+    it('handles self-write echo idempotently', async () => {
+        const { svc, fs } = await makeServiceReady();
+        await svc.addRecipe('pasta.cook', 1);
+        expect(svc.getItems().length).to.equal(1);
+
+        // Simulate the watcher firing for our own write.
+        fs.fireChange('file:///ws/.shopping-list');
+        await sleep(30);
+
+        // State is unchanged — still exactly one item with the same path.
+        expect(svc.getItems().length).to.equal(1);
+        expect(svc.getItems()[0].path).to.equal('pasta.cook');
+
+        // Checks survive a spurious .shopping-checked echo too.
+        await svc.checkItem('flour');
+        fs.fireChange('file:///ws/.shopping-checked');
+        await sleep(30);
+        expect(svc.isChecked('flour')).to.equal(true);
+    });
 });
