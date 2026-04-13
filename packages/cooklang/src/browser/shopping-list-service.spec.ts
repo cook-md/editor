@@ -279,4 +279,20 @@ describe('ShoppingListService', () => {
         expect(svc.getItems().length).to.equal(0);
         expect(svc.getResult()).to.equal(undefined);
     });
+
+    it('reloads when .shopping-checked is updated externally', async () => {
+        const { svc, fs } = await makeServiceReady();
+        expect(svc.isChecked('flour')).to.equal(false);
+
+        fs.files.set('file:///ws/.shopping-checked', '+ flour\n');
+        fs.fireChange('file:///ws/.shopping-checked');
+        await sleep(30);
+        expect(svc.isChecked('flour')).to.equal(true);
+
+        // An external unchecked entry wins.
+        fs.files.set('file:///ws/.shopping-checked', '+ flour\n- flour\n');
+        fs.fireChange('file:///ws/.shopping-checked');
+        await sleep(30);
+        expect(svc.isChecked('flour')).to.equal(false);
+    });
 });
