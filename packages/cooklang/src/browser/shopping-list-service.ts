@@ -125,6 +125,7 @@ export class ShoppingListService implements Disposable {
         if (this.list.items.length > 0) {
             await this.regenerate();
         } else {
+            this.result = undefined;
             this.onDidChangeEmitter.fire();
         }
     }

@@ -262,4 +262,21 @@ describe('ShoppingListService', () => {
         expect(svc.getItems()[0].path).to.equal('pasta.cook');
         expect(changeFires).to.be.greaterThan(0);
     });
+
+    it('resets to empty when .shopping-list is deleted externally', async () => {
+        const { svc, fs } = await makeServiceReady();
+        // Seed an existing list, reload so in-memory state catches up.
+        fs.files.set('file:///ws/.shopping-list', 'pasta.cook\n');
+        fs.fireChange('file:///ws/.shopping-list');
+        await sleep(30);
+        expect(svc.getItems().length).to.equal(1);
+
+        // External delete.
+        fs.files.delete('file:///ws/.shopping-list');
+        fs.fireChange('file:///ws/.shopping-list');
+        await sleep(30);
+
+        expect(svc.getItems().length).to.equal(0);
+        expect(svc.getResult()).to.equal(undefined);
+    });
 });
