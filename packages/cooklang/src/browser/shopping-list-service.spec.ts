@@ -317,4 +317,30 @@ describe('ShoppingListService', () => {
         expect(reloadCount).to.equal(1);
         expect(svc.getItems().length).to.equal(1);
     });
+
+    it('stops reloading after dispose()', async () => {
+        const { svc, fs } = await makeServiceReady();
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const original = (svc as any).loadFromDisk.bind(svc);
+        let reloadCount = 0;
+        (svc as any).loadFromDisk = async () => {
+            reloadCount += 1;
+            return original();
+        };
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+
+        fs.files.set('file:///ws/.shopping-list', 'a.cook\n');
+        fs.fireChange('file:///ws/.shopping-list');
+
+        // Dispose before the debounce window elapses — the queued reload must be cancelled.
+        svc.dispose();
+
+        await sleep(30);
+        expect(reloadCount).to.equal(0);
+
+        // A fresh event after dispose must also not reload.
+        fs.fireChange('file:///ws/.shopping-list');
+        await sleep(30);
+        expect(reloadCount).to.equal(0);
+    });
 });
