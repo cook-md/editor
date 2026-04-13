@@ -303,11 +303,35 @@ export class ShoppingListService implements Disposable {
         this.onDidChangeEmitter.fire();
     }
 
+    /**
+     * Adds a menu as a single top-level item with nested recipe children.
+     * Each child recipe may itself have sub-recipe references as grandchildren.
+     */
     async addMenu(
-        _menuPath: string,
-        _menuScale: number,
-        _recipes: Array<{ path: string; scale: number; includedRefs?: string[] }>,
-    ): Promise<void> { /* Task 11 */ }
+        menuPath: string,
+        menuScale: number,
+        recipes: Array<{ path: string; scale: number; includedRefs?: string[] }>,
+    ): Promise<void> {
+        const children: ShoppingListRecipeItem[] = recipes.map(r => ({
+            type: 'recipe',
+            path: r.path,
+            multiplier: r.scale === 1 ? undefined : r.scale,
+            children: (r.includedRefs ?? []).map(p => ({
+                type: 'recipe',
+                path: p.replace(/^\.\//, ''),
+                multiplier: undefined,
+                children: [],
+            })),
+        }));
+        this.list.items.push({
+            type: 'recipe',
+            path: menuPath,
+            multiplier: menuScale === 1 ? undefined : menuScale,
+            children,
+        });
+        await this.saveList();
+        await this.regenerate();
+    }
 
     /**
      * Rewrite `.shopping-checked` keeping only entries whose ingredient name
