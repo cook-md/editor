@@ -16,6 +16,8 @@ import {
     fromWireShoppingList,
     fromWireCheckedLog,
     toWireShoppingList,
+    toWireCheckEntryJson,
+    toWireCheckedLog,
 } from '../common/shopping-list-types';
 
 const LIST_FILE = '.shopping-list';
@@ -264,13 +266,89 @@ export class ShoppingListService implements Disposable {
         }
     }
 
-    // Stubs — implemented in Task 10 and 11.
-    async checkItem(_name: string): Promise<void> { /* Task 10 */ }
-    async uncheckItem(_name: string): Promise<void> { /* Task 10 */ }
+    async checkItem(name: string): Promise<void> {
+        await this.appendCheckEntry({ type: 'checked', name });
+    }
+
+    async uncheckItem(name: string): Promise<void> {
+        await this.appendCheckEntry({ type: 'unchecked', name });
+    }
+
+    protected async appendCheckEntry(entry: CheckEntry): Promise<void> {
+        const root = this.getWorkspaceRootUri();
+        if (!root) { return; }
+
+        const line = await this.languageService.writeCheckEntry(toWireCheckEntryJson(entry));
+
+        // Read-modify-write. FileService has no native append; single-user
+        // event-loop serialization keeps this safe.
+        let existing = '';
+        try {
+            const content = await this.fileService.read(root.resolve(CHECKED_FILE));
+            existing = content.value;
+        } catch {
+            existing = '';
+        }
+        const next = existing + (existing.endsWith('\n') || existing.length === 0 ? '' : '\n') + line;
+        await this.fileService.write(root.resolve(CHECKED_FILE), next);
+
+        // Update in-memory state
+        this.checkedLog.push(entry);
+        const setArr = await this.languageService.checkedSet(toWireCheckedLog(this.checkedLog));
+        this.checkedSet = new Set(setArr.map(s => s.toLowerCase()));
+        this.onDidChangeEmitter.fire();
+    }
+
     async addMenu(
         _menuPath: string,
         _menuScale: number,
         _recipes: Array<{ path: string; scale: number; includedRefs?: string[] }>,
     ): Promise<void> { /* Task 11 */ }
-    protected async compactCheckedLog(): Promise<void> { /* Task 10 */ }
+
+    /**
+     * Rewrite `.shopping-checked` keeping only entries whose ingredient name
+     * is still present in the current aggregated result. If `this.result` is
+     * missing (regeneration failed), skip — matches cookcli policy.
+     */
+    protected async compactCheckedLog(): Promise<void> {
+        if (!this.result) { return; }
+        const root = this.getWorkspaceRootUri();
+        if (!root) { return; }
+
+        const names: string[] = [];
+        for (const c of this.result.categories) {
+            for (const it of c.items) { names.push(it.name); }
+        }
+        for (const it of this.result.other.items) { names.push(it.name); }
+
+        const compactedJson = await this.languageService.compactChecked(
+            toWireCheckedLog(this.checkedLog),
+            names,
+        );
+        const compacted: CheckEntry[] = fromWireCheckedLog(compactedJson);
+
+        // If nothing changed, skip the write.
+        if (compacted.length === this.checkedLog.length) { return; }
+        this.checkedLog = compacted;
+
+        // Serialize each entry back to a line, join, write.
+        const lines: string[] = [];
+        for (const entry of compacted) {
+            lines.push(await this.languageService.writeCheckEntry(toWireCheckEntryJson(entry)));
+        }
+        const text = lines.length > 0 ? lines.join('') : '';
+        if (text.length === 0) {
+            try { await this.fileService.delete(root.resolve(CHECKED_FILE)); } catch { /* already gone */ }
+        } else {
+            // writeCheckEntry already emits a trailing newline per entry; if it
+            // doesn't, ensure separation:
+            const needsNewlines = !lines.every(l => l.endsWith('\n'));
+            const joined = needsNewlines ? lines.join('\n') + '\n' : text;
+            await this.fileService.write(root.resolve(CHECKED_FILE), joined);
+        }
+
+        // Rebuild in-memory set
+        const setArr = await this.languageService.checkedSet(compactedJson);
+        this.checkedSet = new Set(setArr.map(s => s.toLowerCase()));
+    }
 }
