@@ -46,6 +46,7 @@ export class ShoppingListService implements Disposable {
     protected checkedLog: CheckEntry[] = [];
     protected checkedSet = new Set<string>();
     protected result: ShoppingListResult | undefined;
+    /** Monotonic counter to discard stale `regenerate()` results. Used in Task 9. */
     protected regenerationSeq = 0;
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
@@ -54,7 +55,9 @@ export class ShoppingListService implements Disposable {
     @postConstruct()
     protected init(): void {
         this.toDispose.push(this.onDidChangeEmitter);
-        this.workspaceService.roots.then(() => this.loadFromDisk());
+        this.workspaceService.roots
+            .then(() => this.loadFromDisk())
+            .catch(err => console.error('ShoppingListService: initial load failed', err));
     }
 
     // -- Public getters --
