@@ -40,10 +40,9 @@ export class ShoppingListWidget extends ReactWidget {
     }
 
     protected render(): React.ReactNode {
-        const recipes = this.shoppingListService.getRecipes();
+        const items = this.shoppingListService.getItems();
         const result = this.shoppingListService.getResult();
 
-        // Build checked set for rendering
         const checkedItems = new Set<string>();
         if (result) {
             const allItems = [
@@ -59,7 +58,7 @@ export class ShoppingListWidget extends ReactWidget {
 
         return (
             <ShoppingListView
-                recipes={recipes}
+                items={items}
                 result={result}
                 checkedItems={checkedItems}
                 onRemoveRecipe={this.handleRemoveRecipe}
@@ -71,18 +70,22 @@ export class ShoppingListWidget extends ReactWidget {
     }
 
     protected handleRemoveRecipe = (index: number): void => {
-        this.shoppingListService.removeRecipe(index);
+        void this.shoppingListService.removeRecipe(index);
     };
 
     protected handleScaleChange = (index: number, scale: number): void => {
-        this.shoppingListService.updateScale(index, scale);
+        void this.shoppingListService.updateScale(index, scale);
     };
 
     protected handleClearAll = (): void => {
-        this.shoppingListService.clearAll();
+        void this.shoppingListService.clearAll();
     };
 
     protected handleToggleItem = (name: string): void => {
-        this.shoppingListService.toggleChecked(name);
+        if (this.shoppingListService.isChecked(name)) {
+            void this.shoppingListService.uncheckItem(name);
+        } else {
+            void this.shoppingListService.checkItem(name);
+        }
     };
 }

@@ -3,30 +3,40 @@
 
 import * as React from '@theia/core/shared/react';
 import {
-    ShoppingListRecipe,
+    ShoppingListRecipeItem,
     ShoppingListResult,
     ShoppingListCategory,
     ShoppingListItem,
 } from '../common/shopping-list-types';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Derive a human-friendly display name from a recipe path. */
+function displayNameFromPath(path: string): string {
+    const base = path.split('/').pop() ?? path;
+    return base.replace(/\.(cook|menu)$/i, '');
+}
+
+// ---------------------------------------------------------------------------
 // RecipeListPanel
 // ---------------------------------------------------------------------------
 
 interface RecipeListPanelProps {
-    recipes: readonly ShoppingListRecipe[];
+    items: readonly ShoppingListRecipeItem[];
     onRemove: (index: number) => void;
     onScaleChange: (index: number, scale: number) => void;
     onClearAll: () => void;
 }
 
 export const RecipeListPanel = ({
-    recipes,
+    items,
     onRemove,
     onScaleChange,
     onClearAll,
 }: RecipeListPanelProps): React.ReactElement => {
-    if (recipes.length === 0) {
+    if (items.length === 0) {
         return (
             <div className='shopping-list-empty-recipes'>
                 No recipes selected. Add recipes from the preview or explorer.
@@ -42,33 +52,45 @@ export const RecipeListPanel = ({
                     Clear All
                 </button>
             </div>
-            {recipes.map((recipe, idx) => (
-                <div key={recipe.path} className='shopping-list-recipe-row'>
-                    <span className='shopping-list-recipe-name'>{recipe.name}</span>
-                    <input
-                        className='shopping-list-scale-input'
-                        type='number'
-                        min='0.5'
-                        max='100'
-                        step='0.5'
-                        defaultValue={recipe.scale}
-                        onBlur={e => {
-                            const val = parseFloat(e.target.value);
-                            if (!isNaN(val) && val > 0) {
-                                onScaleChange(idx, val);
-                            }
-                        }}
-                        title='Scale factor'
-                    />
-                    <button
-                        className='shopping-list-remove-btn'
-                        onClick={() => onRemove(idx)}
-                        title='Remove from shopping list'
-                    >
-                        x
-                    </button>
-                </div>
-            ))}
+            {items.map((item, idx) => {
+                const name = displayNameFromPath(item.path);
+                const isMenu = item.children.length > 0 && item.path.toLowerCase().endsWith('.menu');
+                const scale = item.multiplier ?? 1;
+                return (
+                    <div key={`${item.path}-${idx}`} className='shopping-list-recipe-row'>
+                        <div className='shopping-list-recipe-main'>
+                            <span className='shopping-list-recipe-name'>{name}</span>
+                            {isMenu && (
+                                <span className='shopping-list-recipe-sub'>
+                                    menu ({item.children.length} recipes)
+                                </span>
+                            )}
+                        </div>
+                        <input
+                            className='shopping-list-scale-input'
+                            type='number'
+                            min='0.5'
+                            max='100'
+                            step='0.5'
+                            defaultValue={scale}
+                            onBlur={e => {
+                                const val = parseFloat(e.target.value);
+                                if (!isNaN(val) && val > 0) {
+                                    onScaleChange(idx, val);
+                                }
+                            }}
+                            title='Scale factor'
+                        />
+                        <button
+                            className='shopping-list-remove-btn'
+                            onClick={() => onRemove(idx)}
+                            title='Remove from shopping list'
+                        >
+                            x
+                        </button>
+                    </div>
+                );
+            })}
         </div>
     );
 };
@@ -114,10 +136,7 @@ export const CategorySection = ({
     checkedItems,
     onToggle,
 }: CategorySectionProps): React.ReactElement | null => {
-    if (category.items.length === 0) {
-        return null;
-    }
-
+    if (category.items.length === 0) { return null; }
     return (
         <div className='shopping-list-category'>
             <h3 className='shopping-list-category-header'>{category.name}</h3>
@@ -134,7 +153,7 @@ export const CategorySection = ({
 };
 
 // ---------------------------------------------------------------------------
-// PantrySection
+// PantrySection (unchanged)
 // ---------------------------------------------------------------------------
 
 interface PantrySectionProps {
@@ -143,11 +162,7 @@ interface PantrySectionProps {
 
 export const PantrySection = ({ pantryItems }: PantrySectionProps): React.ReactElement | null => {
     const [expanded, setExpanded] = React.useState(false);
-
-    if (pantryItems.length === 0) {
-        return null;
-    }
-
+    if (pantryItems.length === 0) { return null; }
     return (
         <div className='shopping-list-pantry'>
             <button
@@ -172,7 +187,7 @@ export const PantrySection = ({ pantryItems }: PantrySectionProps): React.ReactE
 // ---------------------------------------------------------------------------
 
 export interface ShoppingListViewProps {
-    recipes: readonly ShoppingListRecipe[];
+    items: readonly ShoppingListRecipeItem[];
     result: ShoppingListResult | undefined;
     checkedItems: Set<string>;
     onRemoveRecipe: (index: number) => void;
@@ -182,7 +197,7 @@ export interface ShoppingListViewProps {
 }
 
 export const ShoppingListView = ({
-    recipes,
+    items,
     result,
     checkedItems,
     onRemoveRecipe,
@@ -192,12 +207,11 @@ export const ShoppingListView = ({
 }: ShoppingListViewProps): React.ReactElement => (
     <div className='shopping-list-content'>
         <RecipeListPanel
-            recipes={recipes}
+            items={items}
             onRemove={onRemoveRecipe}
             onScaleChange={onScaleChange}
             onClearAll={onClearAll}
         />
-
         {result && (
             <>
                 {result.categories.map(category => (
@@ -208,7 +222,6 @@ export const ShoppingListView = ({
                         onToggle={onToggleItem}
                     />
                 ))}
-
                 {result.other.items.length > 0 && (
                     <CategorySection
                         key='other'
@@ -217,7 +230,6 @@ export const ShoppingListView = ({
                         onToggle={onToggleItem}
                     />
                 )}
-
                 <PantrySection pantryItems={result.pantryItems} />
             </>
         )}
