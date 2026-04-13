@@ -9,6 +9,7 @@ import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/front
 FrontendApplicationConfigProvider.set({});
 
 import { expect } from 'chai';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListRecipeItem } from '../common/shopping-list-types';
 
@@ -112,7 +113,7 @@ function makeService(): { svc: ShoppingListService; fs: FakeFileService; ls: Fak
     (svc as any).fileService = fs;
     (svc as any).languageService = ls;
     (svc as any).workspaceService = ws;
-    (svc as any).toDispose = { push: (): void => {} };
+    (svc as any).toDispose = new DisposableCollection();
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { svc, fs, ls };
 }
@@ -122,7 +123,7 @@ describe('ShoppingListService', () => {
         const { svc, fs } = makeService();
         await svc.addRecipe('pasta.cook', 1);
         expect(svc.getItems().length).to.equal(1);
-        expect(fs.files.get('file:///ws/.shopping-list')).to.contain('pasta.cook');
+        expect(fs.files.get('file:///ws/.shopping-list')).to.equal('pasta.cook\n');
     });
 
     it('addMenu creates a nested structure', async () => {
@@ -141,7 +142,7 @@ describe('ShoppingListService', () => {
         const { svc, fs } = makeService();
         await svc.checkItem('Flour');
         expect(svc.isChecked('flour')).to.equal(true);
-        expect(fs.files.get('file:///ws/.shopping-checked')).to.contain('+ Flour');
+        expect(fs.files.get('file:///ws/.shopping-checked')).to.equal('+ Flour\n');
     });
 
     it('uncheckItem reverses a prior check', async () => {
@@ -192,5 +193,6 @@ describe('ShoppingListService', () => {
         await svc.removeRecipe(1);
         const checkedContent = fs.files.get('file:///ws/.shopping-checked') ?? '';
         expect(checkedContent.includes('milk')).to.equal(false);
+        expect(checkedContent.includes('+ flour')).to.equal(true);
     });
 });
