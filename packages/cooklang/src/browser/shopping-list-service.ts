@@ -193,9 +193,11 @@ export class ShoppingListService implements Disposable {
             if (seq !== this.regenerationSeq) { return; }
             this.result = JSON.parse(json);
         } catch (e) {
+            if (seq !== this.regenerationSeq) { return; }
             console.error('[shopping-list] Failed to generate shopping list:', e);
             this.result = undefined;
         }
+        if (seq !== this.regenerationSeq) { return; }
         this.onDidChangeEmitter.fire();
     }
 
@@ -239,6 +241,8 @@ export class ShoppingListService implements Disposable {
     }
 
     async clearAll(): Promise<void> {
+        // Invalidate any in-flight regenerate() so it won't overwrite state after we reset.
+        ++this.regenerationSeq;
         this.list = { items: [] };
         this.checkedLog = [];
         this.checkedSet.clear();
