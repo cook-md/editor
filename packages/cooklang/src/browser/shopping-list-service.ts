@@ -5,6 +5,7 @@ import { injectable, inject, postConstruct } from '@theia/core/shared/inversify'
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { FileChangesEvent } from '@theia/filesystem/lib/common/files';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
@@ -51,15 +52,24 @@ export class ShoppingListService implements Disposable {
     /** Monotonic counter to discard stale `regenerate()` results. Used in Task 9. */
     protected regenerationSeq = 0;
 
+    /** Debounce window for reloading after an external file change. Overridable in tests. */
+    protected reloadDebounceMs = 100;
+
+    /** Active debounce timer, if any. */
+    protected reloadTimer: ReturnType<typeof setTimeout> | undefined;
+
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
 
     @postConstruct()
     protected init(): void {
         this.toDispose.push(this.onDidChangeEmitter);
+        // Fire-and-forget: InversifyJS 6.x treats a Promise-returning @postConstruct
+        // as an async binding, which breaks synchronous container.get() callers.
         this.workspaceService.roots
             .then(() => this.loadFromDisk())
-            .catch(err => console.error('ShoppingListService: initial load failed', err));
+            .catch(err => console.error('ShoppingListService: initial load failed', err))
+            .then(() => this.setupWatcher());
     }
 
     // -- Public getters --
@@ -114,6 +124,7 @@ export class ShoppingListService implements Disposable {
         if (this.list.items.length > 0) {
             await this.regenerate();
         } else {
+            this.result = undefined;
             this.onDidChangeEmitter.fire();
         }
     }
@@ -338,6 +349,49 @@ export class ShoppingListService implements Disposable {
         });
         await this.saveList();
         await this.regenerate();
+    }
+
+    protected setupWatcher(): void {
+        const root = this.getWorkspaceRootUri();
+        if (!root) {
+            return;
+        }
+        try {
+            this.toDispose.push(this.fileService.watch(root));
+        } catch (e) {
+            console.error('[shopping-list] Failed to register watcher:', e);
+        }
+        this.toDispose.push(this.fileService.onDidFilesChange(event => this.onFilesChanged(event)));
+        this.toDispose.push(Disposable.create(() => {
+            if (this.reloadTimer !== undefined) {
+                clearTimeout(this.reloadTimer);
+                this.reloadTimer = undefined;
+            }
+        }));
+    }
+
+    protected onFilesChanged(event: FileChangesEvent): void {
+        const root = this.getWorkspaceRootUri();
+        if (!root) {
+            return;
+        }
+        const listUri = root.resolve(LIST_FILE);
+        const checkedUri = root.resolve(CHECKED_FILE);
+        if (event.contains(listUri) || event.contains(checkedUri)) {
+            this.scheduleReload();
+        }
+    }
+
+    protected scheduleReload(): void {
+        if (this.reloadTimer !== undefined) {
+            clearTimeout(this.reloadTimer);
+        }
+        this.reloadTimer = setTimeout(() => {
+            this.reloadTimer = undefined;
+            this.loadFromDisk().catch(err =>
+                console.error('[shopping-list] Reload after file change failed:', err),
+            );
+        }, this.reloadDebounceMs);
     }
 
     /**
