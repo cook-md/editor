@@ -129,6 +129,144 @@ export class ShoppingListService implements Disposable {
         this.toDispose.dispose();
     }
 
-    // Stubs — implemented in subsequent tasks.
-    async regenerate(): Promise<void> { /* Task 9 */ }
+    /**
+     * Flattens nested items into a list of `{ path, scale }` pairs that the
+     * existing `generateShoppingList` RPC expects.
+     *
+     * Flattening rules:
+     * - A top-level item with no children contributes itself.
+     * - A top-level item with children contributes: itself (for its own
+     *   ingredients) AND each child (for expanded references / nested recipes).
+     * - Multipliers multiply down: a child under a menu scaled *2 is effectively *2.
+     */
+    protected flattenForGeneration(): Array<{ path: string; scale: number }> {
+        const out: Array<{ path: string; scale: number }> = [];
+        const walk = (item: ShoppingListRecipeItem, parentScale: number): void => {
+            const scale = (item.multiplier ?? 1) * parentScale;
+            out.push({ path: item.path, scale });
+            for (const child of item.children) {
+                walk(child, scale);
+            }
+        };
+        for (const item of this.list.items) {
+            walk(item, 1);
+        }
+        return out;
+    }
+
+    async regenerate(): Promise<void> {
+        const seq = ++this.regenerationSeq;
+
+        if (this.list.items.length === 0) {
+            this.result = undefined;
+            this.onDidChangeEmitter.fire();
+            return;
+        }
+
+        const root = this.getWorkspaceRootUri();
+        if (!root) {
+            return;
+        }
+
+        const flat = this.flattenForGeneration();
+        const recipeInputs: Array<{ content: string; scale: number }> = [];
+        for (const { path, scale } of flat) {
+            try {
+                const content = await this.fileService.read(root.resolve(path));
+                recipeInputs.push({ content: content.value, scale });
+            } catch (e) {
+                console.warn(`[shopping-list] Failed to read recipe ${path}:`, e);
+            }
+        }
+        if (seq !== this.regenerationSeq) { return; }
+
+        const aisleConf = await this.readConfigFile(root, 'config/aisle.conf');
+        const pantryConf = await this.readConfigFile(root, 'config/pantry.conf');
+        if (seq !== this.regenerationSeq) { return; }
+
+        try {
+            const json = await this.languageService.generateShoppingList(
+                JSON.stringify(recipeInputs),
+                aisleConf,
+                pantryConf,
+            );
+            if (seq !== this.regenerationSeq) { return; }
+            this.result = JSON.parse(json);
+        } catch (e) {
+            console.error('[shopping-list] Failed to generate shopping list:', e);
+            this.result = undefined;
+        }
+        this.onDidChangeEmitter.fire();
+    }
+
+    async addRecipe(path: string, scale = 1, includedRefs?: string[]): Promise<void> {
+        const children: ShoppingListRecipeItem[] = includedRefs
+            ? includedRefs.map(p => ({
+                  type: 'recipe',
+                  path: p.replace(/^\.\//, ''),
+                  multiplier: undefined,
+                  children: [],
+              }))
+            : [];
+        this.list.items.push({
+            type: 'recipe',
+            path,
+            multiplier: scale === 1 ? undefined : scale,
+            children,
+        });
+        await this.saveList();
+        await this.regenerate();
+    }
+
+    async removeRecipe(index: number): Promise<void> {
+        if (index < 0 || index >= this.list.items.length) {
+            return;
+        }
+        this.list.items.splice(index, 1);
+        await this.saveList();
+        await this.regenerate();
+        // Compact the checked log against the now-current ingredient set.
+        await this.compactCheckedLog();
+    }
+
+    async updateScale(index: number, scale: number): Promise<void> {
+        if (index < 0 || index >= this.list.items.length) {
+            return;
+        }
+        this.list.items[index].multiplier = scale === 1 ? undefined : scale;
+        await this.saveList();
+        await this.regenerate();
+    }
+
+    async clearAll(): Promise<void> {
+        this.list = { items: [] };
+        this.checkedLog = [];
+        this.checkedSet.clear();
+        this.result = undefined;
+        const root = this.getWorkspaceRootUri();
+        if (root) {
+            try { await this.fileService.delete(root.resolve(LIST_FILE)); } catch { /* already gone */ }
+            try { await this.fileService.delete(root.resolve(CHECKED_FILE)); } catch { /* already gone */ }
+        }
+        this.onDidChangeEmitter.fire();
+    }
+
+    protected async readConfigFile(root: URI, relativePath: string): Promise<string | null> {
+        try {
+            const content = await this.fileService.read(root.resolve(relativePath));
+            return content.value;
+        } catch {
+            return null;
+        }
+    }
+
+    // Stubs — implemented in Task 10 and 11.
+    async checkItem(_name: string): Promise<void> { /* Task 10 */ }
+    async uncheckItem(_name: string): Promise<void> { /* Task 10 */ }
+    async addMenu(
+        _menuPath: string,
+        _menuScale: number,
+        _recipes: Array<{ path: string; scale: number; includedRefs?: string[] }>,
+    ): Promise<void> { /* Task 11 */ }
+    protected async compactCheckedLog(): Promise<void> { /* Task 10 */ }
 }
