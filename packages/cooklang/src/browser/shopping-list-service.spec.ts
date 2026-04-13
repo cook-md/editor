@@ -295,4 +295,26 @@ describe('ShoppingListService', () => {
         await sleep(30);
         expect(svc.isChecked('flour')).to.equal(false);
     });
+
+    it('coalesces rapid file change events into one reload', async () => {
+        const { svc, fs } = await makeServiceReady();
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const original = (svc as any).loadFromDisk.bind(svc);
+        let reloadCount = 0;
+        (svc as any).loadFromDisk = async () => {
+            reloadCount += 1;
+            return original();
+        };
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+
+        fs.files.set('file:///ws/.shopping-list', 'a.cook\n');
+        // Fire 5 events back-to-back within the 5ms debounce window.
+        for (let i = 0; i < 5; i += 1) {
+            fs.fireChange('file:///ws/.shopping-list');
+        }
+        await sleep(30);
+
+        expect(reloadCount).to.equal(1);
+        expect(svc.getItems().length).to.equal(1);
+    });
 });
