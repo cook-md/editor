@@ -147,20 +147,8 @@ export class GettingStartedWidget extends ReactWidget {
     protected render(): React.ReactNode {
         return <div className='gs-container'>
             <div className='gs-content-container'>
-                {this.aiIsIncluded &&
-                    <div className='gs-float shadow-pulse'>
-                        {this.renderAIBanner()}
-                    </div>
-                }
                 {this.renderHeader()}
                 <hr className='gs-hr' />
-                {this.aiIsIncluded &&
-                    <div className='flex-grid'>
-                        <div className='col'>
-                            {this.renderNews()}
-                        </div>
-                    </div>
-                }
                 <div className='flex-grid'>
                     <div className='col'>
                         {this.renderStart()}
@@ -199,7 +187,7 @@ export class GettingStartedWidget extends ReactWidget {
      */
     protected renderHeader(): React.ReactNode {
         return <div className='gs-header'>
-            <h1>{this.applicationName}<span className='gs-sub-header'>{' ' + GettingStartedWidget.LABEL}</span></h1>
+            <h1>CookEd<span className='gs-sub-header'>{' Recipe Editor'}</span></h1>
         </div>;
     }
 
@@ -393,15 +381,6 @@ export class GettingStartedWidget extends ReactWidget {
                     onClick={() => this.doOpenExternalLink(this.pluginUrl)}
                     onKeyDown={(e: React.KeyboardEvent) => this.doOpenExternalLinkEnter(e, this.pluginUrl)}>
                     {nls.localize('theia/getting-started/newPlugin', 'Building a New Plugin')}
-                </a>
-            </div>
-            <div className='gs-action-container'>
-                <a
-                    role={'button'}
-                    tabIndex={0}
-                    onClick={() => this.doOpenExternalLink(this.dataUsageTelemetryUrl)}
-                    onKeyDown={(e: React.KeyboardEvent) => this.doOpenExternalLinkEnter(e, this.dataUsageTelemetryUrl)}>
-                    {nls.localize('theia/getting-started/telemetry', 'Data Usage & Telemetry')}
                 </a>
             </div>
         </div>;

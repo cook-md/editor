@@ -1,5 +1,9 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { CommandContribution, CommandRegistry, Command } from '@theia/core/lib/common/command';
@@ -141,7 +145,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
         keybindings.registerKeybinding({
             command: CooklangMenuPreviewCommands.OPEN_MENU_PREVIEW_SIDE.id,
             keybinding: 'ctrlcmd+k v',
-            when: `resourceExtname == .menu`
+            when: 'resourceExtname == .menu'
         });
     }
 

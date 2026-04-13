@@ -1,5 +1,9 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
 import {

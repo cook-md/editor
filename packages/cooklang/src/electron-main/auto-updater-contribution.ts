@@ -1,6 +1,14 @@
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
+
 import { injectable } from '@theia/core/shared/inversify';
 import { ElectronMainApplication, ElectronMainApplicationContribution } from '@theia/core/lib/electron-main/electron-main-application';
 import { MaybePromise } from '@theia/core/lib/common/types';
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { autoUpdater } from 'electron-updater';
 
 @injectable()

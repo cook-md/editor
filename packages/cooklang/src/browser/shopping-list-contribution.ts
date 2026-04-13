@@ -1,5 +1,9 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { Command, CommandRegistry } from '@theia/core/lib/common/command';
@@ -121,7 +125,7 @@ export class ShoppingListContribution
             id: ShoppingListCommands.ADD_MENU_TO_LIST.id + '.editor',
             command: ShoppingListCommands.ADD_MENU_TO_LIST.id,
             tooltip: 'Add Menu to Shopping List',
-            when: `resourceExtname == .menu`,
+            when: 'resourceExtname == .menu',
         });
     }
 

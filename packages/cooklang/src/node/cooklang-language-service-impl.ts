@@ -1,5 +1,11 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+/* eslint-disable no-null/no-null */
+
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import {
@@ -11,13 +17,14 @@ import {
     CooklangSemanticTokens
 } from '../common/cooklang-language-service';
 import { createNativeLspConnection } from './cooklang-language-server-connection';
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { MessageConnection } from 'vscode-languageserver-protocol/node';
 
 @injectable()
 export class CooklangLanguageServiceImpl implements CooklangLanguageService {
 
     private connection: MessageConnection | undefined;
-    private nativeLsp: any;
+    private nativeLsp: { sendMessage(msg: string): void; receiveMessage(): Promise<string | null> } | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -26,8 +33,8 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             if (native && native.LspServer) {
                 this.nativeLsp = new native.LspServer();
                 this.connection = createNativeLspConnection(
-                    (msg: string) => this.nativeLsp.sendMessage(msg),
-                    () => this.nativeLsp.receiveMessage()
+                    (msg: string) => this.nativeLsp!.sendMessage(msg),
+                    () => this.nativeLsp!.receiveMessage()
                 );
                 // Capture server-to-client notifications
                 this.connection.onNotification('window/logMessage', (params: { type: number; message: string }) => {

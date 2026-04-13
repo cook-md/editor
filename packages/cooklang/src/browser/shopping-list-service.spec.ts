@@ -1,5 +1,11 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+/* eslint-disable no-null/no-null */
+
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
@@ -17,7 +23,7 @@ import { ShoppingListRecipeItem } from '../common/shopping-list-types';
 after(() => disableJSDOM());
 
 // ── Wire shapes (mirror `packages/cooklang/src/common/shopping-list-types.ts`)
-type WireShoppingItem = { Recipe: { path: string; multiplier: number | null; children: WireShoppingItem[] } };
+interface WireShoppingItem { Recipe: { path: string; multiplier: number | null; children: WireShoppingItem[] } }
 type WireCheckEntry = { Checked: string } | { Unchecked: string };
 
 /** Minimal shape the service uses from `FileChangesEvent`. */
@@ -89,8 +95,7 @@ class FakeLanguageService {
         const entries: WireCheckEntry[] = [];
         for (const line of text.split('\n')) {
             const trimmed = line.trim();
-            if (trimmed.startsWith('+ ')) { entries.push({ Checked: trimmed.slice(2) }); }
-            else if (trimmed.startsWith('- ')) { entries.push({ Unchecked: trimmed.slice(2) }); }
+            if (trimmed.startsWith('+ ')) { entries.push({ Checked: trimmed.slice(2) }); } else if (trimmed.startsWith('- ')) { entries.push({ Unchecked: trimmed.slice(2) }); }
         }
         return JSON.stringify(entries);
     }
@@ -102,8 +107,7 @@ class FakeLanguageService {
         const entries: WireCheckEntry[] = JSON.parse(entriesJson);
         const set = new Set<string>();
         for (const e of entries) {
-            if ('Checked' in e) { set.add(e.Checked.toLowerCase()); }
-            else { set.delete(e.Unchecked.toLowerCase()); }
+            if ('Checked' in e) { set.add(e.Checked.toLowerCase()); } else { set.delete(e.Unchecked.toLowerCase()); }
         }
         return [...set];
     }

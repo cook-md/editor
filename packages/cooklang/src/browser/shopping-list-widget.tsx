@@ -1,5 +1,9 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
@@ -70,22 +74,22 @@ export class ShoppingListWidget extends ReactWidget {
     }
 
     protected handleRemoveRecipe = (index: number): void => {
-        void this.shoppingListService.removeRecipe(index);
+        this.shoppingListService.removeRecipe(index).catch(err => console.error(err));
     };
 
     protected handleScaleChange = (index: number, scale: number): void => {
-        void this.shoppingListService.updateScale(index, scale);
+        this.shoppingListService.updateScale(index, scale).catch(err => console.error(err));
     };
 
     protected handleClearAll = (): void => {
-        void this.shoppingListService.clearAll();
+        this.shoppingListService.clearAll().catch(err => console.error(err));
     };
 
     protected handleToggleItem = (name: string): void => {
         if (this.shoppingListService.isChecked(name)) {
-            void this.shoppingListService.uncheckItem(name);
+            this.shoppingListService.uncheckItem(name).catch(err => console.error(err));
         } else {
-            void this.shoppingListService.checkItem(name);
+            this.shoppingListService.checkItem(name).catch(err => console.error(err));
         }
     };
 }
