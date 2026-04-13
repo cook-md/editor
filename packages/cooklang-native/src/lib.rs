@@ -801,3 +801,59 @@ pub fn on_sync_status_changed(callback: napi::JsFunction) -> napi::Result<()> {
     *cb = Some(tsfn);
     Ok(())
 }
+
+// ── Shopping list format (NAPI wrappers) ─────────────────────────────────────
+// Thin JSON-bridge wrappers around helpers in `shopping_list` module.
+// All functions are stateless; file I/O is performed by the TypeScript caller.
+
+#[napi(js_name = "parseShoppingList")]
+pub fn napi_parse_shopping_list(text: String) -> napi::Result<String> {
+    let list = shopping_list::parse_list(&text)
+        .map_err(|e| napi::Error::from_reason(format!("parse_shopping_list: {e}")))?;
+    serde_json::to_string(&list)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+#[napi(js_name = "writeShoppingList")]
+pub fn napi_write_shopping_list(json: String) -> napi::Result<String> {
+    let list: cooklang::shopping_list::ShoppingList = serde_json::from_str(&json)
+        .map_err(|e| napi::Error::from_reason(format!("writeShoppingList parse json: {e}")))?;
+    shopping_list::write_list(&list)
+        .map_err(|e| napi::Error::from_reason(format!("writeShoppingList: {e}")))
+}
+
+#[napi(js_name = "parseChecked")]
+pub fn napi_parse_checked(text: String) -> napi::Result<String> {
+    let entries = shopping_list::parse_checked_log(&text);
+    serde_json::to_string(&entries)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+#[napi(js_name = "writeCheckEntry")]
+pub fn napi_write_check_entry(entry_json: String) -> napi::Result<String> {
+    let entry: cooklang::shopping_list::CheckEntry = serde_json::from_str(&entry_json)
+        .map_err(|e| napi::Error::from_reason(format!("writeCheckEntry parse json: {e}")))?;
+    shopping_list::write_checked_entry(&entry)
+        .map_err(|e| napi::Error::from_reason(format!("writeCheckEntry: {e}")))
+}
+
+#[napi(js_name = "checkedSet")]
+pub fn napi_checked_set(entries_json: String) -> napi::Result<Vec<String>> {
+    let entries: Vec<cooklang::shopping_list::CheckEntry> = serde_json::from_str(&entries_json)
+        .map_err(|e| napi::Error::from_reason(format!("checkedSet parse json: {e}")))?;
+    let set = shopping_list::checked_set_from_log(&entries);
+    Ok(set.into_iter().collect())
+}
+
+#[napi(js_name = "compactChecked")]
+pub fn napi_compact_checked(
+    entries_json: String,
+    current_ingredients: Vec<String>,
+) -> napi::Result<String> {
+    let entries: Vec<cooklang::shopping_list::CheckEntry> = serde_json::from_str(&entries_json)
+        .map_err(|e| napi::Error::from_reason(format!("compactChecked parse json: {e}")))?;
+    let refs: Vec<&str> = current_ingredients.iter().map(|s| s.as_str()).collect();
+    let compacted = shopping_list::compact_checked_log(&entries, refs);
+    serde_json::to_string(&compacted)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}

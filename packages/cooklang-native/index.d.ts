@@ -50,6 +50,12 @@ export declare function getSyncStatus(): string
  * Replaces any previously registered callback.
  */
 export declare function onSyncStatusChanged(callback: (...args: any[]) => any): void
+export declare function parseShoppingList(text: string): string
+export declare function writeShoppingList(json: string): string
+export declare function parseChecked(text: string): string
+export declare function writeCheckEntry(entryJson: string): string
+export declare function checkedSet(entriesJson: string): Array<string>
+export declare function compactChecked(entriesJson: string, currentIngredients: Array<string>): string
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
