@@ -182,4 +182,34 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             return JSON.stringify({ categories: [], other: { name: 'other', items: [] }, pantryItems: [] });
         }
     }
+
+    async parseShoppingList(text: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.parseShoppingList(text);
+    }
+
+    async writeShoppingList(json: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.writeShoppingList(json);
+    }
+
+    async parseChecked(text: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.parseChecked(text);
+    }
+
+    async writeCheckEntry(entryJson: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.writeCheckEntry(entryJson);
+    }
+
+    async checkedSet(entriesJson: string): Promise<string[]> {
+        const native = require('@theia/cooklang-native');
+        return native.checkedSet(entriesJson);
+    }
+
+    async compactChecked(entriesJson: string, currentIngredients: string[]): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.compactChecked(entriesJson, currentIngredients);
+    }
 }

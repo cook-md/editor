@@ -36,6 +36,14 @@ export interface CooklangLanguageService {
 
     // Shopping list generation
     generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string>;
+
+    // Shopping list format (new in 2026-04)
+    parseShoppingList(text: string): Promise<string>;
+    writeShoppingList(json: string): Promise<string>;
+    parseChecked(text: string): Promise<string>;
+    writeCheckEntry(entryJson: string): Promise<string>;
+    checkedSet(entriesJson: string): Promise<string[]>;
+    compactChecked(entriesJson: string, currentIngredients: string[]): Promise<string>;
 }
 
 // Plain JSON DTOs — subsets of vscode-languageserver-protocol types
