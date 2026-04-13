@@ -50,6 +50,11 @@ class FakeWorkspaceService {
  * the wire inside its helpers.
  */
 class FakeLanguageService {
+    /** Recipe content keyed by name (with or without extension). */
+    recipes = new Map<string, string>();
+    async findRecipe(_baseDir: string, name: string): Promise<string | undefined> {
+        return this.recipes.get(name) ?? this.recipes.get(`${name}.cook`);
+    }
     async parseShoppingList(text: string): Promise<string> {
         const items: WireShoppingItem[] = text
             .split('\n')
@@ -164,10 +169,12 @@ describe('ShoppingListService', () => {
 
     it('removeRecipe compacts stale checks', async () => {
         const { svc, fs, ls } = makeService();
-        // Seed recipe files so `regenerate()` can read them and the mock LS
-        // can decide its output based on which recipes are still present.
-        fs.files.set('file:///ws/pasta.cook', 'pasta');
-        fs.files.set('file:///ws/bread.cook', 'bread');
+        // Seed recipe content via the language service (which now resolves
+        // recipes through cooklang-find on the backend) so `regenerate()` can
+        // read them and the mock LS can decide its output based on which
+        // recipes are still present.
+        ls.recipes.set('pasta.cook', 'pasta');
+        ls.recipes.set('bread.cook', 'bread');
         ls.generateShoppingList = async recipesJson => {
             const recipes: Array<{ content: string; scale: number }> = JSON.parse(recipesJson);
             // `milk` is only present while bread.cook is in the list.
@@ -187,6 +194,7 @@ describe('ShoppingListService', () => {
         // `compactCheckedLog()` runs, pruning the stale `milk` entry.
         await svc.addRecipe('pasta.cook', 1);
         await svc.addRecipe('bread.cook', 1);
+        await svc.checkItem('flour');
         await svc.checkItem('milk');
         expect(svc.isChecked('milk')).to.equal(true);
 

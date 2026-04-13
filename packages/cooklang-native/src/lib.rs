@@ -6,6 +6,8 @@ use tokio::sync::mpsc;
 
 mod shopping_list;
 
+use camino::Utf8PathBuf;
+
 // ── Sync globals ─────────────────────────────────────────────────────────────
 
 /// Shared state that tracks the current sync status, updated by the listener.
@@ -843,6 +845,23 @@ pub fn napi_checked_set(entries_json: String) -> napi::Result<Vec<String>> {
         .map_err(|e| napi::Error::from_reason(format!("checkedSet parse json: {e}")))?;
     let set = shopping_list::checked_set_from_log(&entries);
     Ok(set.into_iter().collect())
+}
+
+/// Resolve a recipe by name (with or without extension) inside `base_dir` using
+/// `cooklang-find`'s lookup rules (tries `.cook` then `.menu` when no extension).
+/// Returns the file content, or `null` if no matching file is found.
+#[napi(js_name = "findRecipe")]
+pub fn napi_find_recipe(base_dir: String, name: String) -> napi::Result<Option<String>> {
+    let base = Utf8PathBuf::from(base_dir);
+    let recipe_name = Utf8PathBuf::from(name);
+    match cooklang_find::get_recipe([base], recipe_name) {
+        Ok(entry) => entry
+            .content()
+            .map(Some)
+            .map_err(|e| napi::Error::from_reason(format!("findRecipe read: {e}"))),
+        Err(cooklang_find::fetcher::FetchError::InvalidPath(_)) => Ok(None),
+        Err(e) => Err(napi::Error::from_reason(format!("findRecipe: {e}"))),
+    }
 }
 
 #[napi(js_name = "compactChecked")]

@@ -171,11 +171,18 @@ export class ShoppingListService implements Disposable {
         }
 
         const flat = this.flattenForGeneration();
+        const baseDir = root.path.fsPath();
         const recipeInputs: Array<{ content: string; scale: number }> = [];
         for (const { path, scale } of flat) {
             try {
-                const content = await this.fileService.read(root.resolve(path));
-                recipeInputs.push({ content: content.value, scale });
+                // Use cooklang-find via RPC: auto-resolves `.cook`/`.menu` extensions
+                // when paths from menu references are stored without one.
+                const content = await this.languageService.findRecipe(baseDir, path);
+                if (content === undefined) {
+                    console.warn(`[shopping-list] Recipe not found: ${path}`);
+                    continue;
+                }
+                recipeInputs.push({ content, scale });
             } catch (e) {
                 console.warn(`[shopping-list] Failed to read recipe ${path}:`, e);
             }
