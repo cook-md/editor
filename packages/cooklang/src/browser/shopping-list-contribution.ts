@@ -240,7 +240,10 @@ export class ShoppingListContribution
             return;
         }
 
-        let parsed: { sections?: Array<{ lines?: Array<Array<{ kind?: string; name?: string; path?: string; scale?: number }>> }> };
+        // Menu JSON shape from `parse_menu` in packages/cooklang-native/src/lib.rs:
+        // items are tagged by `type`: "text" | "recipeReference" | "ingredient".
+        // Only "recipeReference" items are real recipe references.
+        let parsed: { sections?: Array<{ lines?: Array<Array<{ type?: string; name?: string; scale?: number }>> }> };
         try {
             parsed = JSON.parse(await this.languageService.parseMenu(menuContent, 1));
         } catch (e) {
@@ -252,11 +255,10 @@ export class ShoppingListContribution
         for (const section of parsed.sections ?? []) {
             for (const line of section.lines ?? []) {
                 for (const item of line) {
-                    const refPath = item.path ?? item.name;
-                    if (!refPath) { continue; }
-                    if (item.kind && item.kind !== 'recipe-reference' && item.kind !== 'recipeReference') { continue; }
+                    if (item.type !== 'recipeReference') { continue; }
+                    if (!item.name) { continue; }
                     recipes.push({
-                        path: refPath.replace(/^\.\//, ''),
+                        path: item.name.replace(/^\.\//, ''),
                         scale: typeof item.scale === 'number' && item.scale > 0 ? item.scale : 1,
                     });
                 }
