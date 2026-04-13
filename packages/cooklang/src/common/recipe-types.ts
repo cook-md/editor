@@ -1,5 +1,11 @@
-// Copyright (C) 2026 Cooklang contributors
-// SPDX-License-Identifier: MIT
+/* eslint-disable no-null/no-null */
+
+// *****************************************************************************
+// Copyright (C) 2026 and others.
+//
+// This program and the accompanying materials are made available under the
+// terms of the MIT License, which is available in the project root.
+// *****************************************************************************
 
 /**
  * TypeScript types matching the JSON output of the cooklang-native parser.
