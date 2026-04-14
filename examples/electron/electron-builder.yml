@@ -52,7 +52,7 @@ mac:
 
 dmg:
   sign: false
-  artifactName: ${productName}.${ext}
+  artifactName: ${productName}-${arch}.${ext}
 
 # --- Windows ---
 win:

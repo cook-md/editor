@@ -23,8 +23,15 @@ jobs:
         include:
           - os: macos-latest
             platform: mac-arm64
-          - os: macos-13
+            electron_arch: arm64
+            rust_target: aarch64-apple-darwin
+          # Cross-compile x64 from arm64 runner (macos-13 is deprecated and
+          # -large runners are paid). Rust + electron-rebuild both support
+          # cross-compiling from arm64 mac to x64 natively.
+          - os: macos-latest
             platform: mac-x64
+            electron_arch: x64
+            rust_target: x86_64-apple-darwin
           - os: windows-latest
             platform: win
           - os: ubuntu-latest
@@ -55,6 +62,10 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Rust target (macOS cross-compile)
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
       - name: Cache Rust
         uses: actions/cache@v4
         with:
@@ -62,8 +73,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             packages/cooklang-native/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/cooklang-native/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.rust_target || 'host' }}-cargo-${{ hashFiles('packages/cooklang-native/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust_target || 'host' }}-cargo-
             ${{ runner.os }}-cargo-
 
       # native-keymap compiles against libx11/libxkbfile headers on Linux
@@ -80,7 +92,13 @@ jobs:
 
       - name: Build native addon
         working-directory: packages/cooklang-native
-        run: npm run build
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            npx napi build --release --platform --target ${{ matrix.rust_target }}
+          else
+            npm run build
+          fi
 
       - name: Compile TypeScript
         run: npm run compile
@@ -92,9 +110,27 @@ jobs:
           # webpack hits the default 2 GB heap on Windows; give it room
           NODE_OPTIONS: --max-old-space-size=8192
 
+      # `theia rebuild:electron` only rebuilds native deps for host arch.
+      # When cross-compiling x64 on an arm64 mac runner we need a second pass
+      # targeting x64 so node-pty/native-keymap/etc. ship as x64 binaries.
+      - name: Rebuild native deps for target arch (macOS cross-compile)
+        if: matrix.electron_arch == 'x64'
+        run: |
+          ./node_modules/.bin/electron-rebuild \
+            --arch=x64 \
+            --force \
+            --only=node-pty,native-keymap,find-git-repositories,drivelist,keytar,ssh2,cpu-features
+
       - name: Package & Publish
         working-directory: examples/electron
-        run: npx electron-builder --publish ${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}
+        shell: bash
+        run: |
+          PUBLISH="${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
+          if [ -n "${{ matrix.electron_arch }}" ]; then
+            npx electron-builder --mac --${{ matrix.electron_arch }} --publish "$PUBLISH"
+          else
+            npx electron-builder --publish "$PUBLISH"
+          fi
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_PAT }}
 
