@@ -66,8 +66,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # native-keymap compiles against libx11/libxkbfile headers on Linux
+      - name: Install Linux native build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
+
       - name: Install dependencies
         run: npm install
+        env:
+          # @vscode/ripgrep and other GitHub-release downloads hit anonymous
+          # rate limits (403) without a token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build native addon
         working-directory: packages/cooklang-native
