@@ -88,6 +88,9 @@ jobs:
       - name: Bundle Electron app
         working-directory: examples/electron
         run: npm run bundle
+        env:
+          # webpack hits the default 2 GB heap on Windows; give it room
+          NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Package & Publish
         working-directory: examples/electron
