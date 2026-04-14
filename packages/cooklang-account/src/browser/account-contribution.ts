@@ -14,11 +14,11 @@ import { AccountWidget, ACCOUNT_WIDGET_ID } from './account-widget';
 
 export namespace AccountCommands {
     export const TOGGLE_VIEW: Command = {
-        id: 'cookmd.toggleAccount',
+        id: 'cooked.toggleAccount',
         label: 'Cook.md: Toggle Account',
     };
     export const OPEN_VIEW: Command = {
-        id: 'cookmd.openAccount',
+        id: 'cooked.openAccount',
     };
 }
 

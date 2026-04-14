@@ -5,7 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-export const SubscriptionServicePath = '/services/cookmd-subscription';
+export const SubscriptionServicePath = '/services/cooked-subscription';
 export const SubscriptionService = Symbol('SubscriptionService');
 
 export interface SubscriptionState {
