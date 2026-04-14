@@ -23,8 +23,11 @@ jobs:
         include:
           - os: macos-latest
             platform: mac-arm64
-          - os: macos-13
-            platform: mac-x64
+          # macos-13 (Intel) runners are unavailable on this account and
+          # consistently never allocate. Re-enable when Intel Mac builds
+          # are needed and runner availability is confirmed.
+          # - os: macos-13
+          #   platform: mac-x64
           - os: windows-latest
             platform: win
           - os: ubuntu-latest
