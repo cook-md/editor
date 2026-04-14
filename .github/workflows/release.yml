@@ -23,11 +23,8 @@ jobs:
         include:
           - os: macos-latest
             platform: mac-arm64
-          # macos-13 (Intel) runners are unavailable on this account and
-          # consistently never allocate. Re-enable when Intel Mac builds
-          # are needed and runner availability is confirmed.
-          # - os: macos-13
-          #   platform: mac-x64
+          - os: macos-13
+            platform: mac-x64
           - os: windows-latest
             platform: win
           - os: ubuntu-latest
@@ -104,7 +101,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CookMD-${{ matrix.platform }}
+          name: CookEd-${{ matrix.platform }}
           path: |
             examples/electron/dist/*.dmg
             examples/electron/dist/*.zip

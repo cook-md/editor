@@ -1,5 +1,5 @@
-appId: org.cooklang.cookmd
-productName: CookMD
+appId: md.cook.cooked
+productName: CookEd
 copyright: Copyright © 2026 Cooklang
 electronDist: ../../node_modules/electron/dist
 electronVersion: 38.4.0
@@ -20,7 +20,7 @@ files:
   - src-gen
   - lib
   - resources/icon-256.png
-  - resources/cookmd-logo.svg
+  - resources/cooked-logo.svg
   - "!node_modules/**/@theia/**/src/**"
   - "!node_modules/**/@theia/**/lib/**/*.spec.*"
 
@@ -39,9 +39,9 @@ mac:
   category: public.app-category.lifestyle
   darkModeSupport: true
   protocols:
-    - name: cookmd
+    - name: cook
       schemes:
-        - cookmd
+        - cook
   target:
     - dmg
     - zip

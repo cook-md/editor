@@ -5,7 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-export const SyncServicePath = '/services/cookmd-sync';
+export const SyncServicePath = '/services/cooked-sync';
 export const SyncService = Symbol('SyncService');
 
 export interface SyncStatus {

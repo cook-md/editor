@@ -19,12 +19,12 @@ const AUTH_POLL_INTERVAL_MS = 2000;
 const AUTH_POLL_MAX_ATTEMPTS = 150; // 5 minutes
 
 export const CookmdLoginCommand: Command = {
-    id: 'cookmd.login',
+    id: 'cooked.login',
     label: 'Login',
 };
 
 export const CookmdLogoutCommand: Command = {
-    id: 'cookmd.logout',
+    id: 'cooked.logout',
     label: 'Cook.md: Logout',
 };
 
@@ -69,8 +69,8 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         registry.registerCommand(CookmdLogoutCommand, {
             execute: () => this.doLogout(),
         });
-        registry.registerCommand({ id: 'cookmd.manageSubscription' }, {
-            execute: () => this.commandService.executeCommand('cookmd.openAccount'),
+        registry.registerCommand({ id: 'cooked.manageSubscription' }, {
+            execute: () => this.commandService.executeCommand('cooked.openAccount'),
         });
     }
 
@@ -87,7 +87,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         if (this._authState.status === 'logged-in') {
             this.statusBar.setElement(AUTH_STATUS_ID, {
                 text: '$(account) Logged In',
-                command: 'cookmd.openAccount',
+                command: 'cooked.openAccount',
                 tooltip: nls.localize('theia/cooklang-account/accountSettingsTooltip', 'Account Settings'),
                 alignment: StatusBarAlignment.LEFT,
                 priority: 100,

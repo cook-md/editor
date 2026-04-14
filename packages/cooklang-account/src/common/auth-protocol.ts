@@ -5,7 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-export const AuthServicePath = '/services/cookmd-auth';
+export const AuthServicePath = '/services/cooked-auth';
 export const AuthService = Symbol('AuthService');
 
 export interface AuthState {
