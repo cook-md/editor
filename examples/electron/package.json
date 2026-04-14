@@ -5,6 +5,11 @@
   "version": "1.70.0",
   "main": "lib/backend/electron-main.js",
   "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
+  "homepage": "https://cooklang.org",
+  "author": {
+    "name": "Cooklang",
+    "email": "dubovskoy.a@gmail.com"
+  },
   "theia": {
     "target": "electron",
     "frontend": {
