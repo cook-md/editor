@@ -1,0 +1,100 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to GitHub Releases'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac-arm64
+          - os: macos-13
+            platform: mac-x64
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # cooklang-language-server is referenced from packages/cooklang-native/Cargo.toml
+      # as a sibling path (../../../cooklang-language-server). Place it next to the
+      # editor checkout — actions/checkout rejects paths outside the workspace, so
+      # use git clone directly.
+      - name: Clone cooklang-language-server
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/cooklang/cooklang-language-server.git \
+            "${{ github.workspace }}/../cooklang-language-server"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/cooklang-native/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/cooklang-native/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build native addon
+        working-directory: packages/cooklang-native
+        run: npm run build
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Bundle Electron app
+        working-directory: examples/electron
+        run: npm run bundle
+
+      - name: Package & Publish
+        working-directory: examples/electron
+        run: npx electron-builder --publish ${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_PAT }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: CookMD-${{ matrix.platform }}
+          path: |
+            examples/electron/dist/*.dmg
+            examples/electron/dist/*.zip
+            examples/electron/dist/*.exe
+            examples/electron/dist/*.AppImage
+            examples/electron/dist/*.deb
+            examples/electron/dist/*.yml
+          if-no-files-found: warn
