@@ -1,7 +1,9 @@
 appId: md.cook.cooked
 productName: CookEd
 copyright: Copyright © 2026 Cooklang
-electronDist: ../../node_modules/electron/dist
+# Do NOT set electronDist — it would pin to the host-arch Electron installed
+# by npm and produce arm64 binaries even inside an x64 DMG. Let electron-
+# builder resolve and download the correct-arch Electron per target.
 electronVersion: 38.4.0
 asar: true
 asarUnpack:
