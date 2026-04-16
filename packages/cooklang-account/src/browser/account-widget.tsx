@@ -5,6 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
+import { Message } from '@lumino/messaging';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
@@ -80,6 +81,15 @@ export class AccountWidget extends ReactWidget {
     override dispose(): void {
         this.stopSyncPolling();
         super.dispose();
+    }
+
+    protected override onActivateRequest(msg: Message): void {
+        super.onActivateRequest(msg);
+        // Pull latest subscription state so tokens_remaining and plan reflect reality
+        // whenever the user opens/focuses the account widget.
+        this.subscriptionFrontendService.refresh().catch(err => {
+            console.warn('Failed to refresh subscription on widget activation:', err);
+        });
     }
 
     private startSyncPolling(): void {
