@@ -365,8 +365,25 @@ export class AccountWidget extends ReactWidget {
         this.commandService.executeCommand(CookmdLogoutCommand.id);
     };
 
-    private handleUpgrade = (): void => {
-        this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
+    private handleUpgrade = async (): Promise<void> => {
+        let url: string;
+        try {
+            url = await this.subscriptionFrontendService.startUpgradeFlow();
+        } catch (err) {
+            console.warn('Failed to start upgrade flow, falling back to pricing page:', err);
+            this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
+            return;
+        }
+        this.windowService.openNewWindow(url, { external: true });
+        try {
+            const result = await this.subscriptionFrontendService.awaitUpgradeCallback();
+            if (result.status === 'ok') {
+                await this.subscriptionFrontendService.refresh();
+            }
+        } catch (err) {
+            // Timeout, state mismatch, or superseded flow — user can retry.
+            console.warn('Upgrade flow did not complete:', err);
+        }
     };
 
 }
