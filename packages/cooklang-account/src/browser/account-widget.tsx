@@ -5,7 +5,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-import { Message } from '@lumino/messaging';
+import { Message } from '@theia/core/shared/@lumino/messaging';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
