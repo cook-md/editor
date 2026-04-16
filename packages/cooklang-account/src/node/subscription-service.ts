@@ -244,7 +244,7 @@ p { color: #666; }`;
                 features: data.features ?? [],
                 planSlug: data.plan_slug ?? undefined,
                 planName: data.plan_name ?? undefined,
-                tokensRemaining: typeof data.tokens_remaining === 'number' ? data.tokens_remaining : 0,
+                aiCreditsRemaining: typeof data.ai_credits_remaining === 'number' ? data.ai_credits_remaining : 0,
                 expiresAt: data.expires_at ?? undefined,
                 trialDaysRemaining: data.trial_days_remaining ?? undefined,
                 trialAvailable: data.trial_available ?? false,
