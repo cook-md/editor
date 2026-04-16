@@ -6,13 +6,14 @@
 
 import { nls } from '@theia/core/lib/common/nls';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
+import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 
-const WEB_BASE_URL = 'https://cook.md';
+const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
 @injectable()
 export class CooklangChatViewWidget extends ChatViewWidget {
@@ -26,9 +27,13 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     @inject(WindowService)
     protected readonly windowService: WindowService;
 
+    @inject(EnvVariablesServer)
+    protected readonly envVariablesServer: EnvVariablesServer;
+
     private authState: AuthState = { status: 'logged-out' };
     private hasAiFeature = false;
     private gateOverlay: HTMLDivElement;
+    private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
     @postConstruct()
     protected override init(): void {
@@ -47,6 +52,14 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         });
         this.subscriptionFrontendService.onDidChangeSubscription(() => {
             this.checkAiFeature();
+        });
+
+        // Mirror the Node-side services' WEB_BASE_URL override so the Get AI
+        // Addon button points at the same backend during local dev.
+        this.envVariablesServer.getValue('WEB_BASE_URL').then(envVar => {
+            if (envVar?.value) {
+                this.webBaseUrl = envVar.value;
+            }
         });
     }
 
@@ -113,7 +126,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
                 'The AI assistant requires the AI addon. Add it to your subscription to get started.');
             button.textContent = nls.localize('theia/ai-chat/gate/upgradeButton', 'Get AI Addon \u2192');
             button.addEventListener('click', () => {
-                this.windowService.openNewWindow(`${WEB_BASE_URL}/pricing`, { external: true });
+                this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
             });
             const note = document.createElement('div');
             note.className = 'ai-chat-gate-note';
