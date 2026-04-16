@@ -28,5 +28,5 @@ export interface SubscriptionState {
 export interface SubscriptionService {
     getSubscription(): Promise<SubscriptionState | undefined>;
     hasFeature(name: string): Promise<boolean>;
-    refresh(): Promise<void>;
+    refresh(): Promise<SubscriptionState | undefined>;
 }

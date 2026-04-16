@@ -63,6 +63,10 @@ export class SubscriptionFrontendServiceImpl implements SubscriptionFrontendServ
     }
 
     async refresh(): Promise<void> {
-        return this.subscriptionService.refresh();
+        // Backend events don't cross RPC, so we must re-seed our own cache
+        // from the refreshed backend state and fire the frontend emitter.
+        const sub = await this.subscriptionService.refresh();
+        this.cachedState = sub;
+        this.onDidChangeSubscriptionEmitter.fire(sub);
     }
 }

@@ -45,8 +45,9 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         return sub?.features.includes(name) ?? false;
     }
 
-    async refresh(): Promise<void> {
+    async refresh(): Promise<SubscriptionState | undefined> {
         await this.fetchSubscription();
+        return this.cachedState;
     }
 
     private async handleAuthChange(state: AuthState): Promise<void> {
