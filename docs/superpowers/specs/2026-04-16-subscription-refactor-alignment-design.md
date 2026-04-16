@@ -20,17 +20,18 @@ The editor (`editor`) still speaks the pre-refactor protocol:
 - No `planSlug`, `planName`, `tokensRemaining`, `billingPeriodStart/End`,
   `trialAvailable` in `SubscriptionState`.
 - Account widget shows no token balance (the refactored web UI does; commit `2a103770`).
-- `cooklang-ai` has no client-side feature gating; gRPC call fails with
-  `permission_denied: ai_feature_not_available` for non-AI users — opaque in chat.
 - Account widget hides sync UI behind `features.includes('sync')`. Rails/sync-server
   don't actually enforce a `sync` feature flag, so this is a cosmetic paywall.
+
+(AI chat is already UI-gated in `cooklang-branding`'s chat widget — a full
+"Get AI Addon" overlay is shown when `features.includes('ai')` is false.
+No additional agent-level gating is needed.)
 
 ## Goals
 
 1. Align editor's subscription protocol with Rails' current JSON.
 2. Surface AI token balance and billing cycle in the account widget.
-3. Client-side gate AI chat for users without the `ai` feature.
-4. Remove the cosmetic sync paywall from the account widget.
+3. Remove the cosmetic sync paywall from the account widget.
 
 No backward-compatibility shims: fields are renamed/dropped cleanly.
 
@@ -119,30 +120,7 @@ this.cachedState = {
   - No progress bar (no client-side allowance). Rails' page has the full
     breakdown.
 
-### 4. AI client-side gating
-
-`packages/cooklang-ai/src/browser/cookbot-chat-agent.ts`:
-
-- Inject `SubscriptionFrontendService` from
-  `@theia/cooklang-account/lib/browser/subscription-frontend-service`.
-- Override the chat-agent request entry point (`invoke(request)` or the closest
-  `AbstractStreamParsingChatAgent` hook that lets us short-circuit before any
-  gRPC call).
-- Pre-check:
-  - If `subscription` loaded and `features.includes('ai') === false` → emit a
-    single assistant message: `AI assistance requires a Pro subscription.
-    [Upgrade at cook.md/pricing](https://cook.md/pricing)` (localized,
-    markdown link). Return a completed stream; skip gRPC.
-  - If `subscription === undefined` (loading) → `await
-    subscriptionFrontendService.refresh()` with a short timeout, then re-check.
-    If still undefined → fail open (let the request go; server will gate with
-    the existing `permission_denied` path).
-- Depletion (`tokens_remaining <= 0`): out of scope here; server returns a
-  separate error that can be handled later.
-- Add `@theia/cooklang-account` to `packages/cooklang-ai/package.json`
-  dependencies if not already present (verify before committing).
-
-### 5. Remove sync paywall
+### 4. Remove sync paywall
 
 `packages/cooklang-account/src/browser/account-widget.tsx`:
 
@@ -161,7 +139,7 @@ Rails' `Plans` catalog still lists `'sync'` in plan features. The editor now
 ignores that bit for gating purposes. Deciding whether to remove it from the
 catalog is a separate pricing/marketing call.
 
-### 6. Refresh lifecycle
+### 5. Refresh lifecycle
 
 - Keep the existing 5-min TTL cache in `subscription-service.ts`.
 - Keep the existing auth-change triggered refresh.
@@ -175,16 +153,16 @@ catalog is a separate pricing/marketing call.
 1. `packages/cooklang-account/src/common/subscription-protocol.ts` — new `SubscriptionState` shape.
 2. `packages/cooklang-account/src/node/subscription-service.ts` — map new Rails JSON fields.
 3. `packages/cooklang-account/src/browser/account-widget.tsx` — new plan label, token balance, refresh-on-activate, remove sync paywall, updated copy.
-4. `packages/cooklang-ai/src/browser/cookbot-chat-agent.ts` — AI feature gating.
-5. `packages/cooklang-ai/package.json` — add `@theia/cooklang-account` dep if missing.
+4. `packages/cooklang-account/src/browser/style/index.css` — styling for token balance row (if needed).
 
 ## Files intentionally not touched
 
-- `packages/cooklang-ai/src/node/cookbot-language-model.ts`,
-  `cookbot-grpc-client.ts` — server gates AI via `session_snapshot`.
+- `packages/cooklang-ai/**` — server gates AI via `session_snapshot`, and
+  `cooklang-branding`'s chat widget already gates the UI on
+  `hasFeature('ai')`. No client-side work needed in the AI package.
 - `packages/cooklang-ai/proto/cookbot.proto` — unused `subscription_tier` field.
 - `packages/cooklang-branding/src/browser/cooklang-chat-view-widget.ts` —
-  already gates on `hasFeature('ai')` correctly; no change needed.
+  existing AI gate stays as-is.
 - Rails `cook.md/web` — this is a client-side alignment.
 
 ## Testing
@@ -194,8 +172,8 @@ Manual verification in Electron:
 - **AI user** (plan `pro_early_adopter_v1`, feature `ai`): plan name "AI (Early
   Adopter)" shown, token balance visible, chat works as today, balance
   refreshes on widget open.
-- **Non-AI / free user**: chat shows upgrade message instead of gRPC error;
-  sync section still visible and usable; no token balance.
+- **Non-AI / free user**: chat widget shows the existing "Get AI Addon" gate
+  (unchanged); sync section still visible and usable; no token balance.
 - **Logged out**: login prompt only; no sync UI.
 - **Past due**: label shows "Pro (Payment Issue)"; sync and AI still work
   (`active_for_access?` is true server-side for `past_due`).
