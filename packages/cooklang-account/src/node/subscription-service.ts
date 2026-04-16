@@ -75,9 +75,14 @@ export class SubscriptionServiceImpl implements SubscriptionService {
                 status: data.status ?? 'none',
                 hasAccess: data.has_access ?? false,
                 features: data.features ?? [],
-                plan: data.plan ?? undefined,
+                planSlug: data.plan_slug ?? undefined,
+                planName: data.plan_name ?? undefined,
+                tokensRemaining: typeof data.tokens_remaining === 'number' ? data.tokens_remaining : 0,
                 expiresAt: data.expires_at ?? undefined,
                 trialDaysRemaining: data.trial_days_remaining ?? undefined,
+                trialAvailable: data.trial_available ?? false,
+                billingPeriodStart: data.billing_period_start ?? undefined,
+                billingPeriodEnd: data.billing_period_end ?? undefined,
             };
             this.cacheTimestamp = Date.now();
             this.onDidChangeSubscriptionEmitter.fire(this.cachedState);
