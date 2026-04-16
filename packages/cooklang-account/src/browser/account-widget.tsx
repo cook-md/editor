@@ -140,7 +140,7 @@ export class AccountWidget extends ReactWidget {
                     className='theia-button main theia-account-login-button'
                     onClick={this.handleLogin}
                 >
-                    {nls.localize('theia/cooklang-account/loginButton', 'Log In')}
+                    {nls.localizeByDefault('Log In')}
                 </button>
             </div>
         );
@@ -172,7 +172,7 @@ export class AccountWidget extends ReactWidget {
         return (
             <div className='theia-account-loading'>
                 <div className='theia-account-spinner' />
-                <span>{nls.localize('theia/cooklang-account/loading', 'Loading...')}</span>
+                <span>{nls.localizeByDefault('Loading...')}</span>
             </div>
         );
     }
@@ -213,7 +213,7 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
                 <div className='theia-account-row'>
                     <i className='codicon codicon-sync' />
-                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/syncEnabled', 'Enabled')}</span>
+                    <span className='theia-account-row-label'>{nls.localizeByDefault('Enabled')}</span>
                     <input
                         className='theia-account-sync-toggle'
                         type='checkbox'
@@ -308,9 +308,9 @@ export class AccountWidget extends ReactWidget {
             case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
             case 'past_due': return nls.localize('theia/cooklang-account/planPastDue', 'Pro (Payment Issue)');
             case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
-            case 'paused': return nls.localize('theia/cooklang-account/planPaused', 'Paused');
+            case 'paused': return nls.localizeByDefault('Paused');
             case 'expired': return nls.localize('theia/cooklang-account/planExpired', 'Expired');
-            default: return nls.localize('theia/cooklang-account/planFree', 'Free');
+            default: return nls.localizeByDefault('Free');
         }
     }
 
