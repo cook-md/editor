@@ -263,6 +263,7 @@ export class AccountWidget extends ReactWidget {
         }
         switch (subscription.status) {
             case 'trial': return nls.localize('theia/cooklang-account/planTrial', 'Trial');
+            case 'active': return nls.localize('theia/cooklang-account/planPro', 'Pro');
             case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
             case 'past_due': return nls.localize('theia/cooklang-account/planPastDue', 'Pro (Payment Issue)');
             case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
