@@ -169,7 +169,6 @@ export class AccountWidget extends ReactWidget {
 
     protected renderSubscriptionActive(subscription: SubscriptionState): React.ReactNode {
         const planLabel = this.getPlanLabel(subscription);
-        const hasSyncFeature = subscription.features.includes('sync');
         const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
 
         return (
@@ -188,7 +187,7 @@ export class AccountWidget extends ReactWidget {
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
                 {subscription.features.includes('ai') && this.renderAiTokensSection(subscription)}
-                {hasSyncFeature && this.renderSyncSection(statusLabel)}
+                {this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
@@ -263,12 +262,13 @@ export class AccountWidget extends ReactWidget {
     }
 
     protected renderSubscriptionUpgrade(): React.ReactNode {
+        const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
         return (
             <React.Fragment>
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/subscriptionHeader', 'Subscription')}</div>
                 <div className='theia-account-upgrade-section'>
                     <div className='theia-account-upgrade-message'>
-                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock sync, AI assistance, and more features.')}
+                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock AI assistance and more features.')}
                     </div>
                     <button
                         className='theia-button main theia-account-upgrade-button'
@@ -277,6 +277,7 @@ export class AccountWidget extends ReactWidget {
                         {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
                     </button>
                 </div>
+                {this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
