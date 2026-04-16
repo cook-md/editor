@@ -187,6 +187,7 @@ export class AccountWidget extends ReactWidget {
                     <i className='codicon codicon-link-external' />
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
+                {subscription.features.includes('ai') && this.renderAiTokensSection(subscription)}
                 {hasSyncFeature && this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
@@ -226,6 +227,35 @@ export class AccountWidget extends ReactWidget {
                     <div className='theia-account-row theia-account-sync-error'>
                         <i className='codicon codicon-error' />
                         <span className='theia-account-row-label'>{this.syncStatus.error}</span>
+                    </div>
+                )}
+            </React.Fragment>
+        );
+    }
+
+    protected renderAiTokensSection(subscription: SubscriptionState): React.ReactNode {
+        const tokens = subscription.tokensRemaining;
+        const tokensClass = tokens <= 0
+            ? 'theia-account-row-label theia-account-sync-error'
+            : 'theia-account-row-label';
+        const resetsLabel = subscription.billingPeriodEnd
+            ? new Date(subscription.billingPeriodEnd).toLocaleDateString()
+            : undefined;
+        return (
+            <React.Fragment>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/aiHeader', 'AI Assistant')}</div>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-sparkle' />
+                    <span className={tokensClass}>
+                        {nls.localize('theia/cooklang-account/aiTokensRemaining', '{0} tokens remaining', tokens.toLocaleString())}
+                    </span>
+                </div>
+                {resetsLabel && (
+                    <div className='theia-account-row theia-account-sync-status'>
+                        <i className='codicon codicon-history' />
+                        <span className='theia-account-row-label'>
+                            {nls.localize('theia/cooklang-account/aiTokensResets', 'Resets {0}', resetsLabel)}
+                        </span>
                     </div>
                 )}
             </React.Fragment>
