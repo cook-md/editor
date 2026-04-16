@@ -257,12 +257,14 @@ export class AccountWidget extends ReactWidget {
     }
 
     private getPlanLabel(subscription: SubscriptionState): string {
+        // Rails owns the display name — prefer it when present.
+        if (subscription.planName) {
+            return subscription.planName;
+        }
         switch (subscription.status) {
             case 'trial': return nls.localize('theia/cooklang-account/planTrial', 'Trial');
-            case 'active': return subscription.plan === 'annual'
-                ? nls.localize('theia/cooklang-account/planAnnual', 'Pro (Annual)')
-                : nls.localize('theia/cooklang-account/planMonthly', 'Pro (Monthly)');
             case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
+            case 'past_due': return nls.localize('theia/cooklang-account/planPastDue', 'Pro (Payment Issue)');
             case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
             case 'paused': return nls.localize('theia/cooklang-account/planPaused', 'Paused');
             case 'expired': return nls.localize('theia/cooklang-account/planExpired', 'Expired');
