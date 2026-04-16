@@ -9,12 +9,17 @@ export const SubscriptionServicePath = '/services/cooked-subscription';
 export const SubscriptionService = Symbol('SubscriptionService');
 
 export interface SubscriptionState {
-    status: 'trial' | 'active' | 'expired' | 'grandfathered' | 'canceled' | 'paused' | 'none';
+    status: 'trial' | 'active' | 'past_due' | 'expired' | 'grandfathered' | 'canceled' | 'paused' | 'none';
     hasAccess: boolean;
     features: string[];
-    plan: 'monthly' | 'annual' | undefined;
+    planSlug: string | undefined;
+    planName: string | undefined;
+    tokensRemaining: number;
     expiresAt: string | undefined;
     trialDaysRemaining: number | undefined;
+    trialAvailable: boolean;
+    billingPeriodStart: string | undefined;
+    billingPeriodEnd: string | undefined;
 }
 
 /**
