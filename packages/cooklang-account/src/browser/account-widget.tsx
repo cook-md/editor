@@ -11,13 +11,14 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
+import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
 import * as React from '@theia/core/shared/react';
 import { SubscriptionFrontendService } from './subscription-frontend-service';
 import { SubscriptionState } from '../common/subscription-protocol';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
 import { AuthContribution, CookmdLoginCommand, CookmdLogoutCommand } from './auth-contribution';
 
-const WEB_BASE_URL = 'https://cook.md';
+const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
 export const ACCOUNT_WIDGET_ID = 'account-widget';
 
@@ -42,11 +43,15 @@ export class AccountWidget extends ReactWidget {
     @inject(SyncService)
     protected readonly syncService: SyncService;
 
+    @inject(EnvVariablesServer)
+    protected readonly envVariablesServer: EnvVariablesServer;
+
     private static readonly SYNC_POLL_INTERVAL_MS = 2000;
 
     private syncEnabled = false;
     private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
     private syncPollTimer: ReturnType<typeof setInterval> | undefined;
+    private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
     @postConstruct()
     protected init(): void {
@@ -73,6 +78,14 @@ export class AccountWidget extends ReactWidget {
             await this.refreshSyncStatus();
             this.startSyncPolling();
             this.update();
+        });
+
+        // Mirror the Node-side services' WEB_BASE_URL override so external links
+        // (Manage Subscription, Upgrade) point at the same backend during local dev.
+        this.envVariablesServer.getValue('WEB_BASE_URL').then(envVar => {
+            if (envVar?.value) {
+                this.webBaseUrl = envVar.value;
+            }
         });
 
         this.update();
@@ -345,7 +358,7 @@ export class AccountWidget extends ReactWidget {
     };
 
     private handleManageSubscription = (): void => {
-        this.windowService.openNewWindow(`${WEB_BASE_URL}/subscription`, { external: true });
+        this.windowService.openNewWindow(`${this.webBaseUrl}/subscription`, { external: true });
     };
 
     private handleLogout = (): void => {
@@ -353,7 +366,7 @@ export class AccountWidget extends ReactWidget {
     };
 
     private handleUpgrade = (): void => {
-        this.windowService.openNewWindow(`${WEB_BASE_URL}/pricing`, { external: true });
+        this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
     };
 
 }
