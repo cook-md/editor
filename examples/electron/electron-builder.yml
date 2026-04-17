@@ -54,9 +54,11 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Submit to Apple's notarytool after signing; uses APPLE_* env vars.
+  notarize: true
 
 dmg:
-  sign: false
+  sign: true
   artifactName: ${productName}-${arch}.${ext}
 
 # --- Windows ---
