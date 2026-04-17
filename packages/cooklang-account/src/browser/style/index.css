@@ -127,11 +127,6 @@
     flex-shrink: 0;
 }
 
-.theia-account-trial-remaining {
-    font-size: var(--theia-ui-font-size0);
-    color: var(--theia-descriptionForeground);
-}
-
 /* Sync toggle */
 
 .theia-account-sync-toggle {

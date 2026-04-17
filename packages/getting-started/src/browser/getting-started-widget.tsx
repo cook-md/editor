@@ -164,11 +164,11 @@ export class GettingStartedWidget extends ReactWidget {
                         {this.renderSettings()}
                     </div>
                 </div>
-                <div className='flex-grid'>
+                {/*<div className='flex-grid'>
                     <div className='col'>
                         {this.renderHelp()}
                     </div>
-                </div>
+                </div>*/}
                 <div className='flex-grid'>
                     <div className='col'>
                         {this.renderVersion()}
@@ -360,27 +360,9 @@ export class GettingStartedWidget extends ReactWidget {
                 <a
                     role={'button'}
                     tabIndex={0}
-                    onClick={() => this.doOpenExternalLink(this.compatibilityUrl)}
-                    onKeyDown={(e: React.KeyboardEvent) => this.doOpenExternalLinkEnter(e, this.compatibilityUrl)}>
-                    {nls.localize('theia/getting-started/apiComparator', '{0} API Compatibility', 'VS Code')}
-                </a>
-            </div>
-            <div className='gs-action-container'>
-                <a
-                    role={'button'}
-                    tabIndex={0}
                     onClick={() => this.doOpenExternalLink(this.extensionUrl)}
                     onKeyDown={(e: React.KeyboardEvent) => this.doOpenExternalLinkEnter(e, this.extensionUrl)}>
                     {nls.localize('theia/getting-started/newExtension', 'Building a New Extension')}
-                </a>
-            </div>
-            <div className='gs-action-container'>
-                <a
-                    role={'button'}
-                    tabIndex={0}
-                    onClick={() => this.doOpenExternalLink(this.pluginUrl)}
-                    onKeyDown={(e: React.KeyboardEvent) => this.doOpenExternalLinkEnter(e, this.pluginUrl)}>
-                    {nls.localize('theia/getting-started/newPlugin', 'Building a New Plugin')}
                 </a>
             </div>
         </div>;

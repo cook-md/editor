@@ -9,7 +9,6 @@ import * as crypto from 'crypto';
 import * as http from 'http';
 import * as https from 'https';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
-import { Emitter, Event } from '@theia/core/lib/common';
 import { AuthState } from '../common/auth-protocol';
 import { AuthServiceBackend } from './auth-service';
 import { SubscriptionService, SubscriptionState, UpgradeCallbackResult } from '../common/subscription-protocol';
@@ -38,9 +37,6 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         reject: (err: Error) => void;
         callbackPromise: Promise<UpgradeCallbackResult>;
     } | undefined;
-
-    private readonly onDidChangeSubscriptionEmitter = new Emitter<SubscriptionState | undefined>();
-    readonly onDidChangeSubscription: Event<SubscriptionState | undefined> = this.onDidChangeSubscriptionEmitter.event;
 
     @postConstruct()
     protected init(): void {
@@ -222,7 +218,6 @@ p { color: #666; }`;
         } else {
             this.cachedState = undefined;
             this.cacheTimestamp = 0;
-            this.onDidChangeSubscriptionEmitter.fire(undefined);
         }
     }
 
@@ -242,17 +237,11 @@ p { color: #666; }`;
                 status: data.status ?? 'none',
                 hasAccess: data.has_access ?? false,
                 features: data.features ?? [],
-                planSlug: data.plan_slug ?? undefined,
                 planName: data.plan_name ?? undefined,
                 aiCreditsRemaining: typeof data.ai_credits_remaining === 'number' ? data.ai_credits_remaining : 0,
-                expiresAt: data.expires_at ?? undefined,
-                trialDaysRemaining: data.trial_days_remaining ?? undefined,
-                trialAvailable: data.trial_available ?? false,
-                billingPeriodStart: data.billing_period_start ?? undefined,
                 billingPeriodEnd: data.billing_period_end ?? undefined,
             };
             this.cacheTimestamp = Date.now();
-            this.onDidChangeSubscriptionEmitter.fire(this.cachedState);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             if (message.includes('status 401') || message.includes('status 403')) {

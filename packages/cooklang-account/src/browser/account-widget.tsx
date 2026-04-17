@@ -199,11 +199,6 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-row'>
                     <i className='codicon codicon-credit-card' />
                     <span className='theia-account-plan-badge'>{planLabel}</span>
-                    {subscription.trialDaysRemaining !== undefined && subscription.trialDaysRemaining > 0 && (
-                        <span className='theia-account-row-detail'>
-                            {nls.localize('theia/cooklang-account/trialDaysLeft', '{0} days left', subscription.trialDaysRemaining)}
-                        </span>
-                    )}
                 </div>
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleManageSubscription}>
                     <i className='codicon codicon-link-external' />
@@ -316,9 +311,7 @@ export class AccountWidget extends ReactWidget {
             return subscription.planName;
         }
         switch (subscription.status) {
-            case 'trial': return nls.localize('theia/cooklang-account/planTrial', 'Trial');
             case 'active': return nls.localize('theia/cooklang-account/planPro', 'Pro');
-            case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
             case 'past_due': return nls.localize('theia/cooklang-account/planPastDue', 'Pro (Payment Issue)');
             case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
             case 'paused': return nls.localizeByDefault('Paused');

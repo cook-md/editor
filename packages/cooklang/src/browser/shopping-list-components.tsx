@@ -231,7 +231,10 @@ export const ShoppingListView = ({
                 {result.other.items.length > 0 && (
                     <CategorySection
                         key='other'
-                        category={result.other}
+                        category={{
+                            ...result.other,
+                            items: [...result.other.items].sort((a, b) => a.name.localeCompare(b.name)),
+                        }}
                         checkedItems={checkedItems}
                         onToggle={onToggleItem}
                     />
