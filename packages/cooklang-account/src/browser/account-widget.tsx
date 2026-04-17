@@ -98,7 +98,7 @@ export class AccountWidget extends ReactWidget {
 
     protected override onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
-        // Pull latest subscription state so tokens_remaining and plan reflect reality
+        // Pull latest subscription state so ai_credits_remaining and plan reflect reality
         // whenever the user opens/focuses the account widget.
         this.subscriptionFrontendService.refresh().catch(err => {
             console.warn('Failed to refresh subscription on widget activation:', err);
@@ -209,7 +209,7 @@ export class AccountWidget extends ReactWidget {
                     <i className='codicon codicon-link-external' />
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
-                {subscription.features.includes('ai') && this.renderAiTokensSection(subscription)}
+                {subscription.features.includes('ai') && this.renderAiCreditsSection(subscription)}
                 {this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
@@ -255,9 +255,9 @@ export class AccountWidget extends ReactWidget {
         );
     }
 
-    protected renderAiTokensSection(subscription: SubscriptionState): React.ReactNode {
-        const tokens = subscription.tokensRemaining;
-        const tokensClass = tokens <= 0
+    protected renderAiCreditsSection(subscription: SubscriptionState): React.ReactNode {
+        const credits = subscription.aiCreditsRemaining;
+        const creditsClass = credits <= 0
             ? 'theia-account-row-label theia-account-sync-error'
             : 'theia-account-row-label';
         const resetsLabel = subscription.billingPeriodEnd
@@ -268,15 +268,15 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/aiHeader', 'AI Assistant')}</div>
                 <div className='theia-account-row'>
                     <i className='codicon codicon-sparkle' />
-                    <span className={tokensClass}>
-                        {nls.localize('theia/cooklang-account/aiTokensRemaining', '{0} tokens remaining', tokens.toLocaleString())}
+                    <span className={creditsClass}>
+                        {nls.localize('theia/cooklang-account/aiCreditsRemaining', '{0} credits remaining', credits.toLocaleString())}
                     </span>
                 </div>
                 {resetsLabel && (
                     <div className='theia-account-row theia-account-sync-status'>
                         <i className='codicon codicon-history' />
                         <span className='theia-account-row-label'>
-                            {nls.localize('theia/cooklang-account/aiTokensResets', 'Resets {0}', resetsLabel)}
+                            {nls.localize('theia/cooklang-account/aiCreditsResets', 'Resets {0}', resetsLabel)}
                         </span>
                     </div>
                 )}

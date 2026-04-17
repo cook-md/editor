@@ -14,7 +14,7 @@ export interface SubscriptionState {
     features: string[];
     planSlug: string | undefined;
     planName: string | undefined;
-    tokensRemaining: number;
+    aiCreditsRemaining: number;
     expiresAt: string | undefined;
     trialDaysRemaining: number | undefined;
     trialAvailable: boolean;
