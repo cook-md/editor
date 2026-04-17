@@ -85,8 +85,10 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
 
     private updateStatusBar(): void {
         if (this._authState.status === 'logged-in') {
+            const label = this._authState.email
+                ?? nls.localize('theia/cooklang-account/statusBarLoggedIn', 'Logged In');
             this.statusBar.setElement(AUTH_STATUS_ID, {
-                text: '$(account) Logged In',
+                text: `$(account) ${label}`,
                 command: 'cooked.openAccount',
                 tooltip: nls.localize('theia/cooklang-account/accountSettingsTooltip', 'Account Settings'),
                 alignment: StatusBarAlignment.LEFT,

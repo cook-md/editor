@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@theia/example-electron",
-  "productName": "CookEd",
+  "productName": "Cook Editor",
   "version": "0.1.0-alpha.0",
   "main": "lib/backend/electron-main.js",
   "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
@@ -14,7 +14,7 @@
     "target": "electron",
     "frontend": {
       "config": {
-        "applicationName": "CookEd",
+        "applicationName": "Cook Editor",
         "reloadOnReconnect": true,
         "electron": {
           "windowOptions": {

@@ -1,5 +1,5 @@
 appId: md.cook.cooked
-productName: CookEd
+productName: Cook Editor
 copyright: Copyright © 2026 Cooklang
 # Do NOT set electronDist — it would pin to the host-arch Electron installed
 # by npm and produce arm64 binaries even inside an x64 DMG. Let electron-
@@ -57,7 +57,7 @@ mac:
 
 dmg:
   sign: false
-  artifactName: ${productName}-${arch}.${ext}
+  artifactName: Cook-Editor-${arch}.${ext}
 
 # --- Windows ---
 win:
@@ -72,7 +72,7 @@ nsis:
   uninstallerIcon: resources/icon.ico
   deleteAppDataOnUninstall: false
   runAfterFinish: false
-  artifactName: ${productName}Setup.${ext}
+  artifactName: Cook-Editor-Setup.${ext}
 
 # --- Linux ---
 linux:
@@ -83,10 +83,10 @@ linux:
     - deb
 
 appImage:
-  artifactName: ${productName}.${ext}
+  artifactName: Cook-Editor.${ext}
 
 deb:
-  artifactName: ${productName}.${ext}
+  artifactName: Cook-Editor.${ext}
   depends:
     - libnotify4
     - libxtst6

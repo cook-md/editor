@@ -137,7 +137,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CookEd-${{ matrix.platform }}
+          name: Cook-Editor-${{ matrix.platform }}
           path: |
             examples/electron/dist/*.dmg
             examples/electron/dist/*.zip

@@ -4,7 +4,7 @@
 #   - no Cargo build cache from packages/cooklang-native
 #   - the cooklang-native .node addon present
 #
-# Usage: ./scripts/verify-mac-bundle.sh dist/CookEd-x64.dmg
+# Usage: ./scripts/verify-mac-bundle.sh dist/Cook-Editor-x64.dmg
 set -euo pipefail
 
 DMG="${1:-}"
@@ -18,9 +18,9 @@ trap 'hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true; rm -rf "$MOUNT_P
 
 hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT_POINT" -quiet
 
-APP="$MOUNT_POINT/CookEd.app"
+APP="$MOUNT_POINT/Cook Editor.app"
 if [ ! -d "$APP" ]; then
-    echo "FAIL: CookEd.app not found in DMG" >&2
+    echo "FAIL: Cook Editor.app not found in DMG" >&2
     exit 1
 fi
 

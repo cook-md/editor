@@ -57,7 +57,7 @@ export class AuthServiceImpl implements AuthServiceBackend {
         const state = crypto.randomUUID();
         const port = await this.startCallbackServer(state);
         const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        const authUrl = `${webBaseUrl}/auth/desktops?callback=http://localhost:${port}/callback&state=${state}&app=theia`;
+        const authUrl = `${webBaseUrl}/auth/desktops?callback=http://localhost:${port}/callback&state=${state}&app=editor`;
 
         return { authUrl };
     }

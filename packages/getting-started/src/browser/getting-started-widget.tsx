@@ -187,7 +187,7 @@ export class GettingStartedWidget extends ReactWidget {
      */
     protected renderHeader(): React.ReactNode {
         return <div className='gs-header'>
-            <h1>CookEd<span className='gs-sub-header'>{' Recipe Editor'}</span></h1>
+            <h1>Cook Editor</h1>
         </div>;
     }
 
