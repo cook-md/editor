@@ -55,8 +55,12 @@ else
 fi
 
 APP_SIZE_MB=$(du -sm "$APP" | cut -f1)
-if [ "$APP_SIZE_MB" -gt 1000 ]; then
-    echo "FAIL: .app size is ${APP_SIZE_MB} MB — expected < 1000 MB after bundle cleanup" >&2
+# Threshold calibrated post-Fix 1 (2026-04-17): measured legitimate size
+# is ~1030 MB (578 MB asar + 182 MB VS Code plugins + 261 MB Electron
+# Framework). 1200 MB leaves headroom for growth while still catching a
+# Cargo cache regression (which would push it back above 2 GB).
+if [ "$APP_SIZE_MB" -gt 1200 ]; then
+    echo "FAIL: .app size is ${APP_SIZE_MB} MB — expected < 1200 MB after bundle cleanup" >&2
     fail=1
 else
     echo "OK: .app size is ${APP_SIZE_MB} MB"
