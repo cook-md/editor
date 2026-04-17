@@ -8,7 +8,6 @@ electronVersion: 38.4.0
 asar: true
 asarUnpack:
   - "**/*.node"
-  - "**/cooklang-native/**"
 nodeGypRebuild: false
 npmRebuild: false
 
@@ -25,6 +24,10 @@ files:
   - resources/cooked-logo.svg
   - "!node_modules/**/@theia/**/src/**"
   - "!node_modules/**/@theia/**/lib/**/*.spec.*"
+  - "!node_modules/**/@theia/cooklang-native/target/**"
+  - "!node_modules/**/@theia/cooklang-native/Cargo.*"
+  - "!node_modules/**/@theia/cooklang-native/build.rs"
+  - "!node_modules/**/@theia/cooklang-native/src/**"
 
 extraResources:
   - from: ../../plugins
