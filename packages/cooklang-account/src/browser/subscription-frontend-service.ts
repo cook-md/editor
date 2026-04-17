@@ -7,7 +7,7 @@
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
-import { SubscriptionService, SubscriptionState } from '../common/subscription-protocol';
+import { SubscriptionService, SubscriptionState, UpgradeCallbackResult } from '../common/subscription-protocol';
 import { AuthContribution } from './auth-contribution';
 
 export const SubscriptionFrontendService = Symbol('SubscriptionFrontendService');
@@ -17,6 +17,8 @@ export interface SubscriptionFrontendService {
     readonly subscription: SubscriptionState | undefined;
     hasFeature(name: string): Promise<boolean>;
     refresh(): Promise<void>;
+    startUpgradeFlow(): Promise<string>;
+    awaitUpgradeCallback(): Promise<UpgradeCallbackResult>;
 }
 
 @injectable()
@@ -63,6 +65,18 @@ export class SubscriptionFrontendServiceImpl implements SubscriptionFrontendServ
     }
 
     async refresh(): Promise<void> {
-        return this.subscriptionService.refresh();
+        // Backend events don't cross RPC, so we must re-seed our own cache
+        // from the refreshed backend state and fire the frontend emitter.
+        const sub = await this.subscriptionService.refresh();
+        this.cachedState = sub;
+        this.onDidChangeSubscriptionEmitter.fire(sub);
+    }
+
+    startUpgradeFlow(): Promise<string> {
+        return this.subscriptionService.startUpgradeFlow();
+    }
+
+    awaitUpgradeCallback(): Promise<UpgradeCallbackResult> {
+        return this.subscriptionService.awaitUpgradeCallback();
     }
 }

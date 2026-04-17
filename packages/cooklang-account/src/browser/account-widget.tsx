@@ -5,18 +5,20 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
+import { Message } from '@theia/core/shared/@lumino/messaging';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
+import { EnvVariablesServer } from '@theia/core/lib/common/env-variables';
 import * as React from '@theia/core/shared/react';
 import { SubscriptionFrontendService } from './subscription-frontend-service';
 import { SubscriptionState } from '../common/subscription-protocol';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
 import { AuthContribution, CookmdLoginCommand, CookmdLogoutCommand } from './auth-contribution';
 
-const WEB_BASE_URL = 'https://cook.md';
+const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
 export const ACCOUNT_WIDGET_ID = 'account-widget';
 
@@ -41,11 +43,15 @@ export class AccountWidget extends ReactWidget {
     @inject(SyncService)
     protected readonly syncService: SyncService;
 
+    @inject(EnvVariablesServer)
+    protected readonly envVariablesServer: EnvVariablesServer;
+
     private static readonly SYNC_POLL_INTERVAL_MS = 2000;
 
     private syncEnabled = false;
     private syncStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
     private syncPollTimer: ReturnType<typeof setInterval> | undefined;
+    private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
     @postConstruct()
     protected init(): void {
@@ -74,12 +80,29 @@ export class AccountWidget extends ReactWidget {
             this.update();
         });
 
+        // Mirror the Node-side services' WEB_BASE_URL override so external links
+        // (Manage Subscription, Upgrade) point at the same backend during local dev.
+        this.envVariablesServer.getValue('WEB_BASE_URL').then(envVar => {
+            if (envVar?.value) {
+                this.webBaseUrl = envVar.value;
+            }
+        });
+
         this.update();
     }
 
     override dispose(): void {
         this.stopSyncPolling();
         super.dispose();
+    }
+
+    protected override onActivateRequest(msg: Message): void {
+        super.onActivateRequest(msg);
+        // Pull latest subscription state so ai_credits_remaining and plan reflect reality
+        // whenever the user opens/focuses the account widget.
+        this.subscriptionFrontendService.refresh().catch(err => {
+            console.warn('Failed to refresh subscription on widget activation:', err);
+        });
     }
 
     private startSyncPolling(): void {
@@ -130,7 +153,7 @@ export class AccountWidget extends ReactWidget {
                     className='theia-button main theia-account-login-button'
                     onClick={this.handleLogin}
                 >
-                    {nls.localize('theia/cooklang-account/loginButton', 'Log In')}
+                    {nls.localizeByDefault('Log In')}
                 </button>
             </div>
         );
@@ -162,14 +185,13 @@ export class AccountWidget extends ReactWidget {
         return (
             <div className='theia-account-loading'>
                 <div className='theia-account-spinner' />
-                <span>{nls.localize('theia/cooklang-account/loading', 'Loading...')}</span>
+                <span>{nls.localizeByDefault('Loading...')}</span>
             </div>
         );
     }
 
     protected renderSubscriptionActive(subscription: SubscriptionState): React.ReactNode {
         const planLabel = this.getPlanLabel(subscription);
-        const hasSyncFeature = subscription.features.includes('sync');
         const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
 
         return (
@@ -187,7 +209,8 @@ export class AccountWidget extends ReactWidget {
                     <i className='codicon codicon-link-external' />
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
-                {hasSyncFeature && this.renderSyncSection(statusLabel)}
+                {subscription.features.includes('ai') && this.renderAiCreditsSection(subscription)}
+                {this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
@@ -203,7 +226,7 @@ export class AccountWidget extends ReactWidget {
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
                 <div className='theia-account-row'>
                     <i className='codicon codicon-sync' />
-                    <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/syncEnabled', 'Enabled')}</span>
+                    <span className='theia-account-row-label'>{nls.localizeByDefault('Enabled')}</span>
                     <input
                         className='theia-account-sync-toggle'
                         type='checkbox'
@@ -232,13 +255,43 @@ export class AccountWidget extends ReactWidget {
         );
     }
 
+    protected renderAiCreditsSection(subscription: SubscriptionState): React.ReactNode {
+        const credits = subscription.aiCreditsRemaining;
+        const creditsClass = credits <= 0
+            ? 'theia-account-row-label theia-account-sync-error'
+            : 'theia-account-row-label';
+        const resetsLabel = subscription.billingPeriodEnd
+            ? new Date(subscription.billingPeriodEnd).toLocaleDateString()
+            : undefined;
+        return (
+            <React.Fragment>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/aiHeader', 'AI Assistant')}</div>
+                <div className='theia-account-row'>
+                    <i className='codicon codicon-sparkle' />
+                    <span className={creditsClass}>
+                        {nls.localize('theia/cooklang-account/aiCreditsRemaining', '{0} credits remaining', credits.toLocaleString())}
+                    </span>
+                </div>
+                {resetsLabel && (
+                    <div className='theia-account-row theia-account-sync-status'>
+                        <i className='codicon codicon-history' />
+                        <span className='theia-account-row-label'>
+                            {nls.localize('theia/cooklang-account/aiCreditsResets', 'Resets {0}', resetsLabel)}
+                        </span>
+                    </div>
+                )}
+            </React.Fragment>
+        );
+    }
+
     protected renderSubscriptionUpgrade(): React.ReactNode {
+        const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
         return (
             <React.Fragment>
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/subscriptionHeader', 'Subscription')}</div>
                 <div className='theia-account-upgrade-section'>
                     <div className='theia-account-upgrade-message'>
-                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock sync, AI assistance, and more features.')}
+                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock AI assistance and more features.')}
                     </div>
                     <button
                         className='theia-button main theia-account-upgrade-button'
@@ -247,6 +300,7 @@ export class AccountWidget extends ReactWidget {
                         {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
                     </button>
                 </div>
+                {this.renderSyncSection(statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
@@ -257,16 +311,19 @@ export class AccountWidget extends ReactWidget {
     }
 
     private getPlanLabel(subscription: SubscriptionState): string {
+        // Rails owns the display name — prefer it when present.
+        if (subscription.planName) {
+            return subscription.planName;
+        }
         switch (subscription.status) {
             case 'trial': return nls.localize('theia/cooklang-account/planTrial', 'Trial');
-            case 'active': return subscription.plan === 'annual'
-                ? nls.localize('theia/cooklang-account/planAnnual', 'Pro (Annual)')
-                : nls.localize('theia/cooklang-account/planMonthly', 'Pro (Monthly)');
+            case 'active': return nls.localize('theia/cooklang-account/planPro', 'Pro');
             case 'grandfathered': return nls.localize('theia/cooklang-account/planGrandfathered', 'Pro (Grandfathered)');
+            case 'past_due': return nls.localize('theia/cooklang-account/planPastDue', 'Pro (Payment Issue)');
             case 'canceled': return nls.localize('theia/cooklang-account/planCanceled', 'Canceled');
-            case 'paused': return nls.localize('theia/cooklang-account/planPaused', 'Paused');
+            case 'paused': return nls.localizeByDefault('Paused');
             case 'expired': return nls.localize('theia/cooklang-account/planExpired', 'Expired');
-            default: return nls.localize('theia/cooklang-account/planFree', 'Free');
+            default: return nls.localizeByDefault('Free');
         }
     }
 
@@ -301,15 +358,32 @@ export class AccountWidget extends ReactWidget {
     };
 
     private handleManageSubscription = (): void => {
-        this.windowService.openNewWindow(`${WEB_BASE_URL}/subscription`, { external: true });
+        this.windowService.openNewWindow(`${this.webBaseUrl}/subscription`, { external: true });
     };
 
     private handleLogout = (): void => {
         this.commandService.executeCommand(CookmdLogoutCommand.id);
     };
 
-    private handleUpgrade = (): void => {
-        this.windowService.openNewWindow(`${WEB_BASE_URL}/pricing`, { external: true });
+    private handleUpgrade = async (): Promise<void> => {
+        let url: string;
+        try {
+            url = await this.subscriptionFrontendService.startUpgradeFlow();
+        } catch (err) {
+            console.warn('Failed to start upgrade flow, falling back to pricing page:', err);
+            this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
+            return;
+        }
+        this.windowService.openNewWindow(url, { external: true });
+        try {
+            const result = await this.subscriptionFrontendService.awaitUpgradeCallback();
+            if (result.status === 'ok') {
+                await this.subscriptionFrontendService.refresh();
+            }
+        } catch (err) {
+            // Timeout, state mismatch, or superseded flow — user can retry.
+            console.warn('Upgrade flow did not complete:', err);
+        }
     };
 
 }
