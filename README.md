@@ -8,7 +8,6 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/cook-md/editor?include_prereleases&label=release)](https://github.com/cook-md/editor/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/cook-md/editor/total)](https://github.com/cook-md/editor/releases)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
 [Download](#download) · [Features](#features) · [Getting Started](#getting-started) · [Cooklang Spec](https://cooklang.org/docs/spec/)
 
@@ -88,7 +87,7 @@ Found a bug or have a feature request? [Open an issue](https://github.com/cook-m
 
 ## License
 
-Cook Editor is released under the [MIT License](LICENSE). Built on top of [Eclipse Theia](https://theia-ide.org) (EPL-2.0 / GPL-2.0 with Classpath exception).
+Cook Editor is proprietary, closed-source software. The binaries published on this repository are free to download and use; the source code is not publicly available. Built on top of [Eclipse Theia](https://theia-ide.org) (EPL-2.0 / GPL-2.0 with Classpath exception).
 
 ## Acknowledgements
 
