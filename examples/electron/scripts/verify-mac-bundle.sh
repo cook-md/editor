@@ -30,8 +30,10 @@ FRAMEWORK_BIN="$APP/Contents/Frameworks/Electron Framework.framework/Versions/A/
 if [ ! -f "$FRAMEWORK_BIN" ]; then
     echo "FAIL: Electron Framework binary missing: $FRAMEWORK_BIN" >&2
     fail=1
+elif ! file "$FRAMEWORK_BIN" | grep -q "Mach-O"; then
+    echo "FAIL: Framework is not Mach-O" >&2
+    fail=1
 else
-    file "$FRAMEWORK_BIN" | grep -q "Mach-O" || { echo "FAIL: Framework is not Mach-O" >&2; fail=1; }
     echo "OK: Electron Framework binary present ($(du -h "$FRAMEWORK_BIN" | cut -f1))"
 fi
 
@@ -44,7 +46,7 @@ else
     echo "OK: no Cargo target/ cache in bundle"
 fi
 
-NODE_ADDON=$(find "$APP/Contents/Resources/app.asar.unpacked/node_modules/@theia/cooklang-native" -name "*.node" 2>/dev/null | head -1)
+NODE_ADDON=$(find "$APP/Contents/Resources/app.asar.unpacked/node_modules/@theia/cooklang-native" -name "*.node" -print -quit 2>/dev/null)
 if [ -z "$NODE_ADDON" ] || [ ! -f "$NODE_ADDON" ]; then
     echo "FAIL: cooklang-native .node addon not found in bundle" >&2
     fail=1
