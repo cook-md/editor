@@ -78,17 +78,57 @@ jobs:
             ${{ runner.os }}-${{ matrix.rust_target || 'host' }}-cargo-
             ${{ runner.os }}-cargo-
 
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            dev-packages/*/node_modules
+            examples/*/node_modules
+          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v1-${{ hashFiles('package-lock.json', 'lerna.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v1-
+
       # native-keymap compiles against libx11/libxkbfile headers on Linux
       - name: Install Linux native build deps
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
 
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm install
         env:
           # @vscode/ripgrep and other GitHub-release downloads hit anonymous
           # rate limits (403) without a token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cache TypeScript build
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/*/lib
+            dev-packages/*/lib
+            packages/*/*.tsbuildinfo
+            dev-packages/*/*.tsbuildinfo
+          key: ${{ runner.os }}-tsc-v1-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-tsc-v1-
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-${{ hashFiles('examples/electron/electron-builder.yml', 'examples/electron/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
       - name: Build native addon
         working-directory: packages/cooklang-native
