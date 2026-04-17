@@ -133,6 +133,14 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_PAT }}
+          # Code signing — electron-builder reads these automatically on macOS.
+          # Harmless on Windows/Linux matrix rows (ignored).
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Notarization — electron-builder reads these when mac.notarize is true
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
