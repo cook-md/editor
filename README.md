@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/cook-md/editor/main/.github/assets/logo.svg" alt="CookEd" width="200" />
+<img src="https://raw.githubusercontent.com/cook-md/editor/main/.github/assets/splash.png" alt="Cook Editor — plain text recipe manager" width="720" />
 
-# CookEd
+# Cook Editor
 
 **A desktop editor for [Cooklang](https://cooklang.org) recipes.**
 
@@ -16,9 +16,9 @@
 
 ---
 
-## What is CookEd?
+## What is Cook Editor?
 
-CookEd is a native desktop editor for recipes written in [Cooklang](https://cooklang.org) — a human-friendly markup language for cooking. Think of it as an IDE for your cookbook: syntax highlighting, autocomplete, AI assistance, shopping lists, and pantry tracking, all running locally on your machine.
+Cook Editor is a native desktop editor for recipes written in [Cooklang](https://cooklang.org) — a human-friendly markup language for cooking. Think of it as an IDE for your cookbook: syntax highlighting, autocomplete, AI assistance, shopping lists, and pantry tracking, all running locally on your machine.
 
 ## Features
 
@@ -36,30 +36,30 @@ Grab the latest build for your platform from the [Releases page](https://github.
 
 | Platform | File |
 | --- | --- |
-| macOS (Apple Silicon) | `CookEd.dmg` (arm64) |
-| macOS (Intel) | `CookEd.dmg` (x64) |
-| Windows | `CookEdSetup.exe` |
-| Linux (AppImage) | `CookEd.AppImage` |
-| Linux (Debian/Ubuntu) | `CookEd.deb` |
+| macOS (Apple Silicon) | `Cook-Editor-arm64.dmg` |
+| macOS (Intel) | `Cook-Editor-x64.dmg` |
+| Windows | `Cook-Editor-Setup.exe` |
+| Linux (AppImage) | `Cook-Editor.AppImage` |
+| Linux (Debian/Ubuntu) | `Cook-Editor.deb` |
 
 ### macOS
 
 1. Download the `.dmg` matching your Mac (Apple Silicon or Intel)
-2. Open it and drag **CookEd** into your Applications folder
+2. Open it and drag **Cook Editor** into your Applications folder
 3. On first launch, right-click → **Open** to approve the unsigned build
 
 ### Windows
 
-Run `CookEdSetup.exe` and follow the installer prompts.
+Run `Cook-Editor-Setup.exe` and follow the installer prompts.
 
 ### Linux
 
-- **AppImage:** `chmod +x CookEd.AppImage && ./CookEd.AppImage`
-- **Debian/Ubuntu:** `sudo dpkg -i CookEd.deb`
+- **AppImage:** `chmod +x Cook-Editor.AppImage && ./Cook-Editor.AppImage`
+- **Debian/Ubuntu:** `sudo dpkg -i Cook-Editor.deb`
 
 ## Getting Started
 
-1. Launch CookEd
+1. Launch Cook Editor
 2. Open a folder containing your `.cook` files (or start a new one)
 3. Create `my-recipe.cook` and try:
 
@@ -80,7 +80,7 @@ Learn the language at **[cooklang.org/docs/spec](https://cooklang.org/docs/spec/
 
 ## URI Scheme
 
-CookEd registers the `cook://` URI scheme so recipe links from the web open directly in the app.
+Cook Editor registers the `cook://` URI scheme so recipe links from the web open directly in the app.
 
 ## Reporting Issues
 
@@ -88,9 +88,9 @@ Found a bug or have a feature request? [Open an issue](https://github.com/cook-m
 
 ## License
 
-CookEd is released under the [MIT License](LICENSE). Built on top of [Eclipse Theia](https://theia-ide.org) (EPL-2.0 / GPL-2.0 with Classpath exception).
+Cook Editor is released under the [MIT License](LICENSE). Built on top of [Eclipse Theia](https://theia-ide.org) (EPL-2.0 / GPL-2.0 with Classpath exception).
 
 ## Acknowledgements
 
-- [Cooklang](https://cooklang.org) — the recipe markup language CookEd is built around
-- [Eclipse Theia](https://theia-ide.org) — the editor framework powering CookEd
+- [Cooklang](https://cooklang.org) — the recipe markup language Cook Editor is built around
+- [Eclipse Theia](https://theia-ide.org) — the editor framework powering Cook Editor
