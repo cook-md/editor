@@ -21,10 +21,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            platform: mac-arm64
-            electron_arch: arm64
-            rust_target: aarch64-apple-darwin
+          # Temporarily narrowed to mac-x64 while debugging the arm64-in-x64-DMG
+          # native module issue. Restore the full matrix once a release DMG has
+          # been verified with x86_64 .node files end-to-end.
+          # - os: macos-latest
+          #   platform: mac-arm64
+          #   electron_arch: arm64
+          #   rust_target: aarch64-apple-darwin
           # Cross-compile x64 from arm64 runner (macos-13 is deprecated and
           # -large runners are paid). Rust + electron-rebuild both support
           # cross-compiling from arm64 mac to x64 natively.
@@ -32,10 +35,10 @@ jobs:
             platform: mac-x64
             electron_arch: x64
             rust_target: x86_64-apple-darwin
-          - os: windows-latest
-            platform: win
-          - os: ubuntu-latest
-            platform: linux
+          # - os: windows-latest
+          #   platform: win
+          # - os: ubuntu-latest
+          #   platform: linux
 
     runs-on: ${{ matrix.os }}
 
@@ -87,9 +90,9 @@ jobs:
             packages/*/node_modules
             dev-packages/*/node_modules
             examples/*/node_modules
-          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v1-${{ hashFiles('package-lock.json', 'lerna.json') }}
+          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v2-${{ hashFiles('package-lock.json', 'lerna.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v1-
+            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v2-
 
       # native-keymap compiles against libx11/libxkbfile headers on Linux
       - name: Install Linux native build deps
@@ -98,7 +101,24 @@ jobs:
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm install
+        shell: bash
+        # For macOS x64 we run on an arm64 runner. Without arch overrides npm
+        # resolves optional deps for the host (e.g. installs
+        # `@parcel/watcher-darwin-arm64` instead of `-darwin-x64`), and
+        # prebuild-install downloads arm64 `.node` prebuilts for drivelist,
+        # native-keymap, etc. Those arm64 binaries end up bundled in the x64
+        # DMG and crash on launch with "incompatible architecture".
+        #
+        # `--cpu=x64 --os=darwin` filters optional deps to x64/darwin siblings;
+        # `npm_config_arch=x64` makes prebuild-install fetch x64 prebuilts.
+        run: |
+          if [ "${{ matrix.electron_arch }}" = "x64" ] && [ "${{ runner.os }}" = "macOS" ]; then
+            export npm_config_arch=x64
+            export npm_config_target_arch=x64
+            npm install --cpu=x64 --os=darwin
+          else
+            npm install
+          fi
         env:
           # @vscode/ripgrep and other GitHub-release downloads hit anonymous
           # rate limits (403) without a token
