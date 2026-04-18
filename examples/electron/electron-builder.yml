@@ -1,4 +1,4 @@
-appId: md.cook.cooked
+appId: md.cook.editor
 productName: Cook Editor
 copyright: Copyright © 2026 Cooklang
 # Do NOT set electronDist — it would pin to the host-arch Electron installed
