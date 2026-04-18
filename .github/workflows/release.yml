@@ -143,23 +143,34 @@ jobs:
       - name: Compile TypeScript
         run: npm run compile
 
-      - name: Bundle Electron app
-        working-directory: examples/electron
-        run: npm run bundle
-        env:
-          # webpack hits the default 2 GB heap on Windows; give it room
-          NODE_OPTIONS: --max-old-space-size=8192
-
-      # `theia rebuild:electron` only rebuilds native deps for host arch.
-      # When cross-compiling x64 on an arm64 mac runner we need a second pass
-      # targeting x64 so node-pty/native-keymap/etc. ship as x64 binaries.
-      - name: Rebuild native deps for target arch (macOS cross-compile)
-        if: matrix.electron_arch == 'x64'
+      # `theia rebuild:electron` (invoked by `npm run bundle`) only builds for
+      # the host arch (arm64 on macos-latest). When cross-compiling x64 we must
+      # rebuild for x64 BEFORE webpack bundles, because webpack's node-loader
+      # copies native modules out of node_modules/ into lib/backend/native/.
+      # If we rebuild after bundling, those copies stay host-arch.
+      - name: Rebuild native deps for x64 target (macOS cross-compile)
+        if: matrix.electron_arch == 'x64' && runner.os == 'macOS'
         run: |
           ./node_modules/.bin/electron-rebuild \
             --arch=x64 \
             --force \
             --only=node-pty,native-keymap,find-git-repositories,drivelist,keytar,ssh2,cpu-features
+
+      - name: Bundle Electron app
+        working-directory: examples/electron
+        shell: bash
+        run: |
+          # Cross-compile case: native modules are already target-arch from the
+          # step above. `npm run bundle` would run `theia rebuild:electron` and
+          # clobber them with host-arch (arm64) binaries — run webpack directly.
+          if [ "${{ matrix.electron_arch }}" = "x64" ] && [ "${{ runner.os }}" = "macOS" ]; then
+            npx theia build --mode development
+          else
+            npm run bundle
+          fi
+        env:
+          # webpack hits the default 2 GB heap on Windows; give it room
+          NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Package & Publish
         working-directory: examples/electron
