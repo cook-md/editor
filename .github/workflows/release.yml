@@ -28,10 +28,13 @@ jobs:
           #   platform: mac-arm64
           #   electron_arch: arm64
           #   rust_target: aarch64-apple-darwin
-          # Cross-compile x64 from arm64 runner (macos-13 is deprecated and
-          # -large runners are paid). Rust + electron-rebuild both support
-          # cross-compiling from arm64 mac to x64 natively.
-          - os: macos-latest
+          # Build x64 on a native Intel runner. macos-13 is deprecated by
+          # GitHub but still available; it sidesteps the cross-compile pain
+          # of arm64 runners (optional-deps resolving wrong, prebuild-install
+          # fetching arm64 `.node` files, npm hanging when --cpu overrides the
+          # lockfile). Revisit when macos-13 is retired (options: paid arm64
+          # -large runner, or Universal binary via @electron/universal).
+          - os: macos-13
             platform: mac-x64
             electron_arch: x64
             rust_target: x86_64-apple-darwin
@@ -101,24 +104,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        shell: bash
-        # For macOS x64 we run on an arm64 runner. Without arch overrides npm
-        # resolves optional deps for the host (e.g. installs
-        # `@parcel/watcher-darwin-arm64` instead of `-darwin-x64`), and
-        # prebuild-install downloads arm64 `.node` prebuilts for drivelist,
-        # native-keymap, etc. Those arm64 binaries end up bundled in the x64
-        # DMG and crash on launch with "incompatible architecture".
-        #
-        # `--cpu=x64 --os=darwin` filters optional deps to x64/darwin siblings;
-        # `npm_config_arch=x64` makes prebuild-install fetch x64 prebuilts.
-        run: |
-          if [ "${{ matrix.electron_arch }}" = "x64" ] && [ "${{ runner.os }}" = "macOS" ]; then
-            export npm_config_arch=x64
-            export npm_config_target_arch=x64
-            npm install --cpu=x64 --os=darwin
-          else
-            npm install
-          fi
+        run: npm install
         env:
           # @vscode/ripgrep and other GitHub-release downloads hit anonymous
           # rate limits (403) without a token
@@ -163,31 +149,9 @@ jobs:
       - name: Compile TypeScript
         run: npm run compile
 
-      # `theia rebuild:electron` (invoked by `npm run bundle`) only builds for
-      # the host arch (arm64 on macos-latest). When cross-compiling x64 we must
-      # rebuild for x64 BEFORE webpack bundles, because webpack's node-loader
-      # copies native modules out of node_modules/ into lib/backend/native/.
-      # If we rebuild after bundling, those copies stay host-arch.
-      - name: Rebuild native deps for x64 target (macOS cross-compile)
-        if: matrix.electron_arch == 'x64' && runner.os == 'macOS'
-        run: |
-          ./node_modules/.bin/electron-rebuild \
-            --arch=x64 \
-            --force \
-            --only=node-pty,native-keymap,find-git-repositories,drivelist,keytar,ssh2,cpu-features
-
       - name: Bundle Electron app
         working-directory: examples/electron
-        shell: bash
-        run: |
-          # Cross-compile case: native modules are already target-arch from the
-          # step above. `npm run bundle` would run `theia rebuild:electron` and
-          # clobber them with host-arch (arm64) binaries — run webpack directly.
-          if [ "${{ matrix.electron_arch }}" = "x64" ] && [ "${{ runner.os }}" = "macOS" ]; then
-            npx theia build --mode development
-          else
-            npm run bundle
-          fi
+        run: npm run bundle
         env:
           # webpack hits the default 2 GB heap on Windows; give it room
           NODE_OPTIONS: --max-old-space-size=8192
