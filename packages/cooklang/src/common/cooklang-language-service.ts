@@ -83,6 +83,13 @@ export interface CooklangCompletionItem {
     documentation?: string;
     insertText?: string;
     insertTextFormat?: number;
+    filterText?: string;
+    textEdit?: CooklangTextEdit;
+}
+
+export interface CooklangTextEdit {
+    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+    newText: string;
 }
 
 export interface CooklangCompletionList {

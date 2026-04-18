@@ -25,6 +25,8 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
 
     private connection: MessageConnection | undefined;
     private nativeLsp: { sendMessage(msg: string): void; receiveMessage(): Promise<string | null> } | undefined;
+    private initializePromise: Promise<CooklangInitializeResult> | undefined;
+    private currentWorkspaceRoot: string | null | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -55,17 +57,50 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
             console.warn('[cooklang-lsp] No connection available, skipping initialize');
             return { capabilities: {} };
         }
-        console.info('[cooklang-lsp] Backend sending initialize with rootUri:', rootUri);
-        const result = await this.connection.sendRequest('initialize', {
-            processId: process.pid,
-            capabilities: {},
-            rootUri,
-            workspaceFolders: rootUri ? [{ uri: rootUri, name: 'workspace' }] : null,
-        });
-        console.info('[cooklang-lsp] Initialize response received, sending initialized notification');
-        await this.connection.sendNotification('initialized', {});
-        console.info('[cooklang-lsp] Initialized notification sent');
-        return result as CooklangInitializeResult;
+        // tower-lsp rejects a second `initialize` as "Invalid request". Since this service
+        // is singleton-scoped on the backend, multiple frontend connects (e.g. window
+        // reloads) must reuse the first init. Cache the promise and return it.
+        if (this.initializePromise) {
+            if (rootUri !== this.currentWorkspaceRoot) {
+                console.info('[cooklang-lsp] Workspace root changed from',
+                    this.currentWorkspaceRoot, 'to', rootUri,
+                    '— notifying server via workspace/didChangeWorkspaceFolders');
+                const added = rootUri ? [{ uri: rootUri, name: 'workspace' }] : [];
+                const removed = this.currentWorkspaceRoot
+                    ? [{ uri: this.currentWorkspaceRoot, name: 'workspace' }]
+                    : [];
+                // Wait for initialize to settle so the notification isn't delivered before
+                // the server is ready to process it.
+                await this.initializePromise.catch(() => undefined);
+                this.connection.sendNotification('workspace/didChangeWorkspaceFolders', {
+                    event: { added, removed }
+                });
+                this.currentWorkspaceRoot = rootUri;
+            }
+            return this.initializePromise;
+        }
+        this.currentWorkspaceRoot = rootUri;
+        this.initializePromise = (async () => {
+            const connection = this.connection!;
+            console.info('[cooklang-lsp] Backend sending initialize with rootUri:', rootUri);
+            const result = await connection.sendRequest('initialize', {
+                processId: process.pid,
+                capabilities: {},
+                rootUri,
+                workspaceFolders: rootUri ? [{ uri: rootUri, name: 'workspace' }] : null,
+            });
+            console.info('[cooklang-lsp] Initialize response received, sending initialized notification');
+            await connection.sendNotification('initialized', {});
+            console.info('[cooklang-lsp] Initialized notification sent');
+            return result as CooklangInitializeResult;
+        })();
+        try {
+            return await this.initializePromise;
+        } catch (err) {
+            this.initializePromise = undefined;
+            this.currentWorkspaceRoot = undefined;
+            throw err;
+        }
     }
 
     async shutdown(): Promise<void> {

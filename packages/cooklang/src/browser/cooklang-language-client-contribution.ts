@@ -105,7 +105,7 @@ export class CooklangLanguageClientContribution implements FrontendApplicationCo
     protected registerCompletionProvider(): void {
         console.info('[cooklang-lsp] Registering completion provider for language:', COOKLANG_LANGUAGE_ID);
         this.toDispose.push(monaco.languages.registerCompletionItemProvider(COOKLANG_LANGUAGE_ID, {
-            triggerCharacters: ['@', '#', '~', '%', '{'],
+            triggerCharacters: ['@', '#', '~', '%', '{', '.', '/'],
             provideCompletionItems: async (model, position) => {
                 console.info('[cooklang-lsp] Completion requested:', model.uri.toString(),
                     'pos:', position.lineNumber, position.column, 'lang:', model.getLanguageId());
@@ -225,18 +225,24 @@ export class CooklangLanguageClientContribution implements FrontendApplicationCo
         item: CooklangCompletionItem,
         modelUri: monaco.Uri
     ): monaco.languages.CompletionItem {
-        const insertText = item.insertText ?? item.label;
         const isSnippet = item.insertTextFormat === 2;
+        // When the server provides a textEdit, honour its range — recipe
+        // reference paths contain '.' and '/' which break Monaco's default
+        // word boundary detection, so we must replace the exact span the
+        // server intends (e.g. from after '@' to the cursor).
+        const insertText = item.textEdit?.newText ?? item.insertText ?? item.label;
+        const range = item.textEdit ? this.toMonacoRange(item.textEdit.range) : undefined!;
         return {
             label: item.label,
             kind: item.kind ?? monaco.languages.CompletionItemKind.Text,
             detail: item.detail,
             documentation: item.documentation,
-            insertText: insertText,
+            filterText: item.filterText,
+            insertText,
             insertTextRules: isSnippet
                 ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
                 : undefined,
-            range: undefined!  // Monaco fills a default range
+            range
         };
     }
 
