@@ -28,13 +28,13 @@ jobs:
           #   platform: mac-arm64
           #   electron_arch: arm64
           #   rust_target: aarch64-apple-darwin
-          # Build x64 on a native Intel runner. macos-13 is deprecated by
-          # GitHub but still available; it sidesteps the cross-compile pain
-          # of arm64 runners (optional-deps resolving wrong, prebuild-install
-          # fetching arm64 `.node` files, npm hanging when --cpu overrides the
-          # lockfile). Revisit when macos-13 is retired (options: paid arm64
-          # -large runner, or Universal binary via @electron/universal).
-          - os: macos-13
+          # Build x64 on a native Intel runner. `macos-15-intel` is the free
+          # standard-runner replacement GitHub introduced when `macos-13` was
+          # retired on 2025-12-08 (see GitHub changelog 2025-09-19). Native
+          # x64 throughout sidesteps the cross-compile pain of arm64 runners
+          # — optional-deps resolve correctly, prebuild-install fetches x64
+          # `.node` files, theia rebuild:electron produces x64 binaries.
+          - os: macos-15-intel
             platform: mac-x64
             electron_arch: x64
             rust_target: x86_64-apple-darwin
