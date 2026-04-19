@@ -107,6 +107,16 @@ jobs:
           # rate limits (403) without a token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # On cache hit, npm install is skipped — but the root `postinstall`
+      # (`theia-patch && compute-references && lerna run afterInstall`) never
+      # runs. `afterInstall` in @theia/core regenerates re-export shims into
+      # `packages/core/shared/`, which aren't part of node_modules and so
+      # aren't preserved by the cache. Without them tsc fails with
+      # `Cannot find module '@theia/core/shared/...'`. Re-run them here.
+      - name: Regenerate Theia re-exports on cache hit
+        if: steps.node-modules-cache.outputs.cache-hit == 'true'
+        run: npx lerna run afterInstall
+
       - name: Cache TypeScript build
         uses: actions/cache@v4
         with:
