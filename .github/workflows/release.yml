@@ -21,13 +21,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Temporarily narrowed to mac-x64 while debugging the arm64-in-x64-DMG
-          # native module issue. Restore the full matrix once a release DMG has
-          # been verified with x86_64 .node files end-to-end.
-          # - os: macos-latest
-          #   platform: mac-arm64
-          #   electron_arch: arm64
-          #   rust_target: aarch64-apple-darwin
+          - os: macos-latest
+            platform: mac-arm64
+            electron_arch: arm64
+            rust_target: aarch64-apple-darwin
           # Build x64 on a native Intel runner. `macos-15-intel` is the free
           # standard-runner replacement GitHub introduced when `macos-13` was
           # retired on 2025-12-08 (see GitHub changelog 2025-09-19). Native
@@ -38,10 +35,10 @@ jobs:
             platform: mac-x64
             electron_arch: x64
             rust_target: x86_64-apple-darwin
-          # - os: windows-latest
-          #   platform: win
-          # - os: ubuntu-latest
-          #   platform: linux
+          - os: windows-latest
+            platform: win
+          - os: ubuntu-latest
+            platform: linux
 
     runs-on: ${{ matrix.os }}
 
