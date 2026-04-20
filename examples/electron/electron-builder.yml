@@ -20,6 +20,7 @@ directories:
 files:
   - src-gen
   - lib
+  - proto
   - resources/icon-256.png
   - resources/cooked-logo.svg
   - "!node_modules/**/@theia/**/src/**"
