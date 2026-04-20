@@ -5,28 +5,42 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-import { injectable } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { ElectronMainApplication, ElectronMainApplicationContribution } from '@theia/core/lib/electron-main/electron-main-application';
 import { MaybePromise } from '@theia/core/lib/common/types';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { autoUpdater } from 'electron-updater';
+import { Notification } from '@theia/electron/shared/electron';
+import { UpdateServiceImpl } from './update-service-impl';
 
 @injectable()
 export class AutoUpdaterContribution implements ElectronMainApplicationContribution {
 
+    @inject(UpdateServiceImpl)
+    protected readonly updateService: UpdateServiceImpl;
+
     onStart(application: ElectronMainApplication): MaybePromise<void> {
-        // Delay update check to avoid slowing down startup
-        setTimeout(() => this.checkForUpdates(), 10_000);
+        // Delay startup check to avoid slowing down launch and to let the window settle.
+        setTimeout(() => this.autoCheckAndDownload(), 10_000);
     }
 
-    protected async checkForUpdates(): Promise<void> {
+    protected async autoCheckAndDownload(): Promise<void> {
         try {
-            autoUpdater.autoDownload = false;
-            autoUpdater.logger = console;
-            await autoUpdater.checkForUpdatesAndNotify();
+            const check = await this.updateService.checkForUpdates();
+            if (check.status !== 'available') {
+                return;
+            }
+            const downloaded = await this.updateService.downloadUpdate();
+            if (downloaded.status !== 'downloaded') {
+                return;
+            }
+            if (Notification.isSupported()) {
+                new Notification({
+                    title: 'Cook Editor update ready',
+                    body: `Version ${downloaded.version} has been downloaded. Restart the app to install.`
+                }).show();
+            }
         } catch (error) {
-            // Silently fail — don't crash the app if update check fails
-            // (e.g., no internet, GitHub rate limit, dev builds with no publish config)
+            // Startup checks must never crash the app (e.g., offline, rate-limited, misconfigured provider).
             console.warn('Auto-update check failed:', error);
         }
     }
