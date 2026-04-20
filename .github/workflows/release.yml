@@ -90,9 +90,17 @@ jobs:
             packages/*/node_modules
             dev-packages/*/node_modules
             examples/*/node_modules
-          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v2-${{ hashFiles('package-lock.json', 'lerna.json') }}
+            # @theia/core's afterInstall generates re-export shims into
+            # packages/*/shared — outside node_modules — that tsc requires.
+            packages/*/shared
+            # @theia/ffmpeg is a node-gyp workspace package; its native
+            # addon is built into dev-packages/ffmpeg/build during npm
+            # install. Without it, `theia rebuild:electron` crashes with
+            # `Cannot find module '../build/Debug/ffmpeg.node'`.
+            dev-packages/ffmpeg/build
+          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v3-${{ hashFiles('package-lock.json', 'lerna.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v2-
+            ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v3-
 
       # native-keymap compiles against libx11/libxkbfile headers on Linux
       - name: Install Linux native build deps
