@@ -171,6 +171,36 @@ jobs:
           # webpack hits the default 2 GB heap on Windows; give it room
           NODE_OPTIONS: --max-old-space-size=8192
 
+      # Guard against silent feature drops in the generated frontend index.
+      # `frontend` + `frontendElectron` in the same `theiaExtensions` entry
+      # causes the generator to drop the `frontend` module on electron targets
+      # (see packages/cooklang/package.json). This check catches that class of
+      # regression before we ship a broken DMG.
+      - name: Verify required frontend modules are registered
+        working-directory: examples/electron
+        shell: bash
+        run: |
+          INDEX=src-gen/frontend/index.js
+          REQUIRED=(
+            '@theia/cooklang/lib/browser/cooklang-frontend-module'
+            '@theia/cooklang/lib/electron-browser/cooklang-electron-browser-module'
+            '@theia/cooklang-account/lib/browser/cooklang-account-frontend-module'
+            '@theia/cooklang-ai/lib/browser/cooklang-ai-frontend-module'
+            '@theia/cooklang-branding/lib/browser/cooklang-branding-frontend-module'
+          )
+          missing=0
+          for m in "${REQUIRED[@]}"; do
+            if ! grep -qF "$m" "$INDEX"; then
+              echo "::error::Missing frontend module: $m"
+              missing=1
+            fi
+          done
+          if [ $missing -ne 0 ]; then
+            echo "::error::$INDEX is missing required frontend modules — check packages/*/package.json theiaExtensions entries"
+            exit 1
+          fi
+          echo "All required frontend modules are registered."
+
       - name: Package & Publish
         working-directory: examples/electron
         shell: bash
