@@ -33,6 +33,16 @@ files:
 extraResources:
   - from: ../../plugins
     to: app/plugins
+  - from: ../../LICENSE-EPL
+    to: licenses/LICENSE-EPL
+  - from: ../../LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION
+    to: licenses/LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION
+  - from: ../../LICENSE-MIT.txt
+    to: licenses/LICENSE-MIT.txt
+  - from: ../../LICENSE-vscode.txt
+    to: licenses/LICENSE-vscode.txt
+  - from: ../../NOTICE.md
+    to: licenses/NOTICE.md
 
 publish:
   provider: github

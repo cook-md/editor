@@ -1,4 +1,60 @@
-# Notices for Eclipse Theia
+# Notices for Cook Editor
+
+Cook Editor is a derivative work of **Eclipse Theia**, modified by Cooklang
+to provide a dedicated editor for the [Cooklang](https://cooklang.org/)
+recipe markup language.
+
+## Modifications
+
+* Based on Eclipse Theia, upstream: <https://github.com/eclipse-theia/theia>
+* Upstream baseline: Eclipse Theia v1.70.0
+* Modifications include: Cooklang language support (TextMate grammar and LSP
+  client), a Rust-based native parser (NAPI-RS), Cook Editor branding, an AI
+  chat integration tailored to recipes, and removal of upstream features not
+  relevant to recipe editing.
+
+## License
+
+Cook Editor, like Eclipse Theia, is distributed under the terms of the
+Eclipse Public License v. 2.0 (EPL-2.0) with secondary licensing under
+GPL-2.0-only with Classpath-exception-2.0.
+
+* SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+* EPL-2.0: <https://www.eclipse.org/legal/epl-2.0>
+* GPL-2.0 w/ Classpath exception: <https://www.gnu.org/software/classpath/license.html>
+
+## Written Offer for Source Code
+
+For a period of three (3) years from the date you received this binary,
+Cooklang will provide, upon written request, a complete machine-readable
+copy of the corresponding source code for the EPL-2.0 / GPL-2.0-covered
+portions of Cook Editor on a medium customarily used for software
+interchange, for no more than the cost of performing this distribution.
+
+Requests should be sent to:
+
+* Email: <alexey@cooklang.org>
+* Subject line: "Cook Editor source code request"
+
+Please include the version of Cook Editor you received (visible in
+Help → About Cook Editor) so we can provide the exact corresponding source.
+
+## Trademarks
+
+"Eclipse" and "Theia" are trademarks of the Eclipse Foundation. Cook Editor
+is not an official Eclipse Foundation product and is not endorsed by the
+Eclipse Foundation.
+
+"Cooklang" and "Cook Editor" are names used by the Cooklang project.
+
+---
+
+# Upstream Notice (Eclipse Theia)
+
+The remainder of this file reproduces the third-party and attribution
+notices from the upstream Eclipse Theia project.
+
+## About Eclipse Theia
 
 This content is produced and maintained by the Eclipse Theia project.
 
