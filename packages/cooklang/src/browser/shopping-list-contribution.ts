@@ -191,11 +191,25 @@ export class ShoppingListContribution
 
         const scale = this.resolveScale(args);
         const workspaceRoot = this.shoppingListService.getWorkspaceRootUri();
-        const relativePath = workspaceRoot
-            ? workspaceRoot.relative(targetUri)?.toString() ?? targetUri.path.base
-            : targetUri.path.base;
+        if (!workspaceRoot) { return; }
 
-        await this.shoppingListService.addRecipe(relativePath, scale);
+        const relativePath =
+            workspaceRoot.relative(targetUri)?.toString() ?? targetUri.path.base;
+
+        // Parse the recipe for sub-recipe references so we can include their
+        // ingredients in the shopping list with correctly scaled multipliers.
+        let includedRefs: Array<{ path: string; scale: number }> | undefined;
+        try {
+            const content = await this.fileService.read(targetUri);
+            includedRefs = await this.collectResolvedRefs(
+                content.value,
+                workspaceRoot.path.fsPath(),
+            );
+        } catch (e) {
+            console.warn('[shopping-list] Failed to read recipe for sub-refs:', e);
+        }
+
+        await this.shoppingListService.addRecipe(relativePath, scale, includedRefs);
         await this.openView({ activate: true });
     }
 
@@ -244,19 +258,46 @@ export class ShoppingListContribution
             return;
         }
 
-        // Menu JSON shape from `parse_menu` in packages/cooklang-native/src/lib.rs:
-        // items are tagged by `type`: "text" | "recipeReference" | "ingredient".
-        // Only "recipeReference" items are real recipe references.
+        const baseDir = this.shoppingListService.getWorkspaceRootUri()?.path.fsPath();
+        if (!baseDir) { return; }
+
+        const recipes = await this.collectResolvedRefs(menuContent, baseDir);
+        if (recipes.length === 0) {
+            console.warn('[shopping-list] Menu contained no recipe references:', relativePath);
+            return;
+        }
+
+        await this.shoppingListService.addMenu(relativePath, this.resolveScale(args), recipes);
+        await this.openView({ activate: true });
+    }
+
+    /**
+     * Parse `content` for `@recipe` sub-references and resolve each to a
+     * concrete multiplier, since the `.shopping-list` format only stores
+     * a numeric multiplier.
+     *
+     * Per spec/conventions.md:
+     *   {2}            → plain multiplier
+     *   {4%servings}   → target / recipe.servings
+     *   {150%ml}       → target / recipe.yield (when units match)
+     *
+     * Unresolvable units fall back to treating the raw number as a
+     * multiplier — same as when no metadata is present on the target.
+     */
+    protected async collectResolvedRefs(
+        content: string,
+        baseDir: string,
+    ): Promise<Array<{ path: string; scale: number }>> {
         let parsed: {
             sections?: Array<{
                 lines?: Array<Array<{ type?: string; name?: string; scale?: number; unit?: string }>>;
             }>;
         };
         try {
-            parsed = JSON.parse(await this.languageService.parseMenu(menuContent, 1));
+            parsed = JSON.parse(await this.languageService.parseMenu(content, 1));
         } catch (e) {
-            console.error('[shopping-list] Failed to parse menu:', e);
-            return;
+            console.error('[shopping-list] Failed to parse content for refs:', e);
+            return [];
         }
 
         const refs: Array<{ path: string; scale: number; unit?: string }> = [];
@@ -274,33 +315,18 @@ export class ShoppingListContribution
             }
         }
 
-        if (refs.length === 0) {
-            console.warn('[shopping-list] Menu contained no recipe references:', relativePath);
-            return;
-        }
-
-        // Resolve `{N%unit}` references to concrete multipliers, since the
-        // `.shopping-list` format only stores a numeric multiplier.
-        //
-        // Per spec/conventions.md:
-        //   {2}            → plain multiplier
-        //   {4%servings}   → target / recipe.servings
-        //   {150%ml}       → target / recipe.yield (when units match)
-        const baseDir = this.shoppingListService.getWorkspaceRootUri()?.path.fsPath();
-        const recipes: Array<{ path: string; scale: number; includedRefs?: string[] }> = [];
+        const out: Array<{ path: string; scale: number }> = [];
         for (const r of refs) {
             let scale = r.scale;
-            if (baseDir && r.unit && r.scale > 0) {
+            if (r.unit && r.scale > 0) {
                 const resolved = await this.resolveReferenceScale(baseDir, r.path, r.scale, r.unit);
                 if (resolved !== undefined) {
                     scale = resolved;
                 }
             }
-            recipes.push({ path: r.path, scale });
+            out.push({ path: r.path, scale });
         }
-
-        await this.shoppingListService.addMenu(relativePath, this.resolveScale(args), recipes);
-        await this.openView({ activate: true });
+        return out;
     }
 
     /**

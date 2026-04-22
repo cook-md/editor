@@ -227,12 +227,16 @@ export class ShoppingListService implements Disposable {
         this.onDidChangeEmitter.fire();
     }
 
-    async addRecipe(path: string, scale = 1, includedRefs?: string[]): Promise<void> {
+    async addRecipe(
+        path: string,
+        scale = 1,
+        includedRefs?: Array<{ path: string; scale: number }>,
+    ): Promise<void> {
         const children: ShoppingListRecipeItem[] = includedRefs
-            ? includedRefs.map(p => ({
+            ? includedRefs.map(r => ({
                   type: 'recipe',
-                  path: p.replace(/^\.\//, ''),
-                  multiplier: undefined,
+                  path: r.path.replace(/^\.\//, ''),
+                  multiplier: r.scale === 1 ? undefined : r.scale,
                   children: [],
               }))
             : [];
