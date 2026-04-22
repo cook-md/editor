@@ -85,9 +85,21 @@ Cook Editor registers the `cook://` URI scheme so recipe links from the web open
 
 Found a bug or have a feature request? [Open an issue](https://github.com/cook-md/editor/issues/new).
 
-## License
+## License and Attribution
 
-Cook Editor is proprietary, closed-source software. The binaries published on this repository are free to download and use; the source code is not publicly available. Built on top of [Eclipse Theia](https://theia-ide.org) (EPL-2.0 / GPL-2.0 with Classpath exception).
+Cook Editor is a derivative work of [Eclipse Theia](https://github.com/eclipse-theia/theia) (v1.70.0 baseline) and is distributed under the Eclipse Public License v. 2.0, with secondary licensing under GPL-2.0-only with Classpath-exception-2.0.
+
+- [LICENSE-EPL](LICENSE-EPL)
+- [LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION](LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION)
+- [NOTICE.md](NOTICE.md) — modification notice, written offer for source code, and third-party attributions
+
+Cooklang-specific additions authored by the Cooklang project (language support, AI integration, branding) are released under MIT.
+
+Cook Editor is **not** an official Eclipse Foundation product and is **not** endorsed by the Eclipse Foundation. "Eclipse" and "Theia" are trademarks of the Eclipse Foundation.
+
+### Source Code
+
+The public Cook Editor source tree is not maintained in this repository. The EPL-2.0 / GPL-2.0-covered portions of Cook Editor are available upon written request for three (3) years from the date you received a given release. Email <alexey@cooklang.org> with subject "Cook Editor source code request" and include the version (shown in **Help → About Cook Editor**).
 
 ## Acknowledgements
 
