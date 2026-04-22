@@ -11,6 +11,7 @@
 
 export interface MenuMetadata {
     servings?: string;
+    yield?: string;
     time?: string;
     author?: string;
     description?: string;
@@ -28,6 +29,7 @@ export interface MenuRecipeReferenceItem {
     type: 'recipeReference';
     name: string;
     scale?: number;
+    unit?: string;
 }
 
 export interface MenuIngredientItem {

@@ -247,7 +247,11 @@ export class ShoppingListContribution
         // Menu JSON shape from `parse_menu` in packages/cooklang-native/src/lib.rs:
         // items are tagged by `type`: "text" | "recipeReference" | "ingredient".
         // Only "recipeReference" items are real recipe references.
-        let parsed: { sections?: Array<{ lines?: Array<Array<{ type?: string; name?: string; scale?: number }>> }> };
+        let parsed: {
+            sections?: Array<{
+                lines?: Array<Array<{ type?: string; name?: string; scale?: number; unit?: string }>>;
+            }>;
+        };
         try {
             parsed = JSON.parse(await this.languageService.parseMenu(menuContent, 1));
         } catch (e) {
@@ -255,26 +259,118 @@ export class ShoppingListContribution
             return;
         }
 
-        const recipes: Array<{ path: string; scale: number; includedRefs?: string[] }> = [];
+        const refs: Array<{ path: string; scale: number; unit?: string }> = [];
         for (const section of parsed.sections ?? []) {
             for (const line of section.lines ?? []) {
                 for (const item of line) {
                     if (item.type !== 'recipeReference') { continue; }
                     if (!item.name) { continue; }
-                    recipes.push({
+                    refs.push({
                         path: item.name.replace(/^\.\//, ''),
                         scale: typeof item.scale === 'number' && item.scale > 0 ? item.scale : 1,
+                        unit: item.unit,
                     });
                 }
             }
         }
 
-        if (recipes.length === 0) {
+        if (refs.length === 0) {
             console.warn('[shopping-list] Menu contained no recipe references:', relativePath);
             return;
         }
 
-        await this.shoppingListService.addMenu(relativePath, 1, recipes);
+        // Resolve `{N%unit}` references to concrete multipliers, since the
+        // `.shopping-list` format only stores a numeric multiplier.
+        //
+        // Per spec/conventions.md:
+        //   {2}            → plain multiplier
+        //   {4%servings}   → target / recipe.servings
+        //   {150%ml}       → target / recipe.yield (when units match)
+        const baseDir = this.shoppingListService.getWorkspaceRootUri()?.path.fsPath();
+        const recipes: Array<{ path: string; scale: number; includedRefs?: string[] }> = [];
+        for (const r of refs) {
+            let scale = r.scale;
+            if (baseDir && r.unit && r.scale > 0) {
+                const resolved = await this.resolveReferenceScale(baseDir, r.path, r.scale, r.unit);
+                if (resolved !== undefined) {
+                    scale = resolved;
+                }
+            }
+            recipes.push({ path: r.path, scale });
+        }
+
+        await this.shoppingListService.addMenu(relativePath, this.resolveScale(args), recipes);
         await this.openView({ activate: true });
     }
+
+    /**
+     * Compute the multiplier that, when applied to the referenced recipe,
+     * yields the requested target.
+     *
+     * - `%servings` / `%serves` → reads the recipe's `servings` metadata.
+     * - any other unit          → reads the recipe's `yield` metadata and
+     *                             only resolves when the units match.
+     *
+     * Returns `undefined` when the recipe can't be found, the relevant
+     * metadata is missing/unparseable, or the unit doesn't match — callers
+     * fall back to treating the raw number as a plain multiplier.
+     */
+    protected async resolveReferenceScale(
+        baseDir: string,
+        recipePath: string,
+        target: number,
+        unit: string,
+    ): Promise<number | undefined> {
+        let content: string | undefined;
+        try {
+            content = await this.languageService.findRecipe(baseDir, recipePath);
+        } catch (e) {
+            console.warn(`[shopping-list] findRecipe failed for ${recipePath}:`, e);
+            return undefined;
+        }
+        if (!content) { return undefined; }
+
+        let metadata: { servings?: string; yield?: string } | undefined;
+        try {
+            const menu = JSON.parse(await this.languageService.parseMenu(content, 1));
+            metadata = menu?.metadata;
+        } catch (e) {
+            console.warn(`[shopping-list] parseMenu failed for ${recipePath}:`, e);
+            return undefined;
+        }
+        if (!metadata) { return undefined; }
+
+        const normalisedUnit = unit.toLowerCase();
+        const isServings = normalisedUnit === 'servings' || normalisedUnit === 'serves';
+        const raw = isServings ? metadata.servings : metadata.yield;
+        if (!raw) { return undefined; }
+
+        const parsed = parseNumberAndUnit(raw);
+        if (!parsed || parsed.amount <= 0) { return undefined; }
+
+        // For yield, the reference unit must match the recipe's yield unit.
+        // For servings, the `%servings`/`%serves` label is the unit — any
+        // trailing text in the metadata value (`"15 cups worth"`) is ignored.
+        if (!isServings) {
+            if (!parsed.unit || parsed.unit.toLowerCase() !== normalisedUnit) {
+                return undefined;
+            }
+        }
+
+        return target / parsed.amount;
+    }
+}
+
+/**
+ * Extract a leading positive number and optional unit from a metadata string.
+ * Handles cooklang quantity syntax (`500%ml`), space-separated (`2 cups`), and
+ * bare numbers (`2`).
+ */
+function parseNumberAndUnit(value: string): { amount: number; unit?: string } | undefined {
+    const match = value.match(/^\s*(\d+(?:\.\d+)?)\s*%?\s*([^\s]*)/);
+    if (!match) { return undefined; }
+    const amount = parseFloat(match[1]);
+    if (!Number.isFinite(amount)) { return undefined; }
+    const unit = match[2] ? match[2] : undefined;
+    return { amount, unit };
 }

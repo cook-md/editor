@@ -317,6 +317,8 @@ pub struct MenuParseResult {
 #[derive(Serialize)]
 pub struct MenuMetadata {
     pub servings: Option<String>,
+    #[serde(rename = "yield")]
+    pub yield_: Option<String>,
     pub time: Option<String>,
     pub author: Option<String>,
     pub description: Option<String>,
@@ -341,6 +343,7 @@ pub enum MenuSectionItem {
     RecipeReference {
         name: String,
         scale: Option<f64>,
+        unit: Option<String>,
     },
     #[serde(rename = "ingredient")]
     Ingredient {
@@ -483,6 +486,11 @@ pub fn parse_menu(input: String, scale: f64) -> napi::Result<String> {
                                     // Apply menu scaling to the recipe reference scale
                                     let final_scale = recipe_scale.map(|s| s * scale);
 
+                                    let recipe_unit = ing
+                                        .quantity
+                                        .as_ref()
+                                        .and_then(|q| q.unit().map(|u| u.to_string()));
+
                                     let name = if recipe_ref.components.is_empty() {
                                         recipe_ref.name.clone()
                                     } else {
@@ -496,6 +504,7 @@ pub fn parse_menu(input: String, scale: f64) -> napi::Result<String> {
                                     step_items.push(MenuSectionItem::RecipeReference {
                                         name,
                                         scale: final_scale,
+                                        unit: recipe_unit,
                                     });
                                 } else {
                                     // Regular ingredient
@@ -573,6 +582,7 @@ pub fn parse_menu(input: String, scale: f64) -> napi::Result<String> {
 
         Some(MenuMetadata {
             servings: get_field("servings").or_else(|| get_field("serves")),
+            yield_: get_field("yield"),
             time: get_field("time").or_else(|| get_field("duration")),
             author: get_field("author"),
             description: get_field("description"),
