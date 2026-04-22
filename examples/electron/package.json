@@ -2,7 +2,7 @@
   "private": true,
   "name": "@theia/example-electron",
   "productName": "Cook Editor",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.8",
   "main": "lib/backend/electron-main.js",
   "license": "EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0",
   "homepage": "https://cooklang.org",
