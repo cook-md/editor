@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "@theia/example-electron",
+  "name": "@cook-md/editor-app",
   "productName": "Cook Editor",
   "version": "0.1.0-alpha.9",
   "main": "lib/backend/electron-main.js",

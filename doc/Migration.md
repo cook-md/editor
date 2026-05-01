@@ -343,7 +343,7 @@ The frontend's source map naming changed. If you had something like the followin
 
 ```json
       "sourceMapPathOverrides": {
-        "webpack://@theia/example-electron/*": "${workspaceFolder}/app/*"
+        "webpack://@cook-md/editor-app/*": "${workspaceFolder}/app/*"
       }
 ```
 
