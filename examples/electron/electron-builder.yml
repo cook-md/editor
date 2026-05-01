@@ -80,6 +80,7 @@ win:
   icon: resources/icon.ico
   target:
     - nsis
+    - zip
 
 nsis:
   oneClick: false
@@ -97,6 +98,8 @@ linux:
   target:
     - AppImage
     - deb
+    - rpm
+    - tar.gz
 
 appImage:
   artifactName: Cook-Editor.${ext}
@@ -107,5 +110,12 @@ deb:
     - libnotify4
     - libxtst6
     - libnss3
+
+rpm:
+  artifactName: Cook-Editor.${ext}
+  depends:
+    - libnotify
+    - libXtst
+    - nss
 
 afterPack: ./scripts/after-pack.js

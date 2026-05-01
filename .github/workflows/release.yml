@@ -102,10 +102,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-nm-v3-
 
-      # native-keymap compiles against libx11/libxkbfile headers on Linux
+      # native-keymap compiles against libx11/libxkbfile headers on Linux.
+      # `rpm` is required for electron-builder's RPM target.
       - name: Install Linux native build deps
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev rpm
 
       - name: Install dependencies
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
@@ -232,5 +233,7 @@ jobs:
             examples/electron/dist/*.exe
             examples/electron/dist/*.AppImage
             examples/electron/dist/*.deb
+            examples/electron/dist/*.rpm
+            examples/electron/dist/*.tar.gz
             examples/electron/dist/*.yml
           if-no-files-found: warn

@@ -5,6 +5,45 @@
     <h3>Cloud & Desktop IDE Framework</h3>
 </div>
 
+## Cook Editor — Downloads
+
+Pre-built binaries for each release are published on the [Releases page](https://github.com/cook-md/editor/releases).
+
+| Platform | Artifact | Notes |
+| --- | --- | --- |
+| macOS (Apple silicon) | `Cook-Editor-arm64.dmg` | Signed & notarized |
+| macOS (Intel) | `Cook-Editor-x64.dmg` | Signed & notarized |
+| Windows | `Cook-Editor-Setup.exe` | NSIS installer |
+| Windows (portable) | `Cook-Editor-*.zip` | Extract anywhere, no install required |
+| Debian / Ubuntu | `Cook-Editor.deb` | Recommended on Debian-based distros |
+| Fedora / RHEL / SUSE | `Cook-Editor.rpm` | Recommended on RPM-based distros |
+| Linux (any distro) | `Cook-Editor.AppImage` | See sandbox note below |
+| Linux (portable) | `Cook-Editor.tar.gz` | Extract anywhere, no install required |
+
+### Linux — AppImage and the Chromium sandbox
+
+If you launch the AppImage and see:
+
+```
+FATAL: The SUID sandbox helper binary was found, but is not configured correctly.
+```
+
+…you've hit a structural limitation of the AppImage format on modern kernels (Ubuntu 24.04+, Debian 12+, Fedora 40+): AppImages mount with `nosuid`, which strips the SUID bit Chromium needs for its sandbox.
+
+Pick whichever workaround fits:
+
+1. **Install via `.deb` or `.rpm` instead** — the package installer sets `chrome-sandbox` permissions correctly. This is the recommended path on supported distros.
+2. **Enable unprivileged user namespaces** (system-wide):
+   ```bash
+   sudo sysctl kernel.unprivileged_userns_clone=1
+   ```
+3. **Run with `--no-sandbox`** (reduces security):
+   ```bash
+   ./Cook-Editor.AppImage --no-sandbox
+   ```
+
+---
+
 <div id="badges" align="center">
 
   [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-curved)](https://github.com/eclipse-theia/theia/labels/help%20wanted)
