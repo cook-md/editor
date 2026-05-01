@@ -1,0 +1,111 @@
+{
+  "extends": "../configs/base.tsconfig",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "lib/test"
+  },
+  "include": [
+    "test"
+  ],
+  "references": [
+    {
+      "path": "../dev-packages/cli"
+    },
+    {
+      "path": "../packages/ai-chat"
+    },
+    {
+      "path": "../packages/ai-chat-ui"
+    },
+    {
+      "path": "../packages/ai-core"
+    },
+    {
+      "path": "../packages/ai-core-ui"
+    },
+    {
+      "path": "../packages/cooklang"
+    },
+    {
+      "path": "../packages/cooklang-account"
+    },
+    {
+      "path": "../packages/cooklang-ai"
+    },
+    {
+      "path": "../packages/cooklang-branding"
+    },
+    {
+      "path": "../packages/core"
+    },
+    {
+      "path": "../packages/editor"
+    },
+    {
+      "path": "../packages/editor-preview"
+    },
+    {
+      "path": "../packages/file-search"
+    },
+    {
+      "path": "../packages/filesystem"
+    },
+    {
+      "path": "../packages/getting-started"
+    },
+    {
+      "path": "../packages/keymaps"
+    },
+    {
+      "path": "../packages/markers"
+    },
+    {
+      "path": "../packages/messages"
+    },
+    {
+      "path": "../packages/monaco"
+    },
+    {
+      "path": "../packages/navigator"
+    },
+    {
+      "path": "../packages/output"
+    },
+    {
+      "path": "../packages/plugin-ext"
+    },
+    {
+      "path": "../packages/plugin-ext-vscode"
+    },
+    {
+      "path": "../packages/preferences"
+    },
+    {
+      "path": "../packages/process"
+    },
+    {
+      "path": "../packages/property-view"
+    },
+    {
+      "path": "../packages/search-in-workspace"
+    },
+    {
+      "path": "../packages/secondary-window"
+    },
+    {
+      "path": "../packages/toolbar"
+    },
+    {
+      "path": "../packages/userstorage"
+    },
+    {
+      "path": "../packages/variable-resolver"
+    },
+    {
+      "path": "../packages/vsx-registry"
+    },
+    {
+      "path": "../packages/workspace"
+    }
+  ]
+}

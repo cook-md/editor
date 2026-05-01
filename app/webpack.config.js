@@ -28,11 +28,11 @@ nodeConfig.config.externals = Object.assign({}, nodeConfig.config.externals, {
 // Copy the cookbot gRPC proto file to where the bundled backend expects it.
 // The backend webpack bundle outputs to lib/backend/ and sets __dirname: false,
 // so CookbotGrpcClient resolves the proto as ../../proto/cookbot.proto relative
-// to lib/backend/, which lands at examples/electron/proto/.
+// to lib/backend/, which lands at app/proto/.
 nodeConfig.config.plugins.push(
     new CopyPlugin({
         patterns: [{
-            from: path.resolve(__dirname, '../../packages/cooklang-ai/proto/cookbot.proto'),
+            from: path.resolve(__dirname, '../packages/cooklang-ai/proto/cookbot.proto'),
             to: path.resolve(__dirname, 'proto/cookbot.proto')
         }]
     })

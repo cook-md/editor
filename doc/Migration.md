@@ -343,14 +343,14 @@ The frontend's source map naming changed. If you had something like the followin
 
 ```json
       "sourceMapPathOverrides": {
-        "webpack://@theia/example-electron/*": "${workspaceFolder}/examples/electron/*"
+        "webpack://@theia/example-electron/*": "${workspaceFolder}/app/*"
       }
 ```
 
 You can delete this whole block and replace it by the following:
 
 ```json
-      "webRoot": "${workspaceFolder}/examples/electron"
+      "webRoot": "${workspaceFolder}/app"
 ```
 
 ### v1.17.0

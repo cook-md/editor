@@ -89,7 +89,7 @@ jobs:
             node_modules
             packages/*/node_modules
             dev-packages/*/node_modules
-            examples/*/node_modules
+            app/node_modules
             # @theia/core's afterInstall generates re-export shims into
             # packages/*/shared — outside node_modules — that tsc requires.
             packages/*/shared
@@ -148,7 +148,7 @@ jobs:
             ~/.cache/electron-builder
             ~/AppData/Local/electron/Cache
             ~/AppData/Local/electron-builder/Cache
-          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-${{ hashFiles('examples/electron/electron-builder.yml', 'examples/electron/package.json') }}
+          key: ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-${{ hashFiles('app/electron-builder.yml', 'app/package.json') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
@@ -166,7 +166,7 @@ jobs:
         run: npm run compile
 
       - name: Bundle Electron app
-        working-directory: examples/electron
+        working-directory: app
         run: npm run bundle
         env:
           # webpack hits the default 2 GB heap on Windows; give it room
@@ -178,7 +178,7 @@ jobs:
       # (see packages/cooklang/package.json). This check catches that class of
       # regression before we ship a broken DMG.
       - name: Verify required frontend modules are registered
-        working-directory: examples/electron
+        working-directory: app
         shell: bash
         run: |
           INDEX=src-gen/frontend/index.js
@@ -203,7 +203,7 @@ jobs:
           echo "All required frontend modules are registered."
 
       - name: Package & Publish
-        working-directory: examples/electron
+        working-directory: app
         shell: bash
         run: |
           PUBLISH="${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
@@ -228,12 +228,12 @@ jobs:
         with:
           name: Cook-Editor-${{ matrix.platform }}
           path: |
-            examples/electron/dist/*.dmg
-            examples/electron/dist/*.zip
-            examples/electron/dist/*.exe
-            examples/electron/dist/*.AppImage
-            examples/electron/dist/*.deb
-            examples/electron/dist/*.rpm
-            examples/electron/dist/*.tar.gz
-            examples/electron/dist/*.yml
+            app/dist/*.dmg
+            app/dist/*.zip
+            app/dist/*.exe
+            app/dist/*.AppImage
+            app/dist/*.deb
+            app/dist/*.rpm
+            app/dist/*.tar.gz
+            app/dist/*.yml
           if-no-files-found: warn

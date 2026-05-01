@@ -23,7 +23,7 @@ const { exit } = require('process');
 
 const basePath = resolve(__dirname, '../..');
 const profilesPath = resolve(__dirname, './profiles/');
-const electronExample = resolve(basePath, 'examples/electron');
+const electronExample = resolve(basePath, 'app');
 const theia = resolve(electronExample, 'node_modules/.bin/theia');
 
 let name = 'Electron Frontend Startup';

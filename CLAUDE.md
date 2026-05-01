@@ -16,7 +16,7 @@ This is a **fork of Eclipse Theia** used to build a full-fledged **Cooklang edit
 
 ## Target Platform
 
-This is an **Electron-only** application. There is no browser target. Only `examples/electron/` is used.
+This is an **Electron-only** application. There is no browser target. Only `app/` is used.
 
 ## Development Commands
 
@@ -27,7 +27,7 @@ This is an **Electron-only** application. There is no browser target. Only `exam
 - `npm run test` - Run all tests
 
 **Electron application:**
-- `cd examples/electron && npm run bundle` - Build/rebuild the Electron app (regenerates src-gen/ files)
+- `cd app && npm run bundle` - Build/rebuild the Electron app (regenerates src-gen/ files)
 - `npm run start:electron` - Start electron application
 - `npm run watch` - Watch mode for development
 
@@ -113,7 +113,7 @@ For more information also look at:
 **Adding a new package to the monorepo:**
 1. Create `packages/foo/package.json` with `theiaExtensions`
 2. Create `packages/foo/tsconfig.json` with project references
-3. Add `"@theia/foo": "1.68.0"` to `examples/electron/package.json` dependencies
-4. Add `{ "path": "../../packages/foo" }` to `examples/electron/tsconfig.json` references
+3. Add `"@theia/foo": "1.68.0"` to `app/package.json` dependencies
+4. Add `{ "path": "../packages/foo" }` to `app/tsconfig.json` references
 5. Run `npm install` to create workspace symlink
-6. Run `cd examples/electron && npm run bundle` to regenerate `src-gen/` files
+6. Run `cd app && npm run bundle` to regenerate `src-gen/` files

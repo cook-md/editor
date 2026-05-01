@@ -12,10 +12,10 @@ lerna-debug.log
 .nyc_output
 coverage
 errorShots
-examples/*/src-gen
-examples/*/gen-webpack.config.js
-examples/*/gen-webpack.node.config.js
-examples/*/.test
+app/src-gen
+app/gen-webpack.config.js
+app/gen-webpack.node.config.js
+app/.test
 .browser_modules
 **/docs/api
 package-backup.json
@@ -38,4 +38,4 @@ allure-results
 license-check-summary.txt*
 .playwright-mcp/*
 /.theia/chatSessions
-/examples/electron/dist/
+/app/dist/
