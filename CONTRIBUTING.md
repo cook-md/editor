@@ -1,123 +1,77 @@
-# Contributing to Eclipse Theia
+# Contributing to Cook Editor
 
-Theia is a young open-source project with a modular architecture. One of the
-goals is to make sure that we can customize and enhance any Theia application
-through extensions.  So while the main Theia repository contains some common
-functionality for IDE-like applications, like a file system or a navigator
-view, most functionality doesn't necessarily need to be put into the core
-repository but can be developed separately.
+Thanks for your interest in Cook Editor. This is a small project — bug reports,
+small fixes, and well-scoped feature ideas are all welcome.
 
-## How Can I Contribute?
+## Ways to contribute
 
-In the following some of the typical ways of contribution are described.
+### Reporting bugs
 
-### Asking Questions
+[Open an issue](https://github.com/cook-md/editor/issues/new) describing what
+you expected to happen and what actually happened. Please include:
 
-It's totally fine to ask questions by opening an issue in the Theia GitHub
-repository. We will close it once it's answered and tag it with the 'question'
-label. Please check if the question has been asked before there or on [Stack
-Overflow](https://stackoverflow.com).
+- Cook Editor version (Help → About)
+- Operating system and version
+- A minimal recipe or steps that reproduce the issue
+- Any errors visible in **Help → Toggle Developer Tools** → Console
 
-### Reporting Bugs
+### Requesting features
 
-If you have found a bug, you should first check if it has already been filed
-and maybe even fixed. If you find an existing unresolved issue, please add your
-case. If you could not find an existing bug report, please file a new one. In
-any case, please add all information you can share and that will help to
-reproduce and solve the problem.
+Open an issue describing the use case. Concrete scenarios ("I want to track
+nutrition per recipe so I can plan meals around a calorie target") are much
+easier to act on than abstract requests ("add nutrition support").
 
-### Reporting Feature Requests
+### Pull requests
 
-You may want to see a feature or have an idea. You can file a request and we
-can discuss it.  If such a feature request already exists, please add a comment
-or some other form of feedback to indicate you are interested too. Also in this
-case any concrete use case scenario is appreciated to understand the motivation
-behind it.
+For non-trivial changes, please open an issue first to discuss the approach
+before investing time in code. This avoids the situation where a PR sits
+unmerged because the design conflicts with where the project is heading.
 
-### Pull Requests
+For small fixes — typos, obvious bugs, dependency bumps — feel free to send a
+PR directly.
 
-Before you get started investing significant time in something you want to get
-merged and maintained as part of Theia, you should talk with the team through
-an issue. Simply choose the issue you would want to work on, and tell everyone
-that you are willing to do so and how you would approach it. The team will be
-happy to guide you and give feedback.
+## Development setup
 
-We follow the contributing and reviewing pull request guidelines described
-[here](https://github.com/eclipse-theia/theia/blob/master/doc/pull-requests.md).
-
-## Coding Guidelines
-
-We follow the coding guidelines described
-[here](doc/coding-guidelines.md).
-
-## Eclipse Contributor Agreement
-
-Before your contribution can be accepted by the project team contributors must
-electronically sign the Eclipse Contributor Agreement (ECA).
-
-* <https://www.eclipse.org/legal/ECA.php>
-
-Commits that are provided by non-committers must have a Signed-off-by field in
-the footer indicating that the author is aware of the terms by which the
-contribution has been provided to the project. The non-committer must
-additionally have an Eclipse Foundation account and must have a signed Eclipse
-Contributor Agreement (ECA) on file.
-
-For more information, please see the Eclipse Committer Handbook:
-<https://www.eclipse.org/projects/handbook/#resources-commit>
-
-## Sign your work
-
-The sign-off is a simple line at the end of the explanation for the patch. Your
-signature certifies that you wrote the patch or otherwise have the right to
-pass it on as an open-source patch. The rules are pretty simple: if you can
-certify the below (from
-[developercertificate.org](https://developercertificate.org/)):
-
-```
-Developer Certificate of Origin
-Version 1.1
-
-Copyright (C) 2004, 2006 The Linux Foundation and its contributors.
-1 Letterman Drive
-Suite D4700
-San Francisco, CA, 94129
-
-Everyone is permitted to copy and distribute verbatim copies of this
-license document, but changing it is not allowed.
-
-Developer's Certificate of Origin 1.1
-
-By making a contribution to this project, I certify that:
-
-(a) The contribution was created in whole or in part by me and I
-    have the right to submit it under the open source license
-    indicated in the file; or
-
-(b) The contribution is based upon previous work that, to the best
-    of my knowledge, is covered under an appropriate open source
-    license and I have the right under that license to submit that
-    work with modifications, whether created in whole or in part
-    by me, under the same open source license (unless I am
-    permitted to submit under a different license), as indicated
-    in the file; or
-
-(c) The contribution was provided directly to me by some other
-    person who certified (a), (b) or (c) and I have not modified
-    it.
-
-(d) I understand and agree that this project and the contribution
-    are public and that a record of the contribution (including all
-    personal information I submit with it, including my sign-off) is
-    maintained indefinitely and may be redistributed consistent with
-    this project or the open source license(s) involved.
+```bash
+git clone https://github.com/cook-md/editor.git
+cd editor
+npm install
+cd app && npm run bundle
+cd .. && npm run start:electron
 ```
 
-Then you just add a line to every git commit message:
+See [doc/Developing.md](doc/Developing.md) for watch mode, package layout, and
+full development workflow. See [CLAUDE.md](CLAUDE.md) for an architectural
+overview of the monorepo.
 
-    Signed-off-by: Joe Smith <joe.smith@email.com>
+## Coding guidelines
 
-Use your real name (sorry, no pseudonyms or anonymous contributions.)
+Cook Editor inherits Eclipse Theia's coding conventions:
 
-If you set your `user.name` and `user.email` git configs, you can sign your
-commit automatically with `git commit -s`.
+- See [doc/coding-guidelines.md](doc/coding-guidelines.md) for naming, types,
+  imports, dependency injection, and React conventions.
+- See [doc/Testing.md](doc/Testing.md) for the test layout and how to run
+  tests for individual packages.
+
+A few project-specific points worth calling out:
+
+- Cooklang recipes use **YAML frontmatter** for metadata, not the deprecated
+  `>>` syntax. New code that emits or parses metadata must follow this.
+- Cook Editor is **Electron-only**. There is no browser target.
+- The native Cooklang parser lives in `packages/cooklang-native/` (NAPI-RS,
+  Rust). Touching it requires a Rust toolchain.
+
+## Code of Conduct
+
+Participation in this project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+By contributing to Cook Editor you agree that your contributions will be
+licensed under the [Eclipse Public License 2.0](LICENSE-EPL), the same
+license as the rest of the project.
+
+You retain copyright on your contributions; the EPL grants the project the
+right to distribute and modify them. You're affirming that you wrote the
+contribution yourself (or have the right to license it), and that you're
+licensing it under EPL-2.0.
