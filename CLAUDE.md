@@ -47,7 +47,7 @@ This is an **Electron-only** application. There is no browser target. Only `app/
 - Lerna-managed monorepo with 80+ packages
 - `/packages/` - Runtime packages (core + extensions)
 - `/dev-packages/` - Development tooling
-- `/examples/` - Sample applications and examples for API usage
+- `/app/` - The Cook Editor Electron application (only runtime target)
 
 **Platform-specific code organization:**
 - `package-name/src/common/*` - Basic JavaScript APIs, runs everywhere
@@ -113,7 +113,7 @@ For more information also look at:
 **Adding a new package to the monorepo:**
 1. Create `packages/foo/package.json` with `theiaExtensions`
 2. Create `packages/foo/tsconfig.json` with project references
-3. Add `"@theia/foo": "1.68.0"` to `app/package.json` dependencies
+3. Add `"@theia/foo": "1.70.0"` to `app/package.json` dependencies
 4. Add `{ "path": "../packages/foo" }` to `app/tsconfig.json` references
 5. Run `npm install` to create workspace symlink
 6. Run `cd app && npm run bundle` to regenerate `src-gen/` files
