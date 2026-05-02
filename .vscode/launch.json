@@ -5,17 +5,6 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Playwright Tests",
-      "type": "node",
-      "request": "launch",
-      "program": "${workspaceFolder}/node_modules/@playwright/test/cli.js",
-      "cwd": "${workspaceFolder}/examples/playwright",
-      "args": [
-        "test",
-        "--config=./configs/playwright.config.ts"
-      ]
-    },
-    {
       "type": "node",
       "request": "attach",
       "name": "Attach by Process ID",
@@ -45,8 +34,7 @@
         "--app-project-path=${workspaceFolder}/app",
         "--remote-debugging-port=9222",
         "--no-app-auto-install",
-        "--plugins=local-dir:../plugins",
-        "--ovsx-router-config=${workspaceFolder}/examples/ovsx-router-config.json"
+        "--plugins=local-dir:../plugins"
       ],
       "env": {
         "NODE_ENV": "development"
@@ -56,25 +44,12 @@
         "${workspaceFolder}/app/lib/backend/electron-main.js",
         "${workspaceFolder}/app/lib/backend/main.js",
         "${workspaceFolder}/app/lib/**/*.js",
-        "${workspaceFolder}/examples/api-samples/lib/**/*.js",
         "${workspaceFolder}/packages/*/lib/**/*.js",
         "${workspaceFolder}/dev-packages/*/lib/**/*.js"
       ],
       "smartStep": true,
       "internalConsoleOptions": "openOnSessionStart",
       "outputCapture": "std"
-    },
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "Start Theia Default (Browser backend, no debug)",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "start:browser"
-      ],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal"
     },
     {
       "type": "node",
@@ -113,41 +88,11 @@
       "outputCapture": "std"
     },
     {
-      "name": "Launch Browser Frontend",
-      "type": "chrome",
-      "request": "launch",
-      "url": "http://localhost:3000/",
-      "webRoot": "${workspaceFolder}/examples/browser"
-    },
-    {
       "type": "chrome",
       "request": "attach",
       "name": "Attach to Electron Frontend",
       "port": 9222,
       "webRoot": "${workspaceFolder}/app"
-    },
-    {
-      "name": "Launch VS Code Tests",
-      "type": "node",
-      "request": "launch",
-      "args": [
-        "${workspaceFolder}/examples/browser/lib/backend/main.js",
-        "${workspaceFolder}/plugins/vscode-api-tests/testWorkspace",
-        "--port",
-        "3030",
-        "--hostname",
-        "0.0.0.0",
-        "--extensionTestsPath=${workspaceFolder}/plugins/vscode-api-tests/out/singlefolder-tests",
-        "--hosted-plugin-inspect=9339"
-      ],
-      "env": {
-        "THEIA_DEFAULT_PLUGINS": "local-dir:${workspaceFolder}/plugins"
-      },
-      "stopOnEntry": false,
-      "sourceMaps": true,
-      "outFiles": [
-        "${workspaceFolder}/../.js"
-      ]
     }
   ],
   "compounds": [
@@ -157,15 +102,6 @@
         "Launch Electron Backend",
         "Attach to Plugin Host",
         "Attach to Electron Frontend"
-      ],
-      "stopAll": true
-    },
-    {
-      "name": "Launch Browser Backend & Frontend",
-      "configurations": [
-        "Launch Browser Backend",
-        "Attach to Plugin Host",
-        "Launch Browser Frontend"
       ],
       "stopAll": true
     }
