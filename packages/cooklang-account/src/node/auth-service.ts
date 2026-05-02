@@ -135,21 +135,35 @@ export class AuthServiceImpl implements AuthServiceBackend {
 
                 res.writeHead(200, { 'Content-Type': 'text/html' });
                 res.end(`<html><head><style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh; margin: 0; background: #f5f0eb; color: #333;
+}
 .container { text-align: center; }
 h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
 p { color: #666; }
-</style></head><body><div class="container"><h1>Login successful!</h1><p>You can close this tab and return to the editor.</p></div></body></html>`);
+</style></head><body><div class="container">
+<h1>Login successful!</h1>
+<p>You can close this tab and return to the editor.</p>
+</div></body></html>`);
                 this.cleanupCallbackServer();
                 this.onDidChangeAuthEmitter.fire({ status: 'logged-in', email: authData.email });
             }).catch(() => {
                 res.writeHead(500, { 'Content-Type': 'text/html' });
                 res.end(`<html><head><style>
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f0eb; color: #333; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh; margin: 0; background: #f5f0eb; color: #333;
+}
 .container { text-align: center; }
 h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; color: #c44; }
 p { color: #666; }
-</style></head><body><div class="container"><h1>Error</h1><p>Failed to save authentication data. Please try again.</p></div></body></html>`);
+</style></head><body><div class="container">
+<h1>Error</h1>
+<p>Failed to save authentication data. Please try again.</p>
+</div></body></html>`);
                 this.cleanupCallbackServer();
             });
         });

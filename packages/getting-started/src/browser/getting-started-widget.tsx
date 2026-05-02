@@ -164,11 +164,11 @@ export class GettingStartedWidget extends ReactWidget {
                         {this.renderSettings()}
                     </div>
                 </div>
-                {/*<div className='flex-grid'>
+                {/* <div className='flex-grid'>
                     <div className='col'>
                         {this.renderHelp()}
                     </div>
-                </div>*/}
+                </div> */}
                 <div className='flex-grid'>
                     <div className='col'>
                         {this.renderVersion()}

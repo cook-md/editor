@@ -151,7 +151,6 @@ export class SyncServiceImpl implements SyncService {
         this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
     }
 
-
     private async handleAuthChange(state: AuthState): Promise<void> {
         if (state.status === 'logged-out') {
             await this.stopSync();
