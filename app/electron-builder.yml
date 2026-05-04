@@ -103,13 +103,16 @@ nsis:
   artifactName: Cook-Editor-Setup.${ext}
 
 # --- Linux ---
+# rpm target is intentionally omitted: electron-builder/fpm wraps rpmbuild
+# but does not surface its stderr, and rpmbuild rejects the spec generated
+# from a productName containing a space ("Cook Editor"). AppImage + deb +
+# tar.gz cover Fedora/RHEL users adequately for now.
 linux:
   icon: resources/icon-256.png
   category: Utility
   target:
     - AppImage
     - deb
-    - rpm
     - tar.gz
 
 appImage:
@@ -121,12 +124,5 @@ deb:
     - libnotify4
     - libxtst6
     - libnss3
-
-rpm:
-  artifactName: Cook-Editor.${ext}
-  depends:
-    - libnotify
-    - libXtst
-    - nss
 
 afterPack: ./scripts/after-pack.js
