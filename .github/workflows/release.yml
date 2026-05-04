@@ -17,6 +17,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -213,7 +215,7 @@ jobs:
             npx electron-builder --publish "$PUBLISH"
           fi
         env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Code signing — electron-builder reads these automatically on macOS.
           # Harmless on Windows/Linux matrix rows (ignored).
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
