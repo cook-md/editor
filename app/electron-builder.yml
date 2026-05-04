@@ -1,6 +1,13 @@
 appId: md.cook.editor
 productName: Cook Editor
 copyright: Copyright © 2026 Cooklang
+
+# RPM (and some other packagers) reject SPDX expressions with parens, WITH,
+# and LicenseRef-. Override the license string passed to packaging metadata
+# with a single identifier; full legal terms are in the bundled NOTICE.md
+# and LICENSE-* files (see extraResources below).
+extraMetadata:
+  license: AGPL-3.0-only
 # Do NOT set electronDist — it would pin to the host-arch Electron installed
 # by npm and produce arm64 binaries even inside an x64 DMG. Let electron-
 # builder resolve and download the correct-arch Electron per target.
