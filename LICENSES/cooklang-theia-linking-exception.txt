@@ -1,0 +1,17 @@
+cooklang-theia-linking-exception
+
+Additional permission under section 7 of the GNU Affero General Public
+License, version 3:
+
+As a special exception, you have permission to link this software with
+the Eclipse Theia framework (licensed under EPL-2.0 or GPL-2.0-only WITH
+Classpath-exception-2.0) and distribute the combined work, even though
+the licenses of Theia and this software would otherwise be incompatible.
+
+This exception applies only to the Eclipse Theia framework
+(github.com/eclipse-theia/theia and packages published under the @theia/
+npm scope). It does not extend to other software.
+
+If you modify this software, you may extend this exception to your
+version, but you are not obligated to do so. If you do not wish to do
+so, delete this exception statement from your version.

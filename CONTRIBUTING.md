@@ -65,13 +65,48 @@ A few project-specific points worth calling out:
 
 Participation in this project is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## License
+## License & Developer Certificate of Origin
 
-By contributing to Cook Editor you agree that your contributions will be
-licensed under the [Eclipse Public License 2.0](LICENSE-EPL), the same
-license as the rest of the project.
+Cook Editor is a mixed-licensed codebase. See [NOTICE.md](NOTICE.md) for the
+full breakdown, but in short:
 
-You retain copyright on your contributions; the EPL grants the project the
-right to distribute and modify them. You're affirming that you wrote the
-contribution yourself (or have the right to license it), and that you're
-licensing it under EPL-2.0.
+- Code in `packages/cooklang*/` (the Cook Editor extensions) is licensed
+  under [AGPL-3.0-only](LICENSE-AGPL) **WITH** the
+  [cooklang-theia-linking-exception](LICENSES/cooklang-theia-linking-exception.txt).
+- Code inherited from Eclipse Theia stays under
+  [EPL-2.0](LICENSE-EPL) OR
+  [GPL-2.0-only WITH Classpath-exception-2.0](LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION).
+
+When you contribute, your contribution is licensed under the same license as
+the file(s) you're modifying. New files in `packages/cooklang*/` are licensed
+under AGPL-3.0 with the linking exception.
+
+### You retain copyright
+
+You keep ownership of your contribution. We are not asking you to assign
+copyright.
+
+### Developer Certificate of Origin (DCO)
+
+By submitting a pull request, you certify the [Developer Certificate of
+Origin 1.1](https://developercertificate.org/) — i.e. you wrote the
+contribution yourself (or have the right to submit it) and you're licensing
+it under the project's license as described above.
+
+Sign your commits with `git commit -s` to add a `Signed-off-by` trailer
+indicating you agree to the DCO.
+
+### License-back to cook.md
+
+In addition to licensing your contribution under the project's open source
+license, you grant cook.md a perpetual, worldwide, non-exclusive, royalty-free
+license to use, reproduce, modify, distribute, and sublicense your
+contribution under any license terms cook.md chooses.
+
+This lets cook.md continue to use the cooklang-* code in our closed-source
+server (cookbot, sync) without the AGPL's network-use clause forcing us to
+open-source it. It does **not** affect your ability to use, modify, or
+redistribute your own contribution under the AGPL.
+
+If this is unacceptable for your contribution, please say so in the PR and we
+can discuss whether the change can be accepted under different terms.

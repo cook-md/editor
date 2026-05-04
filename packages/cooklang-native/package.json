@@ -13,7 +13,7 @@
     "name": "cooklang-native",
     "triples": {}
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception",
   "scripts": {
     "build": "napi build --release --platform",
     "build:debug": "napi build --platform"

@@ -15,23 +15,68 @@ recipe markup language.
 
 ## License
 
-Cook Editor, like Eclipse Theia, is distributed under the terms of the
-Eclipse Public License v. 2.0 (EPL-2.0) with secondary licensing under
-GPL-2.0-only with Classpath-exception-2.0.
+Cook Editor combines two distinct bodies of code under different licenses:
+
+**Eclipse Theia framework code** (most files under `packages/`,
+`dev-packages/`, and `app/` that are not part of the `cooklang-*` packages)
+is distributed under the upstream Theia license:
 
 * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 * EPL-2.0: <https://www.eclipse.org/legal/epl-2.0>
 * GPL-2.0 w/ Classpath exception: <https://www.gnu.org/software/classpath/license.html>
 
+**Cook Editor's own code** (the `cooklang`, `cooklang-account`,
+`cooklang-ai`, `cooklang-branding`, and `cooklang-native` packages) is
+distributed under the GNU Affero General Public License version 3, with a
+narrow linking exception that permits combination with Eclipse Theia:
+
+* SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception
+* AGPL-3.0: <https://www.gnu.org/licenses/agpl-3.0> (full text in `LICENSE-AGPL`)
+
+Files copied from upstream contributors retain their original licenses, as
+identified by each file's SPDX header. Notable cases include:
+
+* `packages/cooklang-ai/src/browser/file-tools/` (from EclipseSource GmbH):
+  EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
+* Several files under `packages/ai-chat/` (from EclipseSource GmbH):
+  MIT (see `LICENSE-MIT.txt`)
+
+### cooklang-theia-linking-exception
+
+The following exception applies to all Cook Editor code licensed
+AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception:
+
+> Additional permission under section 7 of the GNU Affero General Public
+> License, version 3:
+>
+> As a special exception, you have permission to link this software with
+> the Eclipse Theia framework (licensed under EPL-2.0 or GPL-2.0-only WITH
+> Classpath-exception-2.0) and distribute the combined work, even though
+> the licenses of Theia and this software would otherwise be incompatible.
+>
+> This exception applies only to the Eclipse Theia framework
+> (github.com/eclipse-theia/theia and packages published under the @theia/
+> npm scope). It does not extend to other software.
+>
+> If you modify this software, you may extend this exception to your
+> version, but you are not obligated to do so. If you do not wish to do
+> so, delete this exception statement from your version.
+
+A standalone copy of this text lives at `LICENSES/cooklang-theia-linking-exception.txt`.
+
 ## Written Offer for Source Code
 
 For a period of three (3) years from the date you received this binary,
 Cooklang will provide, upon written request, a complete machine-readable
-copy of the corresponding source code for the EPL-2.0 / GPL-2.0-covered
-portions of Cook Editor on a medium customarily used for software
-interchange, for no more than the cost of performing this distribution.
+copy of the corresponding source code on a medium customarily used for
+software interchange, for no more than the cost of performing this
+distribution. This offer covers both the EPL-2.0 / GPL-2.0-covered
+portions and the AGPL-3.0-covered portions of Cook Editor.
 
-Requests should be sent to:
+The complete corresponding source is also published continuously at:
+<https://github.com/cook-md/editor>
+
+Written requests should be sent to:
 
 * Email: <alexey@cooklang.org>
 * Subject line: "Cook Editor source code request"

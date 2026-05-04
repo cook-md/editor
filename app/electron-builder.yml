@@ -37,6 +37,10 @@ extraResources:
     to: licenses/LICENSE-EPL
   - from: ../LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION
     to: licenses/LICENSE-GPL-2.0-ONLY-CLASSPATH-EXCEPTION
+  - from: ../LICENSE-AGPL
+    to: licenses/LICENSE-AGPL
+  - from: ../LICENSES/cooklang-theia-linking-exception.txt
+    to: licenses/cooklang-theia-linking-exception.txt
   - from: ../LICENSE-MIT.txt
     to: licenses/LICENSE-MIT.txt
   - from: ../LICENSE-vscode.txt

@@ -16,7 +16,7 @@
     }
   ],
   "keywords": ["theia-extension"],
-  "license": "MIT",
+  "license": "AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception",
   "files": ["lib", "src"],
   "scripts": {
     "build": "theiaext build",
