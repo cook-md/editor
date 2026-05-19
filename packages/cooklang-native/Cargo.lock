@@ -453,9 +453,9 @@ dependencies = [
 
 [[package]]
 name = "cooklang-sync-client"
-version = "0.4.11"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee272c7198268a3354d1b3bde14300df51432652cacf2f2582cca63d0102ff64"
+checksum = "091a9790342274289a9a9db9a6441488a364323a31312ef040e925a80095e9cc"
 dependencies = [
  "async-stream",
  "base64",
