@@ -1,0 +1,112 @@
+name: PR Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # cooklang-language-server is referenced from packages/cooklang-native/Cargo.toml
+      # as a sibling path. Place it next to the editor checkout.
+      - name: Clone cooklang-language-server
+        run: |
+          git clone --depth 1 https://github.com/cooklang/cooklang-language-server.git \
+            "${{ github.workspace }}/../cooklang-language-server"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/cooklang-native/target
+          key: ${{ runner.os }}-host-cargo-${{ hashFiles('packages/cooklang-native/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-host-cargo-
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            dev-packages/*/node_modules
+            app/node_modules
+            packages/*/shared
+            dev-packages/ffmpeg/build
+          key: ${{ runner.os }}-host-nm-v3-${{ hashFiles('package-lock.json', 'lerna.json') }}
+          restore-keys: |
+            ${{ runner.os }}-host-nm-v3-
+
+      - name: Install Linux native build deps
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # See release.yml for why this is needed on cache hit.
+      - name: Regenerate Theia re-exports on cache hit
+        if: steps.node-modules-cache.outputs.cache-hit == 'true'
+        run: npx lerna run afterInstall
+
+      - name: Build native addon
+        working-directory: packages/cooklang-native
+        run: npm run build
+
+      - name: Compile TypeScript
+        run: npm run compile
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Bundle Electron app
+        working-directory: app
+        run: npm run bundle
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # Same frontend-module guard as release.yml — catches silent feature
+      # drops in the generated index before they ship.
+      - name: Verify required frontend modules are registered
+        working-directory: app
+        run: |
+          INDEX=src-gen/frontend/index.js
+          REQUIRED=(
+            '@theia/cooklang/lib/browser/cooklang-frontend-module'
+            '@theia/cooklang/lib/electron-browser/cooklang-electron-browser-module'
+            '@theia/cooklang-account/lib/browser/cooklang-account-frontend-module'
+            '@theia/cooklang-ai/lib/browser/cooklang-ai-frontend-module'
+            '@theia/cooklang-branding/lib/browser/cooklang-branding-frontend-module'
+          )
+          missing=0
+          for m in "${REQUIRED[@]}"; do
+            if ! grep -qF "$m" "$INDEX"; then
+              echo "::error::Missing frontend module: $m"
+              missing=1
+            fi
+          done
+          if [ $missing -ne 0 ]; then
+            echo "::error::$INDEX is missing required frontend modules — check packages/*/package.json theiaExtensions entries"
+            exit 1
+          fi
+          echo "All required frontend modules are registered."
