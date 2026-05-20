@@ -74,7 +74,8 @@
   },
   "scripts": {
     "build": "theiaext build && npm run -s bundle",
-    "bundle": "npm run rebuild && theia build --mode development",
+    "bundle": "npm run rebuild && theia build --mode development && npm run -s check:bundle",
+    "check:bundle": "node scripts/check-bundle.js",
     "clean": "theiaext clean",
     "deploy": "electron-builder --publish always",
     "package": "electron-builder --publish never",
