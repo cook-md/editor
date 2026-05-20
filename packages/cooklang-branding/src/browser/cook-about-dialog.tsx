@@ -11,7 +11,7 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-import * as React from 'react';
+import * as React from '@theia/core/shared/react';
 import { injectable } from '@theia/core/shared/inversify';
 import { AboutDialog } from '@theia/core/lib/browser/about-dialog';
 

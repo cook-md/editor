@@ -1,9 +1,25 @@
 // *****************************************************************************
-// Stub type definitions for types previously imported from deleted packages.
-// These minimal stubs allow plugin-ext to compile without the actual packages.
+// Copyright (C) 2024-2026 cook.md and contributors
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0.
+//
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License v. 2.0 are satisfied: GNU General Public License, version 2
+// with the GNU Classpath Exception which is available at
+// https://www.gnu.org/software/classpath/license.html.
+//
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// Stub type definitions for types previously imported from deleted packages.
+// These minimal stubs allow plugin-ext to compile without the actual packages.
+// Top-level re-exports intentionally shadow the same names in `notebookCommon`
+// because both forms are used by consumers — that's why no-shadow is disabled.
+
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-shadow */
 
 // --- @theia/debug stubs ---
 

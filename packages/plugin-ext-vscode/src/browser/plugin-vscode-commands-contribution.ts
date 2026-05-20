@@ -838,7 +838,6 @@ export class PluginVscodeCommandsContribution implements CommandContribution {
             }
         });
 
-
         // Temporary workaround: opens a single diff editor for the revealed resource.
         // TODO: GH-16280 implement a proper MultiDiffEditor widget.
         commands.registerCommand({ id: '_workbench.openMultiDiffEditor' }, {
