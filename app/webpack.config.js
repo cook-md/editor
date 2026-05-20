@@ -21,8 +21,21 @@ configs[0].module.rules.push({
 // Exclude NAPI-RS native addon from webpack bundling.
 // The NAPI-RS index.js uses __dirname + existsSync to locate .node binaries,
 // which breaks when processed by webpack. Let Node.js resolve it at runtime.
+//
+// Externalize gRPC packages because protobufjs uses dynamic require('fs')
+// which webpack rewrites to an empty context, making util.fs null and breaking
+// protoLoader.loadSync at runtime ("Cannot read properties of null (reading 'readFileSync')").
+// Clean lib/backend/ between builds so stale chunks (e.g. from before
+// externals were added) don't linger and ship inside the .dmg.
+nodeConfig.config.output = Object.assign({}, nodeConfig.config.output, {
+    clean: true
+});
+
 nodeConfig.config.externals = Object.assign({}, nodeConfig.config.externals, {
-    '@theia/cooklang-native': 'commonjs @theia/cooklang-native'
+    '@theia/cooklang-native': 'commonjs @theia/cooklang-native',
+    '@grpc/grpc-js': 'commonjs @grpc/grpc-js',
+    '@grpc/proto-loader': 'commonjs @grpc/proto-loader',
+    'protobufjs': 'commonjs protobufjs'
 });
 
 // Copy the cookbot gRPC proto file to where the bundled backend expects it.

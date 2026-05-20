@@ -41,11 +41,7 @@ export class CookbotGrpcClient {
 
     @postConstruct()
     protected init(): void {
-        try {
-            this.connect();
-        } catch (err) {
-            console.warn('CookbotGrpcClient: failed to connect on startup, will retry on first use:', (err as Error).message);
-        }
+        this.connect();
     }
 
     protected ensureConnected(): void {
