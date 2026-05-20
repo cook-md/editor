@@ -199,20 +199,25 @@ export class ReplaceContentInFileFunctionHelper {
         };
 
         const replacementSentence = supportMultipleReplace
-            ? 'By default, a single occurrence of each old content in the tuples is expected to be replaced. If the optional \'multiple\' flag is set to true, all occurrences will be replaced. In either case, if the number of occurrences in the file does not match the expectation the function will return an error. In that case try a different approach.'
-            : 'A single occurrence of each old content in the tuples is expected to be replaced. If the number of occurrences in the file does not match the expectation, the function will return an error. In that case try a different approach.';
+            ? 'By default, a single occurrence of each old content in the tuples is expected to be replaced. '
+              + 'If the optional \'multiple\' flag is set to true, all occurrences will be replaced. '
+              + 'In either case, if the number of occurrences in the file does not match the expectation '
+              + 'the function will return an error. In that case try a different approach.'
+            : 'A single occurrence of each old content in the tuples is expected to be replaced. '
+              + 'If the number of occurrences in the file does not match the expectation, '
+              + 'the function will return an error. In that case try a different approach.';
 
         const replacementDescription =
-            `Propose to replace sections of content in an existing file by providing a list of tuples with old content to be matched and replaced. ` +
+            'Propose to replace sections of content in an existing file by providing a list of tuples with old content to be matched and replaced. ' +
             `${replacementSentence} For deletions, use an empty new content in the tuple. ` +
-            `Make sure you use the same line endings and whitespace as in the original file content. ` +
-            `The proposed changes will be shown to the user for review before being applied. ` +
-            `Multiple calls for the same file will merge replacements unless the reset parameter is set to true. ` +
-            `Use the reset parameter to clear previous changes and start fresh if needed.\n\n` +
-            `IMPORTANT: Each oldContent must match exactly (including whitespace and indentation). ` +
-            `If replacements fail with "Expected 1 occurrence but found 0": re-read the file, the content may have changed or whitespace differs. ` +
-            `If replacements fail with "found 2+": include more surrounding context in oldContent to make it unique. ` +
-            `Always use getFileContent to read the current file state before making replacements.`;
+            'Make sure you use the same line endings and whitespace as in the original file content. ' +
+            'The proposed changes will be shown to the user for review before being applied. ' +
+            'Multiple calls for the same file will merge replacements unless the reset parameter is set to true. ' +
+            'Use the reset parameter to clear previous changes and start fresh if needed.\n\n' +
+            'IMPORTANT: Each oldContent must match exactly (including whitespace and indentation). ' +
+            'If replacements fail with "Expected 1 occurrence but found 0": re-read the file, the content may have changed or whitespace differs. ' +
+            'If replacements fail with "found 2+": include more surrounding context in oldContent to make it unique. ' +
+            'Always use getFileContent to read the current file state before making replacements.';
 
         return {
             description: replacementDescription,

@@ -141,7 +141,7 @@ export class CookbotLanguageModel implements LanguageModel {
                         }
                     }
                 } catch (error: unknown) {
-                    if (error instanceof Error && 'code' in error && (error as any).code === 16) {
+                    if (error instanceof Error && 'code' in error && (error as { code?: number }).code === 16) {
                         that.initPromise = undefined;
                     }
                     throw error;

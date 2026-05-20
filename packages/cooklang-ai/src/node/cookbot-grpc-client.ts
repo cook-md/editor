@@ -11,6 +11,11 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+// `any` and `null` are unavoidable here: gRPC service objects are loaded
+// dynamically from a .proto file (no generated TypeScript types), and
+// `grpc.ServiceError | null` is the upstream callback signature from @grpc/grpc-js.
+/* eslint-disable @typescript-eslint/no-explicit-any, no-null/no-null */
+
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';

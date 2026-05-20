@@ -124,7 +124,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
         if (type === 'login') {
             message.textContent = nls.localize('theia/ai-chat/gate/loginMessage', 'Log in to your Cook.md account to use the AI recipe assistant.');
-            button.textContent = nls.localize('theia/ai-chat/gate/loginButton', 'Log In');
+            button.textContent = nls.localizeByDefault('Log In');
             button.addEventListener('click', () => {
                 this.commandService.executeCommand(CookmdLoginCommand.id);
             });
