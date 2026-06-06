@@ -81,6 +81,36 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   # Submit to Apple's notarytool after signing; uses APPLE_* env vars.
   notarize: true
+  # Custom file types for .cook / .menu. Conformance to public.plain-text lets
+  # macOS Quick Look render the source on spacebar with no native extension.
+  # The CFBundleDocumentTypes entries register Cook Editor as an Editor for them.
+  extendInfo:
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: Cooklang Recipe
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Owner
+        LSItemContentTypes:
+          - md.cook.editor.cook
+      - CFBundleTypeName: Cooklang Menu
+        CFBundleTypeRole: Editor
+        LSHandlerRank: Owner
+        LSItemContentTypes:
+          - md.cook.editor.menu
+    UTExportedTypeDeclarations:
+      - UTTypeIdentifier: md.cook.editor.cook
+        UTTypeDescription: Cooklang Recipe
+        UTTypeConformsTo:
+          - public.plain-text
+        UTTypeTagSpecification:
+          public.filename-extension:
+            - cook
+      - UTTypeIdentifier: md.cook.editor.menu
+        UTTypeDescription: Cooklang Menu
+        UTTypeConformsTo:
+          - public.plain-text
+        UTTypeTagSpecification:
+          public.filename-extension:
+            - menu
 
 dmg:
   sign: true
