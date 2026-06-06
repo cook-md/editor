@@ -170,4 +170,29 @@ describe('GetWorkspaceDirectoryStructure', () => {
         const out = await run({}, '{}', { noWorkspace: true });
         expect(out).to.equal('Error: No workspace open');
     });
+
+    it('includes dotfile directories when includeHidden is true', async () => {
+        const out = await run({
+            '.github': {},
+            src: {},
+        }, '{"includeHidden": true}');
+        expect(out).to.equal([
+            '.github/',
+            'src/',
+        ].join('\n'));
+    });
+
+    it('still hides dotfiles when includeHidden is false', async () => {
+        const out = await run({
+            '.github': {},
+            src: {},
+        }, '{"includeHidden": false}');
+        expect(out).to.equal('src/');
+    });
+
+    it('defaults to hiding dotfiles for malformed or non-boolean args', async () => {
+        const spec: TreeSpec = { '.github': {}, src: {} };
+        expect(await run(spec, 'not json')).to.equal('src/');
+        expect(await run(spec, '{"includeHidden": "true"}')).to.equal('src/');
+    });
 });

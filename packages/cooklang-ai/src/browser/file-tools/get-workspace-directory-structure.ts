@@ -39,17 +39,32 @@ export class GetWorkspaceDirectoryStructure implements ToolProvider {
             description:
                 'Retrieves the directory tree of the workspace as a compact indented-tree string ' +
                 '(2-space indentation per level, directory names suffixed with "/", one per line, sorted alphabetically). ' +
-                'Lists only directories (no files), excluding hidden (dotfile) directories such as .git and .vscode, ' +
-                'as well as common non-essential directories (node_modules, etc.). ' +
+                'Lists only directories (no files), excluding common non-essential directories (node_modules, etc.). ' +
+                'Hidden (dotfile) directories such as .git and .vscode are excluded unless includeHidden is set to true. ' +
                 'Useful for getting a high-level overview of project organization. ' +
                 'For listing files within a specific directory, use getWorkspaceFileList instead. ' +
                 'For finding specific files, use findFilesByPattern.',
             parameters: {
                 type: 'object',
-                properties: {},
+                properties: {
+                    includeHidden: {
+                        type: 'boolean',
+                        description:
+                            'Include hidden (dotfile) directories such as .git and .vscode. Defaults to false.',
+                    },
+                },
             },
-            handler: (_, ctx) => this.getDirectoryStructure(false, ctx?.cancellationToken),
+            handler: (argString, ctx) => this.getDirectoryStructure(this.parseIncludeHidden(argString), ctx?.cancellationToken),
         };
+    }
+
+    protected parseIncludeHidden(argString: string): boolean {
+        try {
+            const parsed = JSON.parse(argString);
+            return parsed?.includeHidden === true;
+        } catch {
+            return false;
+        }
     }
 
     protected async getDirectoryStructure(includeHidden: boolean, cancellationToken?: CancellationToken): Promise<string> {
