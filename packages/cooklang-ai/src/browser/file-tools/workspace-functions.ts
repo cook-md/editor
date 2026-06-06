@@ -25,76 +25,9 @@ import { WorkspaceFunctionScope } from './workspace-function-scope';
 import {
     FILE_CONTENT_FUNCTION_ID,
     GET_WORKSPACE_FILE_LIST_FUNCTION_ID,
-    GET_WORKSPACE_DIRECTORY_STRUCTURE_FUNCTION_ID,
     FIND_FILES_BY_PATTERN_FUNCTION_ID,
 } from './function-ids';
 import { CONSIDER_GITIGNORE_PREF, FILE_CONTENT_MAX_SIZE_KB_PREF, USER_EXCLUDE_PATTERN_PREF } from './workspace-preferences';
-
-// ── GetWorkspaceDirectoryStructure ──────────────────────────────────────
-
-@injectable()
-export class GetWorkspaceDirectoryStructure implements ToolProvider {
-    static ID = GET_WORKSPACE_DIRECTORY_STRUCTURE_FUNCTION_ID;
-
-    @inject(FileService)
-    protected readonly fileService: FileService;
-
-    @inject(WorkspaceFunctionScope)
-    protected readonly workspaceScope: WorkspaceFunctionScope;
-
-    getTool(): ToolRequest {
-        return {
-            id: GetWorkspaceDirectoryStructure.ID,
-            name: GetWorkspaceDirectoryStructure.ID,
-            displayName: 'Get Directory Structure',
-            description:
-                'Retrieves the complete directory tree structure of the workspace as a nested JSON object. ' +
-                'Lists only directories (no files), excluding common non-essential directories (node_modules, hidden files, etc.). ' +
-                'Useful for getting a high-level overview of project organization. ' +
-                'For listing files within a specific directory, use getWorkspaceFileList instead. ' +
-                'For finding specific files, use findFilesByPattern.',
-            parameters: {
-                type: 'object',
-                properties: {},
-            },
-            handler: (_, ctx) => this.getDirectoryStructure(ctx?.cancellationToken),
-        };
-    }
-
-    protected async getDirectoryStructure(cancellationToken?: CancellationToken): Promise<Record<string, unknown> | string> {
-        if (cancellationToken?.isCancellationRequested) {
-            return { error: 'Operation cancelled by user' };
-        }
-        let workspaceRoot: URI;
-        try {
-            workspaceRoot = await this.workspaceScope.getWorkspaceRoot();
-        } catch (error) {
-            return { error: (error as Error).message };
-        }
-        return this.buildDirectoryStructure(workspaceRoot, cancellationToken);
-    }
-
-    protected async buildDirectoryStructure(uri: URI, cancellationToken?: CancellationToken): Promise<Record<string, unknown>> {
-        if (cancellationToken?.isCancellationRequested) {
-            return { error: 'Operation cancelled by user' };
-        }
-        const stat = await this.fileService.resolve(uri);
-        const result: Record<string, unknown> = {};
-        if (stat && stat.isDirectory && stat.children) {
-            for (const child of stat.children) {
-                if (cancellationToken?.isCancellationRequested) {
-                    return { error: 'Operation cancelled by user' };
-                }
-                if (!child.isDirectory || (await this.workspaceScope.shouldExclude(child))) {
-                    continue;
-                }
-                const dirName = child.resource.path.base;
-                result[dirName] = await this.buildDirectoryStructure(child.resource, cancellationToken);
-            }
-        }
-        return result;
-    }
-}
 
 // ── FileContentFunction ─────────────────────────────────────────────────
 

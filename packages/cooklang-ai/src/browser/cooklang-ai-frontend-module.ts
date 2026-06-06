@@ -23,8 +23,8 @@ import {
 } from './cookbot-server-tools';
 import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
 import { WorkspacePreferencesSchema } from './file-tools/workspace-preferences';
+import { GetWorkspaceDirectoryStructure } from './file-tools/get-workspace-directory-structure';
 import {
-    GetWorkspaceDirectoryStructure,
     FileContentFunction,
     GetWorkspaceFileList,
     FindFilesByPattern,
