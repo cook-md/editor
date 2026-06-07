@@ -326,6 +326,19 @@ test -f /usr/share/mime/packages/cooklang.xml && echo "mime xml installed"
 Expected: `/usr/share/mime/packages/cooklang.xml` exists; `gio mime text/x-cooklang`
 reports Cook Editor as the default handler.
 
+- [ ] **Step 4b: Linux — verify the app is on PATH and launches**
+
+The deb maintainer scripts override electron-builder's defaults, so confirm the default
+behavior they incorporate still works (PATH symlink, chrome-sandbox, AppArmor):
+
+```bash
+which cook-editor   # or the executable name from: dpkg -L <pkg> | grep /usr/bin
+cook-editor &       # should launch the app window, then close it
+```
+Expected: `which` prints `/usr/bin/cook-editor` (the `update-alternatives`/symlink from
+the after-install script), and launching from the terminal opens the app without a
+chrome-sandbox or AppArmor error.
+
 - [ ] **Step 5: Linux — verify content-type and text inheritance**
 
 ```bash
