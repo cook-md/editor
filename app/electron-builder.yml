@@ -54,6 +54,8 @@ extraResources:
     to: licenses/LICENSE-vscode.txt
   - from: ../NOTICE.md
     to: licenses/NOTICE.md
+  - from: resources/cooklang-mime.xml
+    to: cooklang-mime.xml
 
 publish:
   provider: github
@@ -172,5 +174,7 @@ deb:
     - libnotify4
     - libxtst6
     - libnss3
+  afterInstall: scripts/linux/deb-after-install.sh
+  afterRemove: scripts/linux/deb-after-remove.sh
 
 afterPack: ./scripts/after-pack.js

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-cooklang">
+    <comment>Cooklang Recipe</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.cook"/>
+  </mime-type>
+  <mime-type type="text/x-cooklang-menu">
+    <comment>Cooklang Menu</comment>
+    <sub-class-of type="text/plain"/>
+    <glob pattern="*.menu"/>
+  </mime-type>
+</mime-info>
