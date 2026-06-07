@@ -122,6 +122,15 @@ win:
   target:
     - nsis
     - zip
+  fileAssociations:
+    - ext: cook
+      name: Cooklang Recipe
+      description: Cooklang Recipe
+      icon: resources/icon.ico
+    - ext: menu
+      name: Cooklang Menu
+      description: Cooklang Menu
+      icon: resources/icon.ico
 
 nsis:
   oneClick: false
@@ -144,6 +153,15 @@ linux:
     - AppImage
     - deb
     - tar.gz
+  fileAssociations:
+    - ext: cook
+      name: Cooklang Recipe
+      description: Cooklang Recipe
+      mimeType: text/x-cooklang
+    - ext: menu
+      name: Cooklang Menu
+      description: Cooklang Menu
+      mimeType: text/x-cooklang-menu
 
 appImage:
   artifactName: Cook-Editor.${ext}
