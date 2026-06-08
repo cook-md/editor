@@ -131,14 +131,20 @@ types into a flat, testable struct the view renders — this is the unit-test se
   `CookQuickLook.appex` into `<App>.app/Contents/PlugIns/` (create the dir). Because this
   runs **before** electron-builder's mac signing step, the nested appex is signed as part
   of the bundle and then notarized with it.
-- **Entitlements:** the appex needs its own entitlements (`com.apple.security.app-sandbox`
-  + read-only file access for the previewed file) and hardened runtime. Add
-  `build/entitlements.quicklook.plist`; ensure electron-builder/@electron/osx-sign signs
-  the nested `.appex` with hardened runtime (it signs nested code by default; verify the
-  appex is included and not skipped).
-- **CI:** the existing macOS signing/notarization workflow gains an Xcode build step
-  (build component A's local xcframework if not cached, then the appex) prior to
-  `electron-builder`. No new runner — CI already runs on macOS with Apple credentials.
+- **Signing (implemented decision):** the appex is embedded **unsigned** and signed by
+  **electron-builder's** existing mac signing walk (`@electron/osx-sign`), which signs
+  nested code under `Contents/PlugIns/` with hardened runtime and the app's inherited
+  entitlements (`mac.entitlementsInherit`). We deliberately do **not** pre-sign the appex
+  in a separate keychain, and there is **no `signIgnore`** and **no dedicated
+  `entitlements.quicklook.plist`**. The appex is therefore **not app-sandboxed** — acceptable
+  for Developer ID / notarized (non–Mac App Store) distribution, where sandbox is not
+  required for a Quick Look extension to load. (The originally-approved design assumed a
+  pre-signed, sandboxed appex; this was simplified during implementation to reuse the
+  existing `CSC_LINK` signing flow with no extra CI keychain plumbing.)
+- **CI:** `.github/workflows/release.yml` gains a macOS-only step
+  `./macos/scripts/build-quicklook.sh` immediately before `Package & Publish`, so the
+  freshly-built unsigned appex is on disk when `after-pack.js` embeds it and electron-builder
+  signs the whole bundle. No new runner — CI already runs on macOS with Apple credentials.
 
 ## Data flow
 
@@ -168,13 +174,16 @@ Finder spacebar (.cook/.menu)
 
 ## Risk callouts
 
-- **Signing the nested `.appex` (highest risk).** It must be signed with hardened runtime
-  + its own sandbox entitlements and survive notarization *inside* the Electron `.app`.
-  Primary verification: `codesign --verify --deep --strict` on the packaged app and a
-  successful notarization + staple. This is where most implementation/verification effort
-  goes.
-- **`.menu` fidelity** is bounded by the parser having no menu model; pathological menus
-  fall back to text. Acceptable for v1.
+- **Signing the nested `.appex` (highest risk).** electron-builder must actually discover
+  and sign the appex under `Contents/PlugIns/` with hardened runtime and have it survive
+  notarization *inside* the Electron `.app`, and the signed appex must load in the Quick
+  Look host process. Primary verification (Part B, on a real signed CI build):
+  `codesign --verify --deep --strict` on the packaged app, successful notarization + staple,
+  and a live Finder/`qlmanage` render. This is the one part that cannot be validated in the
+  dev environment (unsigned appex won't register with PluginKit on macOS 13).
+- **`.menu` fidelity** — partly relieved in practice: the parser DOES resolve `@./recipe{}`
+  references (sets `Ingredient.reference`), so menu references render. Remaining bound is
+  the absence of a dedicated menu model; pathological menus still degrade gracefully.
 - **LaunchServices cache:** the appex may not register until the bundle is registered
   (usually automatic after install; otherwise `lsregister -f <App>.app` or re-login,
   and `qlmanage -r` to reset Quick Look). Document for testers; not a code issue.
@@ -200,13 +209,16 @@ Finder spacebar (.cook/.menu)
 
 | Path | Change |
 | --- | --- |
-| `../cooklang-rs/bindings/build-swift.sh`, `../cooklang-rs/Package.swift` | Add macOS targets + `.macOS` platform; release multi-platform xcframework. |
-| `macos/QuickLookExtension/` (new) | Xcode project: `PreviewViewController`, `RecipePreviewView`, view-model, Info.plist, entitlements. |
-| `macos/scripts/build-quicklook.sh` (new) | `xcodebuild` the appex. |
-| `macos/scripts/build-cooklang-macos-xcframework.sh` (new) | Build/vendor local macOS `CooklangParserFFI.xcframework`. |
-| `build/entitlements.quicklook.plist` (new) | Sandbox + read-only file entitlements for the appex. |
-| `app/scripts/after-pack.js` | Embed `CookQuickLook.appex` into `Contents/PlugIns/` on macOS. |
-| CI macOS workflow | Add Xcode build step before `electron-builder`. |
+| `../cooklang-rs/bindings/build-swift.sh`, `../cooklang-rs/.github/workflows/release.yml`, `Package.swift` | Add macOS targets/slices to BOTH the local build script and the inline release-CI xcframework build; published as `v0.18.7`. |
+| `macos/QuickLookExtension/` (new) | XcodeGen project (`project.yml`): `PreviewViewController`, `RecipePreviewView`, `RecipePreviewModel`, `Formatting`, `Info.plist`, host-less unit-test target + fixtures. |
+| `macos/scripts/build-quicklook.sh` (new) | Self-acquires XcodeGen (prebuilt; no brew dep), `xcodebuild`s a universal unsigned appex. |
+| `app/scripts/after-pack.js` | Embed `CookQuickLook.appex` into `Contents/PlugIns/` on macOS (sourced via `context.packager.projectDir`). |
+| `app/electron-builder.yml` | (No `signIgnore`, no separate entitlements) — electron-builder signs the embedded appex with the app's inherited entitlements. |
+| `.github/workflows/release.yml` | macOS-only `build-quicklook.sh` step before `Package & Publish`. |
+
+> The consumed parser is the **published** `cooklang-rs` v0.18.7 xcframework via SPM
+> (`exactVersion: 0.18.7`); the once-considered local-vendored xcframework script was not
+> needed. No `entitlements.quicklook.plist` (the appex is not separately sandboxed).
 
 No changes to the existing UTIs / `extendInfo` (they already exist and are reused). No new
 entitlements on the main app. Windows/Linux builds unaffected.

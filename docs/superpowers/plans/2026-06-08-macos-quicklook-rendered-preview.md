@@ -10,6 +10,22 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-08-macos-quicklook-rendered-preview-design.md`
 
+> **Implementation note (deviations from the steps below, as built):**
+> - **Signing simplified.** The appex is embedded **unsigned** and signed by **electron-builder**
+>   (with the app's inherited entitlements, hardened runtime). Task 2's `entitlements.quicklook.plist`,
+>   Task 7's `signIgnore`, and any pre-sign path are **removed** — the appex is **not app-sandboxed**
+>   (fine for Developer ID / notarized distribution). Task 8's CI step is just
+>   `./macos/scripts/build-quicklook.sh` (unsigned) before `Package & Publish`.
+> - **Parser via published release.** Consumed from `cooklang-rs` **v0.18.7** (SPM `exactVersion`);
+>   the local-vendored xcframework (`build-cooklang-macos-xcframework.sh`) was not needed. Task 1 also
+>   had to patch `cooklang-rs/.github/workflows/release.yml` (its inline xcframework build ignores
+>   `build-swift.sh`).
+> - **Test wiring.** Unit tests run as a **host-less** macOS test bundle that compiles the
+>   units-under-test directly (no app-extension TEST_HOST; the `CookPreviewCore` fallback was unneeded).
+> - **XcodeGen quirks.** Use `INFOPLIST_FILE` (not an `info:` block, which regenerates/overwrites the
+>   plist); `brew install xcodegen` needs Xcode 15.3, so `build-quicklook.sh` self-acquires a prebuilt binary.
+> - **Part B pending:** live signed/notarized Finder render is verified on a real release CI run.
+
 **Reference (read-only, do not modify):** the sibling iOS app `../mobile-app-ios` shows how `CooklangParser` is consumed; the parser sources are at `../mobile-app-ios/Packages/RecipeClipping/.build/checkouts/cooklang-rs/swift/Sources/CooklangParser/CooklangParser.swift`.
 
 ### Parser model reference (verified from CooklangParser.swift)
