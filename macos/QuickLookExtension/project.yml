@@ -34,7 +34,12 @@ targets:
     platform: macOS
     sources:
       - path: Tests
+        excludes:
+          - Fixtures
       - path: Sources/Formatting.swift
+      - path: Sources/RecipePreviewModel.swift
+      - path: Tests/Fixtures
+        buildPhase: resources
     dependencies:
       - package: CooklangParser
         product: CooklangParser
