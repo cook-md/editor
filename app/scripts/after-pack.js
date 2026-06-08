@@ -23,6 +23,29 @@ exports.default = async function afterPack(context) {
         removeFilesRecursively(libDir, f => f.endsWith('.js.map'));
     }
 
+    // macOS only: embed the Quick Look preview extension into Contents/PlugIns
+    // so electron-builder's mac signing step seals it and notarization covers it.
+    // NOTE: this electron-builder version's AfterPackContext has no `appDir`; the
+    // packager's `projectDir` is the electron-builder project root (this `app/`
+    // directory), so `..` reaches the repo root where `macos/` lives.
+    if (context.electronPlatformName === 'darwin') {
+        const projectDir = context.packager.projectDir;
+        const appexSrc = path.resolve(
+            projectDir, '..', 'macos', 'QuickLookExtension', 'build', 'CookQuickLook.appex'
+        );
+        if (fs.existsSync(appexSrc)) {
+            const appName = `${context.packager.appInfo.productFilename}.app`;
+            const plugins = path.join(context.appOutDir, appName, 'Contents', 'PlugIns');
+            fs.mkdirSync(plugins, { recursive: true });
+            const dest = path.join(plugins, 'CookQuickLook.appex');
+            fs.rmSync(dest, { recursive: true, force: true });
+            fs.cpSync(appexSrc, dest, { recursive: true });
+            console.log(`after-pack: embedded Quick Look appex at ${dest}`);
+        } else {
+            console.warn(`after-pack: CookQuickLook.appex not found at ${appexSrc}; skipping (run macos/scripts/build-quicklook.sh first)`);
+        }
+    }
+
     console.log('after-pack: cleanup complete');
 };
 
