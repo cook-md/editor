@@ -81,13 +81,6 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # The Quick Look appex is pre-signed by macos/scripts/build-quicklook.sh with
-  # hardened runtime + its own sandbox entitlements. electron-builder signs the
-  # outer .app which seals the nested appex; re-signing the appex here with the
-  # app's non-sandbox entitlements would break it, so it is excluded from signing.
-  # TODO(task8): verify signIgnore covers the nested appex on a signed build.
-  signIgnore:
-    - "Contents/PlugIns/CookQuickLook.appex"
   # Submit to Apple's notarytool after signing; uses APPLE_* env vars.
   notarize: true
   # Custom file types for .cook / .menu. Conformance to public.plain-text lets
