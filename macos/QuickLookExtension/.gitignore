@@ -1,0 +1,5 @@
+CookQuickLook.xcodeproj/
+*.xcframework/
+.build/
+DerivedData/
+build/
