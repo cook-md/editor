@@ -28,3 +28,16 @@ targets:
     dependencies:
       - package: CooklangParser
         product: CooklangParser
+
+  CookQuickLookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+      - path: Sources/Formatting.swift
+    dependencies:
+      - package: CooklangParser
+        product: CooklangParser
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
