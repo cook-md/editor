@@ -22,6 +22,8 @@ targets:
         PRODUCT_NAME: CookQuickLook
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Sources/Info.plist
+        # REQUIRED for PlugInKit to register the QL preview extension (sandbox).
+        CODE_SIGN_ENTITLEMENTS: ../../build/entitlements.quicklook.plist
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_VERSION: "5.9"
     dependencies:

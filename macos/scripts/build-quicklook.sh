@@ -3,7 +3,11 @@
 # Output: macos/QuickLookExtension/build/CookQuickLook.appex
 set -euo pipefail
 
-cd "$(dirname "$0")/../QuickLookExtension"
+# Resolve paths BEFORE cd-ing (so $0-relative lookups don't break afterwards).
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+cd "$SCRIPT_DIR/../QuickLookExtension"
 
 # --- Acquire xcodegen (prefer PATH; else pinned prebuilt binary; brew is unreliable on older Xcode) ---
 XCODEGEN_VERSION="2.43.0"
@@ -30,6 +34,12 @@ if [[ -z "${XCODEGEN:-}" || ! -x "$XCODEGEN" ]]; then
 fi
 
 "$XCODEGEN" generate
+
+# Match the appex version to the host app's (PlugInKit/LaunchServices reject an
+# extension whose CFBundleVersion differs from its containing app). Read it from
+# app/package.json; fall back to 1/1.0 for standalone local builds.
+APP_VERSION=$(node -p "require('$REPO_ROOT/app/package.json').version" 2>/dev/null || echo "1.0")
+VERSION_ARGS=("MARKETING_VERSION=${APP_VERSION}" "CURRENT_PROJECT_VERSION=${APP_VERSION}")
 
 DERIVED="build/DerivedData"
 SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO)
@@ -65,6 +75,7 @@ xcodebuild \
   -derivedDataPath "$DERIVED" \
   -destination 'generic/platform=macOS' \
   ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+  "${VERSION_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   build
 
@@ -96,5 +107,11 @@ if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
     echo "error: appex executable still has com.apple.security.get-task-allow (would fail notarization)" >&2
     exit 1
   fi
-  echo "Signature OK, no get-task-allow."
+  # PlugInKit silently refuses to register a NON-sandboxed Quick Look preview extension.
+  # This is the entitlement whose absence cost alpha.16–20; fail loudly if it's gone.
+  if ! codesign -d --entitlements :- "build/CookQuickLook.appex" 2>/dev/null | grep -q "com.apple.security.app-sandbox"; then
+    echo "error: appex is not sandboxed (missing com.apple.security.app-sandbox) — PluginKit will not register it" >&2
+    exit 1
+  fi
+  echo "Signature OK: sandboxed, no get-task-allow."
 fi
