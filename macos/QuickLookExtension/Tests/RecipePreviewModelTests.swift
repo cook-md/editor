@@ -11,19 +11,21 @@ final class RecipePreviewModelTests: XCTestCase {
         let source = try loadFixture("simple.cook")
         let model = RecipePreviewModel.from(source: source, fallbackTitle: "simple")
         XCTAssertEqual(model.title, "Pancakes")
-        XCTAssertEqual(model.servings, "4")
+        XCTAssertTrue(model.metadata.contains { $0.label == "Servings" && $0.value == "4" })
         XCTAssertTrue(model.tags.contains("breakfast"))
         XCTAssertTrue(model.ingredients.contains { $0.name == "flour" && $0.amount == "200 g" })
         XCTAssertTrue(model.cookware.contains("bowl"))
     }
 
-    func testStepsResolveIngredientSegments() throws {
+    func testStepsResolveIngredientSegmentsAndSummary() throws {
         let source = try loadFixture("simple.cook")
         let model = RecipePreviewModel.from(source: source, fallbackTitle: "simple")
         let firstStep = model.sections.first!.steps.first!
-        guard case .step(let segments) = firstStep else { return XCTFail("expected a step") }
+        guard case .step(let segments, let ingredients) = firstStep else { return XCTFail("expected a step") }
         XCTAssertTrue(segments.contains(.ingredient("flour")))
         XCTAssertTrue(segments.contains(.cookware("bowl")))
+        // The per-step ingredient summary carries the resolved amount.
+        XCTAssertTrue(ingredients.contains { $0.name == "flour" && $0.amount == "200 g" })
     }
 
     func testMenuReferenceFlagged() throws {

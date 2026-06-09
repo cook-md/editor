@@ -19,7 +19,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                 source: source,
                 fallbackTitle: url.deletingPathExtension().lastPathComponent
             )
-            host = NSHostingView(rootView: RecipePreviewView(model: model))
+            let isMenu = url.pathExtension.lowercased() == "menu"
+            host = NSHostingView(rootView: RecipePreviewView(model: model, isMenu: isMenu))
         }
         embed(host)
     }
