@@ -1,16 +1,30 @@
 import Foundation
 import CooklangParser
 
+/// One inline run of rendered step text.
 enum StepSegment: Equatable {
     case text(String)
     case ingredient(String)
     case cookware(String)
     case timer(String)
+    case recipeRef(String)
+}
+
+/// An ingredient referenced by a single step (for the per-step summary line).
+struct StepIngredient: Equatable {
+    let name: String
+    let amount: String?
 }
 
 enum StepModel: Equatable {
-    case step([StepSegment])
+    case step(segments: [StepSegment], ingredients: [StepIngredient])
     case note(String)
+}
+
+/// A "label: value" metadata pill (servings, time, and any custom keys).
+struct MetadataPill: Equatable {
+    let label: String
+    let value: String
 }
 
 struct IngredientLine: Equatable {
@@ -27,8 +41,7 @@ struct SectionModel: Equatable {
 struct RecipePreviewModel: Equatable {
     let title: String
     let description: String?
-    let servings: String?
-    let time: String?
+    let metadata: [MetadataPill]
     let tags: [String]
     let ingredients: [IngredientLine]
     let cookware: [String]
@@ -55,18 +68,32 @@ struct RecipePreviewModel: Equatable {
                 steps: section.blocks.map { block in
                     switch block {
                     case .stepBlock(let step):
-                        return .step(step.items.map { item in
+                        var segments: [StepSegment] = []
+                        var stepIngredients: [StepIngredient] = []
+                        for item in step.items {
                             switch item {
                             case .text(let value):
-                                return .text(value)
+                                segments.append(.text(value))
                             case .ingredientRef(let index):
-                                return .ingredient(name(at: index, in: ingredients) ?? "")
+                                if let ing = element(at: index, in: ingredients) {
+                                    if ing.reference != nil {
+                                        // A recipe reference (@./other{}) — link, not a quantified ingredient.
+                                        segments.append(.recipeRef(ing.name))
+                                    } else {
+                                        segments.append(.ingredient(ing.name))
+                                        stepIngredients.append(StepIngredient(
+                                            name: ing.name,
+                                            amount: ing.amount.flatMap(Formatting.amount)
+                                        ))
+                                    }
+                                }
                             case .cookwareRef(let index):
-                                return .cookware(cookwareName(at: index, in: cookware) ?? "")
+                                segments.append(.cookware(element(at: index, in: cookware)?.name ?? ""))
                             case .timerRef(let index):
-                                return .timer(timerLabel(at: index, in: timers) ?? "")
+                                segments.append(.timer(timerLabel(at: index, in: timers) ?? ""))
                             }
-                        })
+                        }
+                        return .step(segments: segments, ingredients: stepIngredients)
                     case .noteBlock(let note):
                         return .note(note.text)
                     }
@@ -77,8 +104,7 @@ struct RecipePreviewModel: Equatable {
         return RecipePreviewModel(
             title: metadataTitle(recipe: recipe) ?? fallbackTitle,
             description: metadataDescription(recipe: recipe),
-            servings: metadataServings(recipe: recipe).map(Formatting.servings),
-            time: metadataTime(recipe: recipe).map(Formatting.time),
+            metadata: metadataPills(recipe: recipe),
             tags: metadataTags(recipe: recipe) ?? [],
             ingredients: ingredientLines,
             cookware: cookware.map { $0.name },
@@ -86,13 +112,30 @@ struct RecipePreviewModel: Equatable {
         )
     }
 
-    private static func name(at index: UInt32, in list: [Ingredient]) -> String? {
-        let i = Int(index)
-        return list.indices.contains(i) ? list[i].name : nil
+    /// Servings + time + any custom metadata keys, as "label: value" pills (matches the editor).
+    private static func metadataPills(recipe: CooklangRecipe) -> [MetadataPill] {
+        var pills: [MetadataPill] = []
+        if let servings = metadataServings(recipe: recipe) {
+            pills.append(MetadataPill(label: "Servings", value: Formatting.servings(servings)))
+        }
+        if let time = metadataTime(recipe: recipe) {
+            pills.append(MetadataPill(label: "Time", value: Formatting.time(time)))
+        }
+        for key in metadataCustomKeys(recipe: recipe) {
+            if let value = metadataGet(recipe: recipe, key: key), !value.isEmpty {
+                pills.append(MetadataPill(label: key, value: value))
+            }
+        }
+        return pills
     }
-    private static func cookwareName(at index: UInt32, in list: [Cookware]) -> String? {
+
+    private static func element(at index: UInt32, in list: [Ingredient]) -> Ingredient? {
         let i = Int(index)
-        return list.indices.contains(i) ? list[i].name : nil
+        return list.indices.contains(i) ? list[i] : nil
+    }
+    private static func element(at index: UInt32, in list: [Cookware]) -> Cookware? {
+        let i = Int(index)
+        return list.indices.contains(i) ? list[i] : nil
     }
     private static func timerLabel(at index: UInt32, in list: [CooklangParser.Timer]) -> String? {
         let i = Int(index)
