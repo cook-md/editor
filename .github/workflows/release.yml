@@ -228,6 +228,24 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      # Guard against silently shipping a macOS build without the Quick Look
+      # extension (regression: after-pack early-returned before the embed block,
+      # so no build contained Contents/PlugIns/CookQuickLook.appex).
+      - name: Verify Quick Look extension embedded (macOS)
+        if: runner.os == 'macOS'
+        working-directory: app
+        shell: bash
+        run: |
+          APP=$(find dist -maxdepth 2 -name 'Cook Editor.app' -type d | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::packaged 'Cook Editor.app' not found under app/dist"; exit 1
+          fi
+          APPEX="$APP/Contents/PlugIns/CookQuickLook.appex"
+          if [ ! -x "$APPEX/Contents/MacOS/CookQuickLook" ]; then
+            echo "::error::Quick Look extension missing at $APPEX — after-pack embed did not run"; exit 1
+          fi
+          echo "Quick Look extension embedded: $APPEX"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
