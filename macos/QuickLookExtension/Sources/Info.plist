@@ -19,10 +19,13 @@
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
+    <!-- Must match the host app's version (build-quicklook.sh passes the app version
+         via MARKETING_VERSION / CURRENT_PROJECT_VERSION). A mismatched extension
+         version is a documented cause of the system rejecting the extension. -->
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key>

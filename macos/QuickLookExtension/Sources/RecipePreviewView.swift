@@ -31,6 +31,11 @@ struct RecipePreviewView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Quick Look hosts the view in a translucent panel; give it an opaque
+        // document background (adapts to light/dark) so the text is readable
+        // instead of showing through to the desktop/panel behind it.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
     }
 
     private var header: some View {

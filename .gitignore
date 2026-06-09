@@ -1,6 +1,11 @@
 .DS_Store
 node_modules
 build
+# Track only this one file under the otherwise-ignored repo-root build/ dir.
+# Anchored to root so nested build/ dirs (packages/*/build, etc.) stay ignored.
+!/build/
+/build/*
+!/build/entitlements.quicklook.plist
 lib
 tmp
 *.log
