@@ -49,6 +49,11 @@ if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
     CODE_SIGN_STYLE=Manual
     "CODE_SIGN_IDENTITY=${QUICKLOOK_SIGN_IDENTITY}"
     "DEVELOPMENT_TEAM=${QUICKLOOK_TEAM_ID:-}"
+    # Do NOT inject com.apple.security.get-task-allow — Xcode adds that debug
+    # entitlement by default, and notarization rejects it ("The executable
+    # requests the com.apple.security.get-task-allow entitlement"). This appex
+    # needs no entitlements (not sandboxed), so suppress the base set entirely.
+    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
     "OTHER_CODE_SIGN_FLAGS=${CSFLAGS}"
   )
 fi
@@ -75,4 +80,11 @@ lipo -info "build/CookQuickLook.appex/Contents/MacOS/CookQuickLook" || true
 if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
   echo "Verifying appex signature (deep)..."
   codesign --verify --deep --strict --verbose=2 "build/CookQuickLook.appex"
+  # Fail fast on the debug entitlement that notarization rejects, rather than
+  # discovering it after a slow notarytool round-trip.
+  if codesign -d --entitlements :- "build/CookQuickLook.appex/Contents/MacOS/CookQuickLook" 2>/dev/null | grep -q "get-task-allow"; then
+    echo "error: appex executable still has com.apple.security.get-task-allow (would fail notarization)" >&2
+    exit 1
+  fi
+  echo "Signature OK, no get-task-allow."
 fi
