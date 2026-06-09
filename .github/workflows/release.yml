@@ -203,9 +203,50 @@ jobs:
           fi
           echo "All required frontend modules are registered."
 
-      - name: Build Quick Look extension (macOS)
+      - name: Build & sign Quick Look extension (macOS)
         if: runner.os == 'macOS'
-        run: ./macos/scripts/build-quicklook.sh
+        shell: bash
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/ql-signing.keychain-db"
+          KPW="$(uuidgen)"
+          CERT="$RUNNER_TEMP/ql-cert.p12"
+          trap 'rm -f "$CERT"' EXIT
+
+          # Import the Developer ID cert into a dedicated keychain so xcodebuild can sign
+          # the appex (and its embedded framework) inside-out before electron-builder runs.
+          printf '%s' "$MAC_CSC_LINK" | base64 --decode > "$CERT"
+          security create-keychain -p "$KPW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KPW" "$KEYCHAIN"
+          security import "$CERT" -k "$KEYCHAIN" -P "$MAC_CSC_KEY_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/xcodebuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KPW" "$KEYCHAIN" >/dev/null
+
+          # Add our keychain to the search list for the build, remembering the originals.
+          ORIG_KEYCHAINS=$(security list-keychains -d user | sed 's/[[:space:]"]//g')
+          security list-keychains -d user -s "$KEYCHAIN" $ORIG_KEYCHAINS
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/Developer ID Application/{print $2; exit}')
+          if [ -z "${IDENTITY:-}" ]; then echo "::error::No 'Developer ID Application' identity found in keychain"; exit 1; fi
+          echo "Signing Quick Look appex with identity ${IDENTITY}"
+
+          set +e
+          QUICKLOOK_SIGN_IDENTITY="$IDENTITY" \
+          QUICKLOOK_TEAM_ID="$APPLE_TEAM_ID" \
+          QUICKLOOK_KEYCHAIN="$KEYCHAIN" \
+            ./macos/scripts/build-quicklook.sh
+          rc=$?
+          set -e
+
+          # Restore the original search list so electron-builder's later signing isn't
+          # confused by two keychains holding the same identity (ambiguous match).
+          security list-keychains -d user -s $ORIG_KEYCHAINS
+          exit $rc
 
       - name: Package & Publish
         working-directory: app

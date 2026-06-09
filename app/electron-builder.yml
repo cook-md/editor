@@ -81,6 +81,13 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # The Quick Look extension is embedded by after-pack.js and PRE-SIGNED (inside-out,
+  # including its embedded CooklangParserFFI.framework, hardened runtime) by
+  # macos/scripts/build-quicklook.sh in CI. @electron/osx-sign cannot sign a nested
+  # .appex, so signIgnore tells electron-builder to leave it untouched; it still seals
+  # the outer app over the already-signed appex, and notarization covers it.
+  signIgnore:
+    - "Contents/PlugIns/CookQuickLook.appex"
   # Submit to Apple's notarytool after signing; uses APPLE_* env vars.
   notarize: true
   # Custom file types for .cook / .menu. Conformance to public.plain-text lets
