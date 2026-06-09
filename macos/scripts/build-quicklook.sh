@@ -33,15 +33,23 @@ fi
 
 DERIVED="build/DerivedData"
 SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO)
-# In CI, QUICKLOOK_SIGN_IDENTITY (a "Developer ID Application: ..." identity) is provided
-# so the appex is signed with hardened runtime + its sandbox entitlements.
+# In CI, QUICKLOOK_SIGN_IDENTITY (a "Developer ID Application" identity hash/name) is
+# provided so xcodebuild signs the appex AND its embedded CooklangParserFFI.framework
+# inside-out, with hardened runtime + a secure timestamp. electron-builder cannot sign a
+# nested .appex itself, so the appex must arrive pre-signed (then left alone via
+# `mac.signIgnore`). QUICKLOOK_KEYCHAIN, if set, points codesign at the keychain holding
+# the identity. The appex is not sandboxed, so no entitlements are applied.
 if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
+  CSFLAGS="--timestamp --options runtime"
+  if [[ -n "${QUICKLOOK_KEYCHAIN:-}" ]]; then
+    CSFLAGS="${CSFLAGS} --keychain ${QUICKLOOK_KEYCHAIN}"
+  fi
   SIGN_ARGS=(
     CODE_SIGNING_ALLOWED=YES
     CODE_SIGN_STYLE=Manual
     "CODE_SIGN_IDENTITY=${QUICKLOOK_SIGN_IDENTITY}"
     "DEVELOPMENT_TEAM=${QUICKLOOK_TEAM_ID:-}"
-    OTHER_CODE_SIGN_FLAGS=--timestamp
+    "OTHER_CODE_SIGN_FLAGS=${CSFLAGS}"
   )
 fi
 
@@ -61,3 +69,10 @@ rm -rf build/CookQuickLook.appex
 cp -R "$SRC" build/CookQuickLook.appex
 echo "Built: $(pwd)/build/CookQuickLook.appex"
 lipo -info "build/CookQuickLook.appex/Contents/MacOS/CookQuickLook" || true
+
+# When signed, fail fast if the appex (or its embedded framework) isn't validly signed —
+# electron-builder will refuse to seal the outer app over an unsigned nested component.
+if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
+  echo "Verifying appex signature (deep)..."
+  codesign --verify --deep --strict --verbose=2 "build/CookQuickLook.appex"
+fi
