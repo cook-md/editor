@@ -75,6 +75,16 @@ cp -R "$SRC" build/CookQuickLook.appex
 echo "Built: $(pwd)/build/CookQuickLook.appex"
 lipo -info "build/CookQuickLook.appex/Contents/MacOS/CookQuickLook" || true
 
+# PluginKit refuses to register an app extension that lacks these standard bundle
+# keys, so Quick Look would never invoke it. Fail the build if they're missing.
+for _k in CFBundleIdentifier CFBundleExecutable CFBundlePackageType; do
+  _v=$(/usr/libexec/PlistBuddy -c "Print :${_k}" "build/CookQuickLook.appex/Contents/Info.plist" 2>/dev/null || true)
+  if [[ -z "${_v}" ]]; then
+    echo "error: appex Info.plist is missing ${_k} — PluginKit will not register the extension" >&2
+    exit 1
+  fi
+done
+
 # When signed, fail fast if the appex (or its embedded framework) isn't validly signed —
 # electron-builder will refuse to seal the outer app over an unsigned nested component.
 if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
