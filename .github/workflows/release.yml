@@ -203,6 +203,10 @@ jobs:
           fi
           echo "All required frontend modules are registered."
 
+      - name: Build Quick Look extension (macOS)
+        if: runner.os == 'macOS'
+        run: ./macos/scripts/build-quicklook.sh
+
       - name: Package & Publish
         working-directory: app
         shell: bash

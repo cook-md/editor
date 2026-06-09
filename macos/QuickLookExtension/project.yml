@@ -1,0 +1,47 @@
+name: CookQuickLook
+options:
+  bundleIdPrefix: md.cook.editor
+  deploymentTarget:
+    macOS: "12.0"
+  createIntermediateGroups: true
+
+packages:
+  CooklangParser:
+    url: https://github.com/cooklang/cooklang-rs
+    exactVersion: 0.18.7
+
+targets:
+  CookQuickLook:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: md.cook.editor.quicklook
+        PRODUCT_NAME: CookQuickLook
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Sources/Info.plist
+        ENABLE_HARDENED_RUNTIME: YES
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - package: CooklangParser
+        product: CooklangParser
+
+  CookQuickLookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+        excludes:
+          - Fixtures
+      - path: Sources/Formatting.swift
+      - path: Sources/RecipePreviewModel.swift
+      - path: Tests/Fixtures
+        buildPhase: resources
+    dependencies:
+      - package: CooklangParser
+        product: CooklangParser
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
