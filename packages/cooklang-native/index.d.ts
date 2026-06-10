@@ -62,6 +62,13 @@ export declare function checkedSet(entriesJson: string): Array<string>
  */
 export declare function findRecipe(baseDir: string, name: string): string | null
 export declare function compactChecked(entriesJson: string, currentIngredients: Array<string>): string
+/**
+ * Render a Jinja2 report template against a recipe via cooklang-reports
+ * (the same engine cookcli's `cook report` uses).
+ *
+ * Returns JSON: `{"output": "..."}` on success or `{"error": "..."}` on failure.
+ */
+export declare function renderReport(recipe: string, template: string, configJson: string): string
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
