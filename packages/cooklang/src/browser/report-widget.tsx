@@ -79,7 +79,7 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     @postConstruct()
     protected init(): void {
-        this.addClass('cooklang-report');
+        this.addClass('theia-cooklang-report');
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
@@ -184,20 +184,20 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     protected render(): React.ReactNode {
         if (this.errorMessage) {
             return (
-                <div className='cooklang-report-error'>
+                <div className='theia-cooklang-report-error'>
                     <strong>{nls.localize('theia/cooklang/reportError', 'Report rendering failed:')}</strong>
                     <pre>{this.errorMessage}</pre>
                 </div>
             );
         }
         if (this.output === undefined) {
-            return <div className='cooklang-report-loading'>{nls.localizeByDefault('Loading...')}</div>;
+            return <div className='theia-cooklang-report-loading'>{nls.localizeByDefault('Loading...')}</div>;
         }
         return (
             <Markdown
                 markdown={this.output}
                 markdownRenderer={this.markdownRenderer}
-                className='cooklang-report-content'
+                className='theia-cooklang-report-content'
             />
         );
     }

@@ -1,16 +1,16 @@
-.cooklang-report {
+.theia-cooklang-report {
     padding: 0 20px 20px 20px;
     color: var(--theia-editor-foreground);
     background: var(--theia-editor-background);
 }
 
-.cooklang-report-error pre {
+.theia-cooklang-report-error pre {
     color: var(--theia-errorForeground);
     white-space: pre-wrap;
     font-family: var(--theia-code-font-family);
 }
 
-.cooklang-report-loading {
+.theia-cooklang-report-loading {
     padding: 20px;
     color: var(--theia-descriptionForeground);
 }

@@ -104,8 +104,9 @@ New `report-contribution.ts` registering `cooklang.renderReport`
 - Native panic safety: `render_report` catches errors from
   `cooklang-reports` and returns them as `{ error }` — no process crashes.
 - Backend catches `require`/invocation failures and returns `{ error }`.
-- Widget displays `{ error }` content in-place; the QuickPick step surfaces
-  filesystem problems (unreadable template) via `MessageService`.
+- Widget displays `{ error }` content in-place; filesystem problems
+  (unreadable template) also surface in the widget's error block, keeping a
+  single error surface with no popups.
 
 ## Testing
 
