@@ -4,12 +4,20 @@
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": true,
   "packages": {
-    "app": {
+    ".": {
       "package-name": "@cook-md/editor-app",
       "include-component-in-tag": false,
       "prerelease": true,
       "prerelease-type": "alpha",
-      "versioning": "prerelease"
+      "versioning": "prerelease",
+      "changelog-path": "app/CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "app/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
