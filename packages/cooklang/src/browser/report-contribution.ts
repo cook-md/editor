@@ -242,13 +242,15 @@ export class ReportContribution implements CommandContribution, MenuContribution
     }
 
     /**
-     * Returns an existing report widget for (uri, template) if open, otherwise
+     * Returns an existing report widget for (uri, template) — looked up by its
+     * widget id among the widgets created by the report factory — otherwise
      * creates one via the widget factory. A fresh `setOptions` re-render is
      * triggered on reuse so the report reflects the latest config.
      */
     protected async getOrCreateReport(options: ReportWidgetOptions): Promise<ReportWidget> {
         const widgetId = createReportWidgetId(new URI(options.uri), options.templateId);
-        const existing = this.widgetManager.tryGetWidget<ReportWidget>(widgetId);
+        const existing = this.widgetManager.getWidgets(REPORT_WIDGET_ID)
+            .find((widget): widget is ReportWidget => widget.id === widgetId);
         if (existing) {
             existing.setOptions(options);
             return existing;
