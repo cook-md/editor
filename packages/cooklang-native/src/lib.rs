@@ -969,4 +969,12 @@ mod render_report_tests {
         let v: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert!(!v["error"].as_str().unwrap().is_empty());
     }
+
+    #[test]
+    fn returns_json_for_unparsable_recipe() {
+        let garbage = "@{unclosed [- broken >> nonsense";
+        let result = super::render_report(garbage.into(), "{{ scale }}".into(), "{}".into());
+        let v: serde_json::Value = serde_json::from_str(&result).expect("must return valid JSON");
+        assert!(v.get("output").is_some() || v.get("error").is_some());
+    }
 }
