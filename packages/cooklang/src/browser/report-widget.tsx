@@ -75,6 +75,7 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     protected output: string | undefined;
     protected errorMessage: string | undefined;
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    protected renderSequence = 0;
 
     @postConstruct()
     protected init(): void {
@@ -133,17 +134,27 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     }
 
     protected async renderReport(): Promise<void> {
+        const sequence = ++this.renderSequence;
+        let output: string | undefined;
+        let errorMessage: string | undefined;
         try {
             const recipe = await this.readRecipeContent();
             const template = await this.readTemplateContent();
             const resultJson = await this.service.renderReport(recipe, template, this.options.configJson);
             const result = JSON.parse(resultJson) as { output?: string; error?: string };
-            this.output = result.output;
-            this.errorMessage = result.error;
+            output = result.output;
+            errorMessage = result.error;
+            if (output === undefined && errorMessage === undefined) {
+                errorMessage = nls.localize('theia/cooklang/reportEmptyResponse', 'Report rendering returned no output.');
+            }
         } catch (error) {
-            this.output = undefined;
-            this.errorMessage = String(error);
+            errorMessage = String(error);
         }
+        if (this.isDisposed || sequence !== this.renderSequence) {
+            return;
+        }
+        this.output = output;
+        this.errorMessage = errorMessage;
         this.update();
     }
 
