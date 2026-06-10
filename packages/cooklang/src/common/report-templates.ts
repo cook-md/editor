@@ -18,6 +18,8 @@
 export interface BuiltInReportTemplate {
     id: string;
     label: string;
+    /** nls key used to localize `label` at display points. */
+    localizationKey?: string;
     content: string;
 }
 
@@ -38,6 +40,7 @@ export namespace ReportTemplates {
         {
             id: 'builtin:ingredients',
             label: 'Ingredients List (built-in)',
+            localizationKey: 'theia/cooklang/templateIngredients',
             content: `# {{ metadata.title | default("Ingredients") }}
 
 {% for ingredient in ingredients | sort(attribute='name') -%}
@@ -47,6 +50,7 @@ export namespace ReportTemplates {
         {
             id: 'builtin:shopping-list',
             label: 'Shopping List (built-in)',
+            localizationKey: 'theia/cooklang/templateShoppingList',
             content: `# Shopping List
 
 {% for (aisle, items) in aisled(ingredients) | items -%}

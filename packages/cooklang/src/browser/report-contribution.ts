@@ -172,14 +172,9 @@ export class ReportContribution implements CommandContribution, MenuContribution
      * point (the stored labels double as stable fallbacks).
      */
     protected localizeBuiltInLabel(template: BuiltInReportTemplate): string {
-        switch (template.id) {
-            case 'builtin:ingredients':
-                return nls.localize('theia/cooklang/templateIngredients', 'Ingredients List (built-in)');
-            case 'builtin:shopping-list':
-                return nls.localize('theia/cooklang/templateShoppingList', 'Shopping List (built-in)');
-            default:
-                return template.label;
-        }
+        return template.localizationKey
+            ? nls.localize(template.localizationKey, template.label)
+            : template.label;
     }
 
     /**
@@ -226,15 +221,20 @@ export class ReportContribution implements CommandContribution, MenuContribution
         if (root) {
             config.basePath = root.resource.toString();
             const aisle = root.resource.resolve('config/aisle.conf');
-            if (await this.fileService.exists(aisle)) {
+            const pantry = root.resource.resolve('config/pantry.conf');
+            const datastore = root.resource.resolve('db');
+            const [hasAisle, hasPantry, hasDatastore] = await Promise.all([
+                this.fileService.exists(aisle),
+                this.fileService.exists(pantry),
+                this.fileService.exists(datastore),
+            ]);
+            if (hasAisle) {
                 config.aislePath = aisle.toString();
             }
-            const pantry = root.resource.resolve('config/pantry.conf');
-            if (await this.fileService.exists(pantry)) {
+            if (hasPantry) {
                 config.pantryPath = pantry.toString();
             }
-            const datastore = root.resource.resolve('db');
-            if (await this.fileService.exists(datastore)) {
+            if (hasDatastore) {
                 config.datastorePath = datastore.toString();
             }
         }
