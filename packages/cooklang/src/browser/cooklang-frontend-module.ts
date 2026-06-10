@@ -35,6 +35,8 @@ import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListContribution } from './shopping-list-contribution';
 import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
 import { MenuPreviewContribution } from './menu-preview-contribution';
+import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './report-widget';
+import { ReportContribution } from './report-contribution';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -80,6 +82,18 @@ export default new ContainerModule(bind => {
     bind(OpenHandler).toService(MenuPreviewContribution);
     bind(TabBarToolbarContribution).toService(MenuPreviewContribution);
     bind(MenuContribution).toService(MenuPreviewContribution);
+
+    // Report widget factory
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: REPORT_WIDGET_ID,
+        createWidget: (options: ReportWidgetOptions) =>
+            createReportWidget(ctx.container, options),
+    })).inSingletonScope();
+
+    // Report command and context menu
+    bind(ReportContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(ReportContribution);
+    bind(MenuContribution).toService(ReportContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
