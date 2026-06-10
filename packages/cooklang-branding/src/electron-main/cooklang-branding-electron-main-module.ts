@@ -16,6 +16,11 @@ import { ElectronMainApplication, ElectronMainApplicationContribution } from '@t
 import { CooklangElectronMainApplication } from './cooklang-electron-main-application';
 import { CooklangBrandingElectronMainContribution } from './cooklang-branding-electron-main-contribution';
 
+// Cook Editor installs plugins from the self-hosted marketplace. The backend
+// process inherits this env var (read by @theia/vsx-registry's VSXEnvironment);
+// an explicitly set VSX_REGISTRY_URL still wins for dev overrides.
+process.env.VSX_REGISTRY_URL ??= 'https://plugins.cook.md';
+
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(CooklangElectronMainApplication).toSelf().inSingletonScope();
     rebind(ElectronMainApplication).toService(CooklangElectronMainApplication);
