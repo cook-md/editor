@@ -21,6 +21,7 @@
 // *****************************************************************************
 
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 import {
     CooklangLanguageService,
     CooklangInitializeResult,
@@ -272,5 +273,30 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         const native = require('@theia/cooklang-native');
         const result = native.findRecipe(baseDir, name);
         return result ?? undefined;
+    }
+
+    async renderReport(recipeContent: string, templateContent: string, configJson: string): Promise<string> {
+        try {
+            const native = require('@theia/cooklang-native');
+            return native.renderReport(recipeContent, templateContent, this.convertReportConfigPaths(configJson));
+        } catch (error) {
+            console.error('[cooklang] Failed to render report:', error);
+            return JSON.stringify({ error: String(error) });
+        }
+    }
+
+    /**
+     * The frontend sends path-like config entries as URI strings (URIs cross
+     * the wire, never raw paths); the native addon needs OS filesystem paths.
+     */
+    protected convertReportConfigPaths(configJson: string): string {
+        const config = JSON.parse(configJson) as Record<string, unknown>;
+        for (const key of ['basePath', 'aislePath', 'pantryPath', 'datastorePath']) {
+            const value = config[key];
+            if (typeof value === 'string') {
+                config[key] = FileUri.fsPath(value);
+            }
+        }
+        return JSON.stringify(config);
     }
 }
