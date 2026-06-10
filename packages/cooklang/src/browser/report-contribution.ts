@@ -18,6 +18,7 @@ import { ApplicationShell, WidgetManager } from '@theia/core/lib/browser';
 import { QuickPickService, QuickPickItem, QuickPickSeparator } from '@theia/core/lib/common/quick-pick-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
+import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager, EDITOR_CONTEXT_MENU } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
@@ -77,7 +78,7 @@ export class ReportContribution implements CommandContribution, MenuContribution
     registerCommands(commands: CommandRegistry): void {
         commands.registerCommand(CooklangReportCommands.RENDER_REPORT, {
             execute: () => this.renderReport(),
-            isEnabled: () => this.getActiveCooklangEditorUri() !== undefined,
+            isEnabled: () => this.getActiveCooklangUri() !== undefined,
         });
     }
 
@@ -93,7 +94,7 @@ export class ReportContribution implements CommandContribution, MenuContribution
     // --- Command execution ---
 
     protected async renderReport(): Promise<void> {
-        const uri = this.getActiveCooklangEditorUri();
+        const uri = this.getActiveCooklangUri();
         if (!uri) {
             return;
         }
@@ -119,6 +120,24 @@ export class ReportContribution implements CommandContribution, MenuContribution
             await this.shell.addWidget(widget, { area: 'main' });
         }
         this.shell.activateWidget(widget.id);
+    }
+
+    /**
+     * Resolves the recipe URI from the current widget when it is a navigatable
+     * showing a `.cook` or `.menu` resource (recipe preview, report tab), or
+     * falls back to the active Cooklang text editor. `.cook` files open in
+     * preview mode by default, so the preview widget — not an editor — is the
+     * common context for this command.
+     */
+    protected getActiveCooklangUri(): URI | undefined {
+        const current = this.shell.currentWidget;
+        if (NavigatableWidget.is(current)) {
+            const uri = current.getResourceUri();
+            if (uri && (uri.path.ext === '.cook' || uri.path.ext === '.menu')) {
+                return uri;
+            }
+        }
+        return this.getActiveCooklangEditorUri();
     }
 
     /**
