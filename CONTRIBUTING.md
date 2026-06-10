@@ -30,6 +30,30 @@ unmerged because the design conflicts with where the project is heading.
 For small fixes — typos, obvious bugs, dependency bumps — feel free to send a
 PR directly.
 
+## Commit messages
+
+Cook Editor uses [Conventional Commits](https://www.conventionalcommits.org/).
+Releases are automated with
+[release-please](https://github.com/googleapis/release-please): it reads the
+commit messages landed on `main`, maintains a "Release PR" that bumps the
+version in `app/package.json` and updates the changelog, and cuts a tagged
+GitHub Release when that PR is merged. Your commit messages are therefore what
+drive versioning — there is no manual version bump.
+
+Format each commit as `<type>(<optional scope>): <description>`, for example:
+
+- `feat(editor): add ingredient autocomplete` — new feature (triggers a release)
+- `fix(account): handle expired sync token` — bug fix (triggers a release)
+- `docs: clarify build steps` — docs only (no release)
+- `chore(deps): bump electron to 38.4.0` — maintenance (no release)
+- `refactor:`, `test:`, `ci:`, `build:`, `perf:`, `style:` — use as appropriate
+
+Mark breaking changes with a `!` after the type/scope (`feat!: …`) or a
+`BREAKING CHANGE:` footer.
+
+The project is in alpha, so every release-triggering commit bumps the
+prerelease number (`0.1.0-alpha.21` → `0.1.0-alpha.22`).
+
 ## Development setup
 
 ```bash

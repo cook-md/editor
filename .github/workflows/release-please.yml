@@ -1,9 +1,9 @@
-name: Build & Release
+name: Release Please
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       publish:
@@ -15,8 +15,39 @@ on:
           - 'true'
           - 'false'
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
+  # On every push to main, release-please maintains a "Release PR" that rolls up
+  # conventional commits and bumps app/package.json. Merging that PR creates the
+  # GitHub Release + v<version> tag and sets release_created=true, which gates
+  # the build matrix below. Versioning is configured for alpha prereleases in
+  # release-please-config.json (0.1.0-alpha.N → 0.1.0-alpha.N+1).
+  release-please:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # A PAT (RELEASE_TOKEN) lets the Release PR's checks run; falls back to
+          # the built-in token, which still creates the PR/release.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
   build:
+    needs: release-please
+    # Build+publish when release-please just cut a release, or on a manual
+    # workflow_dispatch (where the release-please job is skipped). `always()`
+    # is required so a skipped dependency doesn't skip this job.
+    if: ${{ always() && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
     permissions:
       contents: write
     strategy:
@@ -252,7 +283,7 @@ jobs:
         working-directory: app
         shell: bash
         run: |
-          PUBLISH="${{ (github.event_name == 'push' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
+          PUBLISH="${{ (needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
           if [ -n "${{ matrix.electron_arch }}" ]; then
             npx electron-builder --mac --${{ matrix.electron_arch }} --publish "$PUBLISH"
           else
