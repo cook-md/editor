@@ -34,4 +34,10 @@ describe('CooklangLanguageServiceImpl report config conversion', () => {
         const config = JSON.parse(impl['convertReportConfigPaths']('{"scale":2}'));
         expect(config).to.deep.equal({ scale: 2 });
     });
+
+    it('returns the error contract for malformed config JSON', async () => {
+        const impl = new CooklangLanguageServiceImpl();
+        const result = JSON.parse(await impl.renderReport('', '', 'not json'));
+        expect(result.error).to.be.a('string').that.is.not.empty;
+    });
 });
