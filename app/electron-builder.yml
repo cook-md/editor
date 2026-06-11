@@ -61,6 +61,13 @@ publish:
   provider: github
   owner: cook-md
   repo: editor
+  # release-please creates the GitHub Release first, flagged as a pre-release
+  # (release-please-config.json prerelease: true). electron-builder's default
+  # releaseType is "draft" and it refuses to upload into an existing release of
+  # a different type ("existing type not compatible with publishing type"),
+  # silently skipping every asset. A non-draft releaseType uploads into the
+  # existing release; "prerelease" matches the alpha pre-release flag.
+  releaseType: prerelease
 
 # --- macOS ---
 mac:
