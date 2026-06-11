@@ -13,12 +13,12 @@ from cookcli, which delegates to the `cooklang-reports` crate (minijinja).
 
 ## Scope
 
-- **In:** single recipes (`.cook`), template discovery from the workspace,
-  built-in fallback templates, rendered-markdown output tab with live
-  re-render, workspace-convention config wiring (aisle/pantry/datastore).
-- **Out (v1):** `.menu` files (upstream `cooklang-reports` does not support
-  menus; the command shows a friendly "not supported for menus yet" message),
-  recipe scaling UI (scale fixed at 1), template editing aids.
+- **In:** recipes (`.cook`) and menus (`.menu` — same Cooklang syntax,
+  different extension, rendered through the same engine), template discovery
+  from the workspace, built-in fallback templates, rendered output tab with
+  live re-render, workspace-convention config wiring
+  (aisle/pantry/datastore).
+- **Out (v1):** recipe scaling UI (scale fixed at 1), template editing aids.
 
 ## Architecture
 
@@ -68,8 +68,8 @@ New `report-contribution.ts` registering `cooklang.renderReport`
 ("Cooklang: Render Report…"):
 
 - Available in the command palette and the editor context menu; enabled when
-  the active editor is a `.cook` file. For `.menu` files the command shows an
-  info message that menu reports are not yet supported.
+  the current view (preview tab, report tab, or text editor) shows a `.cook`
+  or `.menu` resource.
 - Flow on invocation:
   1. **Template discovery:** search the whole workspace for `*.jinja`,
      `*.j2`, `*.jinja2` via the ripgrep-backed `FileSearchService`

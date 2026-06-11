@@ -16,7 +16,6 @@ import { CommandContribution, CommandRegistry, Command } from '@theia/core/lib/c
 import { MenuModelRegistry, MenuContribution } from '@theia/core/lib/common/menu';
 import { ApplicationShell, Widget, WidgetManager } from '@theia/core/lib/browser';
 import { QuickPickService, QuickPickItem, QuickPickSeparator } from '@theia/core/lib/common/quick-pick-service';
-import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager, EDITOR_CONTEXT_MENU } from '@theia/editor/lib/browser';
@@ -67,9 +66,6 @@ export class ReportContribution implements CommandContribution, MenuContribution
     @inject(QuickPickService)
     protected readonly quickPickService: QuickPickService;
 
-    @inject(MessageService)
-    protected readonly messageService: MessageService;
-
     @inject(FileService)
     protected readonly fileService: FileService;
 
@@ -93,7 +89,7 @@ export class ReportContribution implements CommandContribution, MenuContribution
     registerMenus(menus: MenuModelRegistry): void {
         menus.registerMenuAction([...EDITOR_CONTEXT_MENU, 'navigation'], {
             commandId: CooklangReportCommands.RENDER_REPORT.id,
-            when: 'resourceExtname == .cook',
+            when: 'resourceExtname == .cook || resourceExtname == .menu',
         });
     }
 
@@ -102,12 +98,6 @@ export class ReportContribution implements CommandContribution, MenuContribution
     protected async renderReport(): Promise<void> {
         const uri = this.getActiveCooklangUri();
         if (!uri) {
-            return;
-        }
-        if (uri.path.ext === '.menu') {
-            this.messageService.info(
-                nls.localize('theia/cooklang/reportMenuUnsupported', 'Reports are not supported for menu files yet.')
-            );
             return;
         }
         const template = await this.pickTemplate();
