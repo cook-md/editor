@@ -13,7 +13,7 @@
 
 /**
  * A report template bundled with the editor, available even when the
- * workspace has no `config/reports/` directory.
+ * workspace has no template directories.
  */
 export interface BuiltInReportTemplate {
     id: string;
@@ -28,12 +28,19 @@ export namespace ReportTemplates {
     /** File extensions recognized as Jinja2 report templates. */
     export const FILE_EXTENSIONS: ReadonlyArray<string> = ['.jinja', '.j2', '.jinja2'];
 
-    /** Workspace directory scanned for report templates. */
-    export const WORKSPACE_TEMPLATE_DIR = 'config/reports';
+    /**
+     * Directory names (matched case-insensitively) scanned for report
+     * templates, both at the workspace root and inside `config/`.
+     */
+    export const TEMPLATE_DIR_NAMES: ReadonlyArray<string> = ['reports', 'templates'];
 
     export function isTemplateFile(fileName: string): boolean {
         const lower = fileName.toLowerCase();
         return FILE_EXTENSIONS.some(ext => lower.endsWith(ext));
+    }
+
+    export function isTemplateDirName(dirName: string): boolean {
+        return TEMPLATE_DIR_NAMES.includes(dirName.toLowerCase());
     }
 
     export const BUILT_IN: ReadonlyArray<BuiltInReportTemplate> = [

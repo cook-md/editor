@@ -71,13 +71,16 @@ New `report-contribution.ts` registering `cooklang.renderReport`
   the active editor is a `.cook` file. For `.menu` files the command shows an
   info message that menu reports are not yet supported.
 - Flow on invocation:
-  1. **Template discovery:** scan `config/reports/` in the workspace for
+  1. **Template discovery:** scan directories named `reports` or `templates`
+     (case-insensitive) at the workspace root and under `config/` for
      `*.jinja`, `*.j2`, `*.jinja2` via `FileService`; show a QuickPick of
-     found templates plus built-in templates ("Ingredients List",
-     "Shopping List") bundled with the package as string constants.
+     found templates (with their source directory as description) plus
+     built-in templates ("Ingredients List", "Shopping List") bundled with
+     the package as string constants.
   2. **Config wiring:** if present in the workspace, pass
-     `config/aisle.conf`, `config/pantry.conf`, `db/` (datastore) and the
-     workspace root as base path. Missing files are simply omitted.
+     `config/aisle.conf`, `config/pantry.conf`, the first of `db/` or
+     `config/db/` (datastore), and the workspace root as base path. Missing
+     files are simply omitted.
   3. **Content:** recipe content is read from the open editor document (so
      unsaved changes render); the template is read via `FileService` (or
      taken from the built-in constant).

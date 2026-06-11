@@ -25,6 +25,14 @@ describe('ReportTemplates', () => {
         expect(ReportTemplates.isTemplateFile('recipe.cook')).to.equal(false);
     });
 
+    it('recognizes template directories by name, case-insensitively', () => {
+        expect(ReportTemplates.isTemplateDirName('reports')).to.equal(true);
+        expect(ReportTemplates.isTemplateDirName('Reports')).to.equal(true);
+        expect(ReportTemplates.isTemplateDirName('TEMPLATES')).to.equal(true);
+        expect(ReportTemplates.isTemplateDirName('config')).to.equal(false);
+        expect(ReportTemplates.isTemplateDirName('Drafts')).to.equal(false);
+    });
+
     it('resolves built-in templates by id', () => {
         for (const template of ReportTemplates.BUILT_IN) {
             expect(ReportTemplates.byId(template.id)).to.equal(template);

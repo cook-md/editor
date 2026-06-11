@@ -43,6 +43,8 @@ interface ReportTemplatePick {
     id: string;
     label: string;
     uri?: string;
+    /** Workspace-relative directory the template came from, shown in the QuickPick. */
+    description?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -166,8 +168,8 @@ export class ReportContribution implements CommandContribution, MenuContribution
     }
 
     /**
-     * Shows a QuickPick of workspace templates (config/reports/*.jinja|j2|jinja2)
-     * followed by the built-in templates.
+     * Shows a QuickPick of workspace templates (*.jinja|j2|jinja2 in template
+     * directories) followed by the built-in templates.
      */
     protected async pickTemplate(): Promise<ReportTemplatePick | undefined> {
         const workspaceTemplates = await this.findWorkspaceTemplates();
@@ -178,7 +180,7 @@ export class ReportContribution implements CommandContribution, MenuContribution
                 label: nls.localize('theia/cooklang/workspaceTemplates', 'Workspace Templates'),
             });
             for (const template of workspaceTemplates) {
-                items.push({ label: template.label, description: ReportTemplates.WORKSPACE_TEMPLATE_DIR, template });
+                items.push({ label: template.label, description: template.description, template });
             }
         }
         items.push({
@@ -206,31 +208,57 @@ export class ReportContribution implements CommandContribution, MenuContribution
     }
 
     /**
-     * Lists template files in `config/reports/` of the first workspace root.
+     * Lists template files found in the workspace's template directories
+     * (`reports`/`templates` in any case, at the root and under `config/`).
      */
     protected async findWorkspaceTemplates(): Promise<ReportTemplatePick[]> {
         const root = this.workspaceService.tryGetRoots()[0];
         if (!root) {
             return [];
         }
-        const dir = root.resource.resolve(ReportTemplates.WORKSPACE_TEMPLATE_DIR);
-        try {
-            const stat = await this.fileService.resolve(dir);
-            if (!stat.isDirectory || !stat.children) {
-                return [];
+        const picks: ReportTemplatePick[] = [];
+        for (const dir of await this.resolveTemplateDirectories(root.resource)) {
+            const relative = root.resource.relative(dir)?.toString() ?? dir.path.base;
+            try {
+                const stat = await this.fileService.resolve(dir);
+                for (const child of stat.children ?? []) {
+                    if (!child.isDirectory && ReportTemplates.isTemplateFile(child.name)) {
+                        picks.push({
+                            id: `workspace:${child.resource.toString()}`,
+                            label: child.name,
+                            uri: child.resource.toString(),
+                            description: relative,
+                        });
+                    }
+                }
+            } catch {
+                // Unreadable directory — skip it.
             }
-            return stat.children
-                .filter(child => !child.isDirectory && ReportTemplates.isTemplateFile(child.name))
-                .map(child => ({
-                    id: `workspace:${child.resource.toString()}`,
-                    label: child.name,
-                    uri: child.resource.toString(),
-                }))
-                .sort((a, b) => a.label.localeCompare(b.label));
-        } catch {
-            // Directory does not exist — no workspace templates.
-            return [];
         }
+        return picks.sort((a, b) => a.label.localeCompare(b.label));
+    }
+
+    /**
+     * Resolves the directories scanned for templates: children of the
+     * workspace root and of `config/` whose name matches a template
+     * directory name (case-insensitive).
+     */
+    protected async resolveTemplateDirectories(root: URI): Promise<URI[]> {
+        const directories: URI[] = [];
+        const scan = async (parent: URI): Promise<void> => {
+            try {
+                const stat = await this.fileService.resolve(parent);
+                for (const child of stat.children ?? []) {
+                    if (child.isDirectory && ReportTemplates.isTemplateDirName(child.name)) {
+                        directories.push(child.resource);
+                    }
+                }
+            } catch {
+                // Missing directory — nothing to scan.
+            }
+        };
+        await Promise.all([scan(root), scan(root.resolve('config'))]);
+        return directories;
     }
 
     /**
@@ -250,11 +278,11 @@ export class ReportContribution implements CommandContribution, MenuContribution
             config.basePath = root.resource.toString();
             const aisle = root.resource.resolve('config/aisle.conf');
             const pantry = root.resource.resolve('config/pantry.conf');
-            const datastore = root.resource.resolve('db');
-            const [hasAisle, hasPantry, hasDatastore] = await Promise.all([
+            const datastores = [root.resource.resolve('db'), root.resource.resolve('config/db')];
+            const [hasAisle, hasPantry, ...hasDatastores] = await Promise.all([
                 this.fileService.exists(aisle),
                 this.fileService.exists(pantry),
-                this.fileService.exists(datastore),
+                ...datastores.map(candidate => this.fileService.exists(candidate)),
             ]);
             if (hasAisle) {
                 config.aislePath = aisle.toString();
@@ -262,7 +290,8 @@ export class ReportContribution implements CommandContribution, MenuContribution
             if (hasPantry) {
                 config.pantryPath = pantry.toString();
             }
-            if (hasDatastore) {
+            const datastore = datastores.find((candidate, index) => hasDatastores[index]);
+            if (datastore) {
                 config.datastorePath = datastore.toString();
             }
         }
