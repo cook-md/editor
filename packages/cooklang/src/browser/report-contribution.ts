@@ -20,6 +20,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager, EDITOR_CONTEXT_MENU } from '@theia/editor/lib/browser';
+import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
@@ -71,6 +72,9 @@ export class ReportContribution implements CommandContribution, MenuContribution
 
     @inject(FileService)
     protected readonly fileService: FileService;
+
+    @inject(FileSearchService)
+    protected readonly fileSearchService: FileSearchService;
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
@@ -208,57 +212,41 @@ export class ReportContribution implements CommandContribution, MenuContribution
     }
 
     /**
-     * Lists template files found in the workspace's template directories
-     * (`reports`/`templates` in any case, at the root and under `config/`).
+     * Finds template files (*.jinja|j2|jinja2) anywhere in the workspace via
+     * the ripgrep-backed file search (respects .gitignore).
      */
     protected async findWorkspaceTemplates(): Promise<ReportTemplatePick[]> {
-        const root = this.workspaceService.tryGetRoots()[0];
-        if (!root) {
+        const roots = this.workspaceService.tryGetRoots();
+        if (roots.length === 0) {
             return [];
         }
-        const picks: ReportTemplatePick[] = [];
-        for (const dir of await this.resolveTemplateDirectories(root.resource)) {
-            const relative = root.resource.relative(dir)?.toString() ?? dir.path.base;
-            try {
-                const stat = await this.fileService.resolve(dir);
-                for (const child of stat.children ?? []) {
-                    if (!child.isDirectory && ReportTemplates.isTemplateFile(child.name)) {
-                        picks.push({
-                            id: `workspace:${child.resource.toString()}`,
-                            label: child.name,
-                            uri: child.resource.toString(),
-                            description: relative,
-                        });
-                    }
-                }
-            } catch {
-                // Unreadable directory — skip it.
-            }
+        let matches: string[];
+        try {
+            matches = await this.fileSearchService.find('', {
+                rootUris: roots.map(root => root.resource.toString()),
+                includePatterns: ReportTemplates.FILE_EXTENSIONS.map(ext => `**/*${ext}`),
+                useGitIgnore: true,
+                fuzzyMatch: false,
+                limit: 200,
+            });
+        } catch (error) {
+            console.warn('[cooklang] Report template search failed:', error);
+            return [];
         }
-        return picks.sort((a, b) => a.label.localeCompare(b.label));
-    }
-
-    /**
-     * Resolves the directories scanned for templates: children of the
-     * workspace root and of `config/` whose name matches a template
-     * directory name (case-insensitive).
-     */
-    protected async resolveTemplateDirectories(root: URI): Promise<URI[]> {
-        const directories: URI[] = [];
-        const scan = async (parent: URI): Promise<void> => {
-            try {
-                const stat = await this.fileService.resolve(parent);
-                for (const child of stat.children ?? []) {
-                    if (child.isDirectory && ReportTemplates.isTemplateDirName(child.name)) {
-                        directories.push(child.resource);
-                    }
-                }
-            } catch {
-                // Missing directory — nothing to scan.
-            }
-        };
-        await Promise.all([scan(root), scan(root.resolve('config'))]);
-        return directories;
+        return matches
+            .filter(match => ReportTemplates.isTemplateFile(match))
+            .map(match => {
+                const uri = new URI(match);
+                const root = roots.find(candidate => candidate.resource.isEqualOrParent(uri));
+                const parentDir = root ? root.resource.relative(uri.parent)?.toString() : undefined;
+                return {
+                    id: `workspace:${uri.toString()}`,
+                    label: uri.path.base,
+                    uri: uri.toString(),
+                    description: parentDir || undefined,
+                };
+            })
+            .sort((a, b) => a.label.localeCompare(b.label));
     }
 
     /**
