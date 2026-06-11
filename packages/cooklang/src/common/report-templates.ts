@@ -23,24 +23,37 @@ export interface BuiltInReportTemplate {
     content: string;
 }
 
+/** How rendered report output should be displayed. */
+export type ReportOutputFormat = 'markdown' | 'html' | 'text';
+
 export namespace ReportTemplates {
 
     /** File extensions recognized as Jinja2 report templates. */
     export const FILE_EXTENSIONS: ReadonlyArray<string> = ['.jinja', '.j2', '.jinja2'];
-
-    /**
-     * Directory names (matched case-insensitively) scanned for report
-     * templates, both at the workspace root and inside `config/`.
-     */
-    export const TEMPLATE_DIR_NAMES: ReadonlyArray<string> = ['reports', 'templates'];
 
     export function isTemplateFile(fileName: string): boolean {
         const lower = fileName.toLowerCase();
         return FILE_EXTENSIONS.some(ext => lower.endsWith(ext));
     }
 
-    export function isTemplateDirName(dirName: string): boolean {
-        return TEMPLATE_DIR_NAMES.includes(dirName.toLowerCase());
+    /**
+     * Derives how report output should be displayed from the template file
+     * name's inner extension: `report.html.jinja` renders as HTML,
+     * `report.md.jinja` (or no inner extension, like the built-ins) as
+     * markdown, and anything else (`.yaml`, `.json`, `.txt`, …) as
+     * preformatted text.
+     */
+    export function outputFormat(fileName: string): ReportOutputFormat {
+        const lower = fileName.toLowerCase();
+        const templateExt = FILE_EXTENSIONS.find(ext => lower.endsWith(ext));
+        const inner = templateExt ? lower.slice(0, -templateExt.length) : lower;
+        if (inner.endsWith('.html') || inner.endsWith('.htm')) {
+            return 'html';
+        }
+        if (inner.endsWith('.md') || inner.endsWith('.markdown') || !inner.includes('.')) {
+            return 'markdown';
+        }
+        return 'text';
     }
 
     export const BUILT_IN: ReadonlyArray<BuiltInReportTemplate> = [

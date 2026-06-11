@@ -21,7 +21,8 @@ import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
-import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportTemplates } from '../common';
+import * as DOMPurify from '@theia/core/shared/dompurify';
+import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
 
 import '../../src/browser/style/report.css';
 
@@ -193,13 +194,37 @@ export class ReportWidget extends ReactWidget implements Navigatable {
         if (this.output === undefined) {
             return <div className='theia-cooklang-report-loading'>{nls.localizeByDefault('Loading...')}</div>;
         }
-        return (
-            <Markdown
-                markdown={this.output}
-                markdownRenderer={this.markdownRenderer}
-                className='theia-cooklang-report-content'
-            />
-        );
+        switch (this.getOutputFormat()) {
+            case 'html':
+                return (
+                    <div
+                        className='theia-cooklang-report-content'
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(this.output) }}
+                    />
+                );
+            case 'text':
+                return <pre className='theia-cooklang-report-text'>{this.output}</pre>;
+            default:
+                return (
+                    <Markdown
+                        markdown={this.output}
+                        markdownRenderer={this.markdownRenderer}
+                        className='theia-cooklang-report-content'
+                    />
+                );
+        }
+    }
+
+    /**
+     * Workspace templates declare their output format via the inner file
+     * extension (e.g. `shopping-list.yaml.jinja`); built-ins are markdown.
+     */
+    protected getOutputFormat(): ReportOutputFormat {
+        if (this.options.templateUri) {
+            return ReportTemplates.outputFormat(new URI(this.options.templateUri).path.base);
+        }
+        return 'markdown';
     }
 
     // --- Disposal ---

@@ -14,3 +14,9 @@
     padding: 20px;
     color: var(--theia-descriptionForeground);
 }
+
+.theia-cooklang-report-text {
+    white-space: pre-wrap;
+    font-family: var(--theia-code-font-family);
+    font-size: var(--theia-code-font-size);
+}

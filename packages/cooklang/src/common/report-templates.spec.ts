@@ -25,12 +25,14 @@ describe('ReportTemplates', () => {
         expect(ReportTemplates.isTemplateFile('recipe.cook')).to.equal(false);
     });
 
-    it('recognizes template directories by name, case-insensitively', () => {
-        expect(ReportTemplates.isTemplateDirName('reports')).to.equal(true);
-        expect(ReportTemplates.isTemplateDirName('Reports')).to.equal(true);
-        expect(ReportTemplates.isTemplateDirName('TEMPLATES')).to.equal(true);
-        expect(ReportTemplates.isTemplateDirName('config')).to.equal(false);
-        expect(ReportTemplates.isTemplateDirName('Drafts')).to.equal(false);
+    it('derives the output format from the inner extension', () => {
+        expect(ReportTemplates.outputFormat('cost.jinja')).to.equal('markdown');
+        expect(ReportTemplates.outputFormat('cost.md.jinja')).to.equal('markdown');
+        expect(ReportTemplates.outputFormat('report.HTML.j2')).to.equal('html');
+        expect(ReportTemplates.outputFormat('page.htm.jinja2')).to.equal('html');
+        expect(ReportTemplates.outputFormat('shopping-list.yaml.jinja')).to.equal('text');
+        expect(ReportTemplates.outputFormat('data.json.jinja')).to.equal('text');
+        expect(ReportTemplates.outputFormat('notes.txt.j2')).to.equal('text');
     });
 
     it('resolves built-in templates by id', () => {

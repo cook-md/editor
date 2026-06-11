@@ -71,10 +71,10 @@ New `report-contribution.ts` registering `cooklang.renderReport`
   the active editor is a `.cook` file. For `.menu` files the command shows an
   info message that menu reports are not yet supported.
 - Flow on invocation:
-  1. **Template discovery:** scan directories named `reports` or `templates`
-     (case-insensitive) at the workspace root and under `config/` for
-     `*.jinja`, `*.j2`, `*.jinja2` via `FileService`; show a QuickPick of
-     found templates (with their source directory as description) plus
+  1. **Template discovery:** search the whole workspace for `*.jinja`,
+     `*.j2`, `*.jinja2` via the ripgrep-backed `FileSearchService`
+     (respects `.gitignore`, capped at 200 results); show a QuickPick of
+     found templates (with their parent directory as description) plus
      built-in templates ("Ingredients List", "Shopping List") bundled with
      the package as string constants.
   2. **Config wiring:** if present in the workspace, pass
@@ -93,8 +93,11 @@ New `report-contribution.ts` registering `cooklang.renderReport`
 - Widget id derived from recipe URI + template identifier, so re-running the
   same combination reuses the existing tab; a different template for the
   same recipe opens a separate tab.
-- Renders the report output as markdown → HTML via Theia's
-  `MarkdownRenderer` (sanitized).
+- Renders the report output according to the template's inner file
+  extension: `*.md.jinja` or no inner extension → markdown via Theia's
+  `MarkdownRenderer` (sanitized); `*.html.jinja` → DOMPurify-sanitized
+  HTML; anything else (`*.yaml.jinja`, `*.json.jinja`, …) → preformatted
+  text.
 - Subscribes to the source document and re-renders on change, debounced
   (same approach as the recipe preview).
 - Render/template errors are displayed inside the widget as a preformatted
