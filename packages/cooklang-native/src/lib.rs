@@ -937,7 +937,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     let config = builder.build();
     match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
         Ok(output) => serde_json::json!({ "output": output }).to_string(),
-        Err(err) => serde_json::json!({ "error": err.to_string() }).to_string(),
+        Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
     }
 }
 
