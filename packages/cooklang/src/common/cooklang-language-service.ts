@@ -65,6 +65,18 @@ export interface CooklangLanguageService {
      * Electron-only by design; remote/virtual workspaces are not supported.
      */
     findRecipe(baseDir: string, name: string): Promise<string | undefined>;
+
+    /**
+     * Render a Jinja2 report template against a recipe (cookcli-compatible,
+     * via the cooklang-reports crate).
+     *
+     * `configJson` is a JSON object with optional `scale` (number) and
+     * optional `basePath`, `aislePath`, `pantryPath`, `datastorePath` given
+     * as **URI strings** — the backend converts them to filesystem paths.
+     *
+     * Returns JSON: `{"output": "..."}` on success or `{"error": "..."}`.
+     */
+    renderReport(recipeContent: string, templateContent: string, configJson: string): Promise<string>;
 }
 
 // Plain JSON DTOs — subsets of vscode-languageserver-protocol types

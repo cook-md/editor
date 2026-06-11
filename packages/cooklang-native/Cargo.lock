@@ -441,6 +441,7 @@ dependencies = [
  "cooklang",
  "cooklang-find",
  "cooklang-language-server",
+ "cooklang-reports",
  "cooklang-sync-client",
  "napi",
  "napi-build",
@@ -449,6 +450,23 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower-lsp",
+]
+
+[[package]]
+name = "cooklang-reports"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48868cbf385ded5773999ef7137db8246571c5aed3915d9898934954fa1b4339"
+dependencies = [
+ "anyhow",
+ "cooklang",
+ "cooklang-find",
+ "minijinja",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "yaml-datastore",
 ]
 
 [[package]]
@@ -1466,6 +1484,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memo-map"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
+
+[[package]]
 name = "migrations_internals"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1500,6 +1524,17 @@ checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
 dependencies = [
  "mime",
  "unicase",
+]
+
+[[package]]
+name = "minijinja"
+version = "2.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2929e494b2280e1e18959bb2e121da03347ae896896fdfaceaab43c88a02803f"
+dependencies = [
+ "indexmap",
+ "memo-map",
+ "serde",
 ]
 
 [[package]]
@@ -3633,6 +3668,17 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "yaml-datastore"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8af6117f4d2157a2cd2221234e3f92c526601dfbac22e466a493f36bd4d2901f"
+dependencies = [
+ "serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "yansi"

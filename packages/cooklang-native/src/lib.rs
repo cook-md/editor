@@ -899,3 +899,82 @@ pub fn napi_compact_checked(
     serde_json::to_string(&compacted)
         .map_err(|e| napi::Error::from_reason(e.to_string()))
 }
+
+/// Configuration accepted by `render_report`, mirroring cooklang_reports::Config.
+/// All path fields are OS filesystem paths (the Theia backend converts URIs
+/// before calling into the addon).
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ReportConfig {
+    scale: Option<f64>,
+    base_path: Option<String>,
+    aisle_path: Option<String>,
+    pantry_path: Option<String>,
+    datastore_path: Option<String>,
+}
+
+/// Render a Jinja2 report template against a recipe via cooklang-reports
+/// (the same engine cookcli's `cook report` uses).
+///
+/// Returns JSON: `{"output": "..."}` on success or `{"error": "..."}` on failure.
+#[napi]
+pub fn render_report(recipe: String, template: String, config_json: String) -> String {
+    let cfg: ReportConfig = serde_json::from_str(&config_json).unwrap_or_default();
+    let mut builder = cooklang_reports::config::Config::builder();
+    builder.scale(cfg.scale.unwrap_or(1.0));
+    if let Some(p) = cfg.base_path {
+        builder.base_path(p);
+    }
+    if let Some(p) = cfg.aisle_path {
+        builder.aisle_path(p);
+    }
+    if let Some(p) = cfg.pantry_path {
+        builder.pantry_path(p);
+    }
+    if let Some(p) = cfg.datastore_path {
+        builder.datastore_path(p);
+    }
+    let config = builder.build();
+    match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
+        Ok(output) => serde_json::json!({ "output": output }).to_string(),
+        Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod render_report_tests {
+    #[test]
+    fn renders_ingredients_template() {
+        let recipe = "Mix @eggs{3} with @flour{125%g}.";
+        let template = "{% for i in ingredients %}{{ i.name }};{% endfor %}";
+        let result = super::render_report(recipe.into(), template.into(), "{}".into());
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        let output = v["output"].as_str().expect("expected output, not error");
+        assert!(output.contains("eggs;"), "output was: {output}");
+        assert!(output.contains("flour;"), "output was: {output}");
+    }
+
+    #[test]
+    fn applies_scale_from_config() {
+        let recipe = "Mix @eggs{2}.";
+        let template = "{{ scale }}";
+        let result = super::render_report(recipe.into(), template.into(), r#"{"scale": 2}"#.into());
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(v["output"].as_str().unwrap(), "2.0");
+    }
+
+    #[test]
+    fn returns_error_for_bad_template() {
+        let result = super::render_report("Mix @eggs{1}.".into(), "{% for %}".into(), "{}".into());
+        let v: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(!v["error"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn returns_json_for_unparsable_recipe() {
+        let garbage = "@{unclosed [- broken >> nonsense";
+        let result = super::render_report(garbage.into(), "{{ scale }}".into(), "{}".into());
+        let v: serde_json::Value = serde_json::from_str(&result).expect("must return valid JSON");
+        assert!(v.get("output").is_some() || v.get("error").is_some());
+    }
+}
