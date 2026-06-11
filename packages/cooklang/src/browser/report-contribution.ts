@@ -14,7 +14,7 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { CommandContribution, CommandRegistry, Command } from '@theia/core/lib/common/command';
 import { MenuModelRegistry, MenuContribution } from '@theia/core/lib/common/menu';
-import { ApplicationShell, WidgetManager } from '@theia/core/lib/browser';
+import { ApplicationShell, Widget, WidgetManager } from '@theia/core/lib/browser';
 import { QuickPickService, QuickPickItem, QuickPickSeparator } from '@theia/core/lib/common/quick-pick-service';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
@@ -123,21 +123,30 @@ export class ReportContribution implements CommandContribution, MenuContribution
     }
 
     /**
-     * Resolves the recipe URI from the current widget when it is a navigatable
-     * showing a `.cook` or `.menu` resource (recipe preview, report tab), or
-     * falls back to the active Cooklang text editor. `.cook` files open in
-     * preview mode by default, so the preview widget — not an editor — is the
-     * common context for this command.
+     * Resolves the recipe URI from the focused widget, the current main-area
+     * tab, or the active Cooklang text editor — in that order. `.cook` files
+     * open in preview mode by default, and the preview widget never takes DOM
+     * focus, so it is reported by `getCurrentWidget('main')` (tab selection)
+     * but never by `shell.currentWidget` (focus tracker).
      */
     protected getActiveCooklangUri(): URI | undefined {
-        const current = this.shell.currentWidget;
-        if (NavigatableWidget.is(current)) {
-            const uri = current.getResourceUri();
+        return this.getCooklangResourceUri(this.shell.currentWidget)
+            ?? this.getCooklangResourceUri(this.shell.getCurrentWidget('main'))
+            ?? this.getActiveCooklangEditorUri();
+    }
+
+    /**
+     * Returns the widget's resource URI when it is a navigatable showing a
+     * `.cook` or `.menu` resource (text editor, recipe preview, report tab).
+     */
+    protected getCooklangResourceUri(widget: Widget | undefined): URI | undefined {
+        if (NavigatableWidget.is(widget)) {
+            const uri = widget.getResourceUri();
             if (uri && (uri.path.ext === '.cook' || uri.path.ext === '.menu')) {
                 return uri;
             }
         }
-        return this.getActiveCooklangEditorUri();
+        return undefined;
     }
 
     /**
