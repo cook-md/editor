@@ -12,6 +12,7 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct, interfaces } from '@theia/core/shared/inversify';
+import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { MarkdownRenderer } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
@@ -81,21 +82,28 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     @postConstruct()
     protected init(): void {
         this.addClass('theia-cooklang-report');
+        this.node.tabIndex = 0;
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
         };
         this.toDispose.push(
             this.monacoWorkspace.onDidChangeTextDocument(event => {
-                if (
-                    event.model.languageId !== COOKLANG_LANGUAGE_ID ||
-                    event.model.uri !== this.uri?.toString()
-                ) {
-                    return;
+                const changedUri = event.model.uri;
+                const isRecipeChange = changedUri === this.uri?.toString()
+                    && event.model.languageId === COOKLANG_LANGUAGE_ID;
+                const isTemplateChange = !!this.options?.templateUri
+                    && changedUri === this.options.templateUri;
+                if (isRecipeChange || isTemplateChange) {
+                    this.debouncedRender();
                 }
-                this.debouncedRender();
             })
         );
+    }
+
+    protected override onActivateRequest(msg: Message): void {
+        super.onActivateRequest(msg);
+        this.node.focus();
     }
 
     /**
@@ -170,6 +178,10 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     protected async readTemplateContent(): Promise<string> {
         if (this.options.templateUri) {
+            const model = this.monacoWorkspace.getTextDocument(this.options.templateUri);
+            if (model) {
+                return model.getText();
+            }
             const content = await this.fileService.read(new URI(this.options.templateUri));
             return content.value;
         }

@@ -12,6 +12,7 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct, interfaces } from '@theia/core/shared/inversify';
+import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
@@ -73,15 +74,22 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected recipe: Recipe | undefined;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
+    protected parseSequence = 0;
 
     @postConstruct()
     protected init(): void {
         this.addClass('theia-recipe-preview');
+        this.node.tabIndex = 0;
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+    }
+
+    protected override onActivateRequest(msg: Message): void {
+        super.onActivateRequest(msg);
+        this.node.focus();
     }
 
     /**
@@ -166,7 +174,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     protected parseContent(content: string): void {
+        const sequence = ++this.parseSequence;
         this.service.parse(content).then(json => {
+            if (this.isDisposed || sequence !== this.parseSequence) {
+                return;
+            }
             try {
                 const result = JSON.parse(json);
                 this.recipe = result.recipe ?? undefined;
@@ -180,6 +192,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             }
             this.update();
         }).catch(e => {
+            if (this.isDisposed || sequence !== this.parseSequence) {
+                return;
+            }
             this.recipe = undefined;
             this.parseErrors = [`Parse request failed: ${e}`];
             this.update();
