@@ -218,7 +218,7 @@ export class ReportWidget extends ReactWidget implements Navigatable {
      * extension (e.g. `shopping-list.yaml.jinja`); built-ins are markdown.
      */
     protected getOutputFormat(): ReportOutputFormat {
-        if (this.options.outputFormat) {
+        if (this.options.outputFormat !== undefined) {
             return this.options.outputFormat;
         }
         if (this.options.templateUri) {
