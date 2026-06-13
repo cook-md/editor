@@ -5,14 +5,33 @@
     "rootDir": "src",
     "outDir": "lib"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../editor" },
-    { "path": "../file-search" },
-    { "path": "../filesystem" },
-    { "path": "../monaco" },
-    { "path": "../navigator" },
-    { "path": "../workspace" }
+    {
+      "path": "../ai-core"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../editor"
+    },
+    {
+      "path": "../file-search"
+    },
+    {
+      "path": "../filesystem"
+    },
+    {
+      "path": "../monaco"
+    },
+    {
+      "path": "../navigator"
+    },
+    {
+      "path": "../workspace"
+    }
   ]
 }
