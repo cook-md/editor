@@ -24,6 +24,7 @@ import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import * as DOMPurify from '@theia/core/shared/dompurify';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
+import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
 
 import '../../src/browser/style/report.css';
 
@@ -31,27 +32,8 @@ import '../../src/browser/style/report.css';
 // Public constants and helpers
 // ---------------------------------------------------------------------------
 
-export const REPORT_WIDGET_ID = 'cooklang-report-widget';
-
-export interface ReportWidgetOptions {
-    /** URI string of the source `.cook` file. */
-    uri: string;
-    /** Template id: `builtin:*` or `workspace:<template uri>`. */
-    templateId: string;
-    /** Human-readable template name for the tab title. */
-    templateLabel: string;
-    /** URI string of a workspace template file; unset for built-ins. */
-    templateUri?: string;
-    /** Render config (scale + URI-string paths), passed through to the RPC. */
-    configJson: string;
-}
-
-/**
- * Constructs a unique widget ID for a report tab tied to a recipe + template.
- */
-export function createReportWidgetId(uri: URI, templateId: string): string {
-    return `${REPORT_WIDGET_ID}:${templateId}:${uri.toString()}`;
-}
+export { REPORT_WIDGET_ID, createReportWidgetId } from './report-widget-types';
+export type { ReportWidgetOptions } from './report-widget-types';
 
 // ---------------------------------------------------------------------------
 // ReportWidget
@@ -177,6 +159,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     }
 
     protected async readTemplateContent(): Promise<string> {
+        if (this.options.inlineTemplateContent !== undefined) {
+            return this.options.inlineTemplateContent;
+        }
         if (this.options.templateUri) {
             const model = this.monacoWorkspace.getTextDocument(this.options.templateUri);
             if (model) {
@@ -233,6 +218,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
      * extension (e.g. `shopping-list.yaml.jinja`); built-ins are markdown.
      */
     protected getOutputFormat(): ReportOutputFormat {
+        if (this.options.outputFormat) {
+            return this.options.outputFormat;
+        }
         if (this.options.templateUri) {
             return ReportTemplates.outputFormat(new URI(this.options.templateUri).path.base);
         }
