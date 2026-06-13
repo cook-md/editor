@@ -43,7 +43,10 @@ export class ReportConfigService {
 
     /**
      * Resolves the recipe URI from the focused widget, the current main-area
-     * tab, or the active Cooklang text editor — in that order.
+     * tab, or the active Cooklang text editor — in that order. `.cook` files
+     * open in preview mode by default, and the preview widget never takes DOM
+     * focus, so it is reported by `getCurrentWidget('main')` (tab selection)
+     * but never by `shell.currentWidget` (focus tracker).
      */
     getActiveCooklangUri(): URI | undefined {
         return this.getCooklangResourceUri(this.shell.currentWidget)
