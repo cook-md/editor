@@ -74,7 +74,8 @@ export class RenderTemplateTool implements ToolProvider {
                     },
                     recipeUri: {
                         type: 'string',
-                        description: 'URI of the .cook or .menu file to render against. Defaults to the active recipe in the editor.',
+                        description: 'URI of the .cook or .menu file to render against. Defaults to the active recipe in the editor. '
+                            + 'Renders the file\'s saved content on disk (unsaved editor edits are not included).',
                     },
                     show: {
                         type: 'boolean',
@@ -82,6 +83,7 @@ export class RenderTemplateTool implements ToolProvider {
                     },
                     outputFormat: {
                         type: 'string',
+                        enum: ['markdown', 'html', 'text'],
                         description: "Display format when show is true: 'markdown', 'html', or 'text'. Default 'markdown'.",
                     },
                     scale: {
