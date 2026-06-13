@@ -40,6 +40,8 @@ import { ReportContribution } from './report-contribution';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportWidgetPresenter } from './report-widget-presenter';
+import { bindToolProvider } from '@theia/ai-core/lib/common';
+import { RenderTemplateTool } from './render-template-tool';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -97,6 +99,9 @@ export default new ContainerModule(bind => {
     bind(ReportConfigService).toSelf().inSingletonScope();
     bind(ReportWidgetPresenter).toSelf().inSingletonScope();
     bind(ReportPresenter).toService(ReportWidgetPresenter);
+
+    // AI render tool (picked up by the cookbot agent via ToolInvocationRegistry)
+    bindToolProvider(RenderTemplateTool, bind);
 
     // Report command and context menu
     bind(ReportContribution).toSelf().inSingletonScope();
