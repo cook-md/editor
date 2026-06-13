@@ -3,6 +3,7 @@
   "version": "1.70.0",
   "description": "Theia - Cooklang Language Support",
   "dependencies": {
+    "@theia/ai-core": "1.70.0",
     "@theia/core": "1.70.0",
     "@theia/editor": "1.70.0",
     "@theia/file-search": "1.70.0",
