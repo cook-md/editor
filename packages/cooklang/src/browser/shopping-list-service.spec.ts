@@ -25,7 +25,13 @@ import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 const disableJSDOM = enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
-FrontendApplicationConfigProvider.set({});
+// Guard against double-set: another browser spec in the same mocha run may have
+// already configured the provider (it throws if set twice).
+try {
+    FrontendApplicationConfigProvider.get();
+} catch {
+    FrontendApplicationConfigProvider.set({});
+}
 
 import { expect } from 'chai';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
