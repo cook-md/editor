@@ -68,7 +68,11 @@ jobs:
             platform: mac-x64
             electron_arch: x64
             rust_target: x86_64-apple-darwin
-          - os: windows-latest
+          # Pin to windows-2022 (VS 2022 / 17.x). `windows-latest` rolled to an
+          # image shipping Visual Studio 2026 (v18), which the node-gyp@11.5.0
+          # bundled with Node 22's npm can't detect ("unknown version undefined"),
+          # breaking the native @theia/ffmpeg addon build during npm install.
+          - os: windows-2022
             platform: win
           - os: ubuntu-latest
             platform: linux
