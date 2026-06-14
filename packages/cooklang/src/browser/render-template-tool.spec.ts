@@ -35,8 +35,15 @@ after(() => disableJSDOM());
 
 class FakeConfigService {
     activeUri: URI | undefined;
+    workspaceRoot: URI | undefined;
     lastScale: number | undefined;
     getActiveCooklangUri(): URI | undefined { return this.activeUri; }
+    resolveRecipeUri(arg: string): URI | undefined {
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg) || arg.startsWith('/')) {
+            return new URI(arg);
+        }
+        return this.workspaceRoot ? this.workspaceRoot.resolve(arg) : undefined;
+    }
     async buildConfigJson(scale: number = 1): Promise<string> {
         this.lastScale = scale;
         return JSON.stringify({ scale });
@@ -122,6 +129,21 @@ describe('RenderTemplateTool', () => {
         const { tool } = createTool();
         const result = await invoke(tool, { templateContent: 'x', recipeUri: 'file:///ws/notes.txt' });
         expect(result.error).to.match(/\.cook or \.menu/);
+    });
+
+    it('resolves a workspace-relative recipeUri against the workspace root', async () => {
+        const { tool, config, language, files } = createTool();
+        config.workspaceRoot = new URI('file:///ws');
+        files.files.set('file:///ws/Baking/Napoleon.cook', 'recipe body');
+        const result = await invoke(tool, { templateContent: 't', recipeUri: 'Baking/Napoleon.cook' });
+        expect(result.output).to.equal('RENDERED');
+        expect(language.calls[0].recipe).to.equal('recipe body');
+    });
+
+    it('errors clearly when a relative recipeUri is given but no workspace is open', async () => {
+        const { tool } = createTool();
+        const result = await invoke(tool, { templateContent: 't', recipeUri: 'Baking/Napoleon.cook' });
+        expect(result.error).to.match(/Could not resolve recipeUri/);
     });
 
     it('errors when the recipe file cannot be read', async () => {

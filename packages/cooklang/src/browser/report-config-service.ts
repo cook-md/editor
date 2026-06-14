@@ -85,6 +85,26 @@ export class ReportConfigService {
     }
 
     /**
+     * Resolves a recipe URI supplied as a tool argument. Accepts a full URI
+     * string (e.g. `file:///…`), an absolute filesystem path, or — preferred —
+     * a path relative to the workspace root (e.g. `Baking/Napoleon.cook`).
+     * Relative paths are resolved against the first workspace root; returns
+     * `undefined` only when a relative path is given but no workspace is open.
+     */
+    resolveRecipeUri(recipeUriArg: string): URI | undefined {
+        if (this.hasScheme(recipeUriArg) || recipeUriArg.startsWith('/')) {
+            return new URI(recipeUriArg);
+        }
+        const root = this.workspaceService.tryGetRoots()[0];
+        return root ? root.resource.resolve(recipeUriArg) : undefined;
+    }
+
+    /** True when the string starts with a URI scheme like `file:`. */
+    protected hasScheme(value: string): boolean {
+        return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value);
+    }
+
+    /**
      * Builds the render config from workspace conventions. Paths are sent as
      * URI strings; the backend converts them to filesystem paths.
      */

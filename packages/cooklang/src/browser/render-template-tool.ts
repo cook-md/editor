@@ -74,8 +74,9 @@ export class RenderTemplateTool implements ToolProvider {
                     },
                     recipeUri: {
                         type: 'string',
-                        description: 'URI of the .cook or .menu file to render against. Defaults to the active recipe in the editor. '
-                            + 'Renders the file\'s saved content on disk (unsaved editor edits are not included).',
+                        description: 'The .cook or .menu file to render against — preferably a path relative to the workspace '
+                            + 'root (e.g. "Baking/Napoleon.cook"); an absolute path or file:// URI also works. Defaults to the '
+                            + 'active recipe in the editor. Renders the file\'s saved content on disk (unsaved editor edits are not included).',
                     },
                     show: {
                         type: 'boolean',
@@ -107,11 +108,18 @@ export class RenderTemplateTool implements ToolProvider {
         if (!args.templateContent) {
             return this.fail('templateContent is required.');
         }
-        const recipeUri = args.recipeUri
-            ? new URI(args.recipeUri)
-            : this.reportConfigService.getActiveCooklangUri();
-        if (!recipeUri) {
-            return this.fail('No recipe specified and no active .cook or .menu file. Pass recipeUri.');
+        let recipeUri: URI | undefined;
+        if (args.recipeUri) {
+            recipeUri = this.reportConfigService.resolveRecipeUri(args.recipeUri);
+            if (!recipeUri) {
+                return this.fail(`Could not resolve recipeUri '${args.recipeUri}': it is a relative path but no workspace is open. `
+                    + 'Pass a workspace-relative path, an absolute path, or a file:// URI.');
+            }
+        } else {
+            recipeUri = this.reportConfigService.getActiveCooklangUri();
+            if (!recipeUri) {
+                return this.fail('No recipe specified and no active .cook or .menu file. Pass recipeUri.');
+            }
         }
         if (recipeUri.path.ext !== '.cook' && recipeUri.path.ext !== '.menu') {
             return this.fail(`recipeUri must be a .cook or .menu file, got: ${recipeUri.path.base}`);
