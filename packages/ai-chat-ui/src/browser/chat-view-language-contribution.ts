@@ -323,9 +323,13 @@ export class ChatViewLanguageContribution implements FrontendApplicationContribu
                         command: {
                             title: VARIABLE_ADD_CONTEXT_COMMAND.label!,
                             id: VARIABLE_ADD_CONTEXT_COMMAND.id,
+                            // Keep the raw value (no trailing space) as the context variable argument.
                             arguments: [variable.name, item.insertText]
                         },
                         ...item,
+                        // Append a trailing space to the editor insertion so the next word
+                        // the user types does not glue onto the inserted reference.
+                        insertText: `${item.insertText} `,
                     })));
                 }
             }
@@ -372,9 +376,11 @@ export class ChatViewLanguageContribution implements FrontendApplicationContribu
             return;
         }
 
+        // Append a trailing space so the next word the user types does not glue
+        // onto the inserted reference (e.g. `#file:foo.cook` + `report`).
         inputEditor.executeEdits('variable-argument-picker', [{
             range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
-            text: arg
+            text: `${arg} `
         }]);
 
         await this.chatFrontendContribution.addContextVariable(variableName, arg);
