@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.0-alpha.24](https://github.com/cook-md/editor/compare/v0.1.0-alpha.23...v0.1.0-alpha.24) (2026-06-14)
+
+
+### Features
+
+* AI-authored template rendering (renderTemplate tool) ([#46](https://github.com/cook-md/editor/issues/46)) ([35ae807](https://github.com/cook-md/editor/commit/35ae807de42975138fc3afafcede96de0e96ba4e))
+
+
+### Bug Fixes
+
+* **ai-chat-ui:** add trailing space after inserted #file mention ([#48](https://github.com/cook-md/editor/issues/48)) ([35700fd](https://github.com/cook-md/editor/commit/35700fd0824318b8a54e5824741f6c1a8e606dd9))
+
 ## [0.1.0-alpha.23](https://github.com/cook-md/editor/compare/v0.1.0-alpha.22...v0.1.0-alpha.23) (2026-06-11)
 
 
