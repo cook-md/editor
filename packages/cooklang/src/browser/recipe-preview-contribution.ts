@@ -24,7 +24,7 @@ import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { SelectionService } from '@theia/core/lib/common/selection-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
-import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
+import { COOKLANG_LANGUAGE_ID, CooklangPreferences, CooklangUri } from '../common';
 import {
     RecipePreviewWidget,
     RECIPE_PREVIEW_WIDGET_ID,
@@ -79,7 +79,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     readonly label = 'Cooklang: Recipe Preview';
 
     canHandle(uri: URI): number {
-        if (uri.scheme === 'file' && uri.path.ext === '.cook' && this.preferences['cooklang.openInPreviewMode']) {
+        if (uri.scheme === 'file' && CooklangUri.isRecipe(uri) && this.preferences['cooklang.openInPreviewMode']) {
             return 200;
         }
         return 0;
@@ -108,7 +108,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE,
             UriAwareCommandHandler.MonoSelect(this.selectionService, {
                 execute: uri => this.editorManager.open(uri),
-                isEnabled: uri => uri.path.ext === '.cook',
+                isEnabled: uri => CooklangUri.isRecipe(uri),
             })
         );
     }
@@ -125,8 +125,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
                     return true;
                 }
                 if (NavigatableWidget.is(widget)) {
-                    const uri = widget.getResourceUri();
-                    return uri !== undefined && uri.path.ext === '.cook';
+                    return CooklangUri.isRecipe(widget.getResourceUri());
                 }
                 return false;
             },
@@ -198,7 +197,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             }
             if (NavigatableWidget.is(args[0])) {
                 const uri = (args[0] as NavigatableWidget).getResourceUri();
-                if (uri && uri.path.ext === '.cook') {
+                if (CooklangUri.isRecipe(uri)) {
                     return true;
                 }
             }
@@ -225,7 +224,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             return;
         }
 
-        const uri = (NavigatableWidget.is(target) && target.getResourceUri()?.path.ext === '.cook')
+        const uri = (NavigatableWidget.is(target) && CooklangUri.isRecipe(target.getResourceUri()))
             ? target.getResourceUri()!
             : this.getActiveCooklangEditorUri();
         if (!uri) {
@@ -244,13 +243,13 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     protected resolveUri(args: unknown[]): URI | undefined {
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (uri.path.ext === '.cook') {
+            if (CooklangUri.isRecipe(uri)) {
                 return uri;
             }
         }
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (uri && uri.path.ext === '.cook') {
+            if (CooklangUri.isRecipe(uri)) {
                 return uri;
             }
         }

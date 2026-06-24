@@ -15,7 +15,7 @@ import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
-import { CooklangLanguageService, ReportOutputFormat } from '../common';
+import { CooklangLanguageService, CooklangUri, ReportOutputFormat } from '../common';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
 
@@ -121,7 +121,7 @@ export class RenderTemplateTool implements ToolProvider {
                 return this.fail('No recipe specified and no active .cook or .menu file. Pass recipeUri.');
             }
         }
-        if (recipeUri.path.ext !== '.cook' && recipeUri.path.ext !== '.menu') {
+        if (!CooklangUri.isCooklang(recipeUri)) {
             return this.fail(`recipeUri must be a .cook or .menu file, got: ${recipeUri.path.base}`);
         }
         let recipeContent: string;
