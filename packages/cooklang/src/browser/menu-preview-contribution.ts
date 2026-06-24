@@ -24,7 +24,7 @@ import URI from '@theia/core/lib/common/uri';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { SelectionService } from '@theia/core/lib/common/selection-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
-import { COOKLANG_LANGUAGE_ID } from '../common';
+import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
 import {
     MenuPreviewWidget,
     MENU_PREVIEW_WIDGET_ID,
@@ -76,7 +76,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     readonly label = 'Cooklang: Menu Preview';
 
     canHandle(uri: URI): number {
-        if (uri.scheme === 'file' && uri.path.ext === '.menu') {
+        if (uri.scheme === 'file' && CooklangUri.isMenu(uri)) {
             return 200;
         }
         return 0;
@@ -105,7 +105,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
         commands.registerCommand(CooklangMenuPreviewCommands.OPEN_MENU_SOURCE,
             UriAwareCommandHandler.MonoSelect(this.selectionService, {
                 execute: uri => this.editorManager.open(uri),
-                isEnabled: uri => uri.path.ext === '.menu',
+                isEnabled: uri => CooklangUri.isMenu(uri),
             })
         );
     }
@@ -122,8 +122,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
                     return true;
                 }
                 if (NavigatableWidget.is(widget)) {
-                    const uri = widget.getResourceUri();
-                    return uri !== undefined && uri.path.ext === '.menu';
+                    return CooklangUri.isMenu(widget.getResourceUri());
                 }
                 return false;
             },
@@ -179,7 +178,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
             return undefined;
         }
         const uri = new URI(editorWidget.editor.document.uri);
-        if (uri.path.ext !== '.menu') {
+        if (!CooklangUri.isMenu(uri)) {
             return undefined;
         }
         return uri;
@@ -196,7 +195,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
             }
             if (NavigatableWidget.is(args[0])) {
                 const uri = (args[0] as NavigatableWidget).getResourceUri();
-                if (uri && uri.path.ext === '.menu') {
+                if (CooklangUri.isMenu(uri)) {
                     return true;
                 }
             }
@@ -222,7 +221,7 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
             return;
         }
 
-        const uri = (NavigatableWidget.is(target) && target.getResourceUri()?.path.ext === '.menu')
+        const uri = (NavigatableWidget.is(target) && CooklangUri.isMenu(target.getResourceUri()))
             ? target.getResourceUri()!
             : this.getActiveMenuEditorUri();
         if (!uri) {
@@ -241,13 +240,13 @@ export class MenuPreviewContribution implements CommandContribution, KeybindingC
     protected resolveUri(args: unknown[]): URI | undefined {
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (uri.path.ext === '.menu') {
+            if (CooklangUri.isMenu(uri)) {
                 return uri;
             }
         }
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (uri && uri.path.ext === '.menu') {
+            if (CooklangUri.isMenu(uri)) {
                 return uri;
             }
         }

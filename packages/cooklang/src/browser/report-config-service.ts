@@ -18,7 +18,7 @@ import { EditorManager } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
-import { COOKLANG_LANGUAGE_ID } from '../common';
+import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
 
 /**
  * Resolves the active recipe/menu URI and assembles the render config from
@@ -61,7 +61,7 @@ export class ReportConfigService {
     protected getCooklangResourceUri(widget: Widget | undefined): URI | undefined {
         if (NavigatableWidget.is(widget)) {
             const uri = widget.getResourceUri();
-            if (uri && (uri.path.ext === '.cook' || uri.path.ext === '.menu')) {
+            if (CooklangUri.isCooklang(uri)) {
                 return uri;
             }
         }

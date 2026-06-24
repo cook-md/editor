@@ -27,7 +27,7 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
-import { COOKLANG_LANGUAGE_ID } from '../common';
+import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 
 // ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ export class ShoppingListContribution
         // 1. Direct URI argument (from context menu or programmatic invocation)
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (uri.path.ext === '.cook') {
+            if (CooklangUri.isRecipe(uri)) {
                 return uri;
             }
         }
@@ -153,7 +153,7 @@ export class ShoppingListContribution
         // 2. Widget argument (toolbar passes the widget as first arg)
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (uri && uri.path.ext === '.cook') {
+            if (CooklangUri.isRecipe(uri)) {
                 return uri;
             }
         }
@@ -161,7 +161,7 @@ export class ShoppingListContribution
         // 3. Navigator selection (right-click context menu)
         const selection = this.selectionService.selection;
         const selectedUri = UriSelection.getUri(selection);
-        if (selectedUri && selectedUri.path.ext === '.cook') {
+        if (CooklangUri.isRecipe(selectedUri)) {
             return selectedUri;
         }
 
@@ -170,7 +170,7 @@ export class ShoppingListContribution
         const currentWidget = this.shell?.currentWidget;
         if (NavigatableWidget.is(currentWidget)) {
             const uri = currentWidget.getResourceUri();
-            if (uri && uri.path.ext === '.cook') {
+            if (CooklangUri.isRecipe(uri)) {
                 return uri;
             }
         }
@@ -222,19 +222,19 @@ export class ShoppingListContribution
     protected resolveMenuUri(args: unknown[]): URI | undefined {
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (uri.path.ext === '.menu') { return uri; }
+            if (CooklangUri.isMenu(uri)) { return uri; }
         }
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (uri && uri.path.ext === '.menu') { return uri; }
+            if (CooklangUri.isMenu(uri)) { return uri; }
         }
         const selection = this.selectionService.selection;
         const selectedUri = UriSelection.getUri(selection);
-        if (selectedUri && selectedUri.path.ext === '.menu') { return selectedUri; }
+        if (CooklangUri.isMenu(selectedUri)) { return selectedUri; }
         const currentWidget = this.shell?.currentWidget;
         if (NavigatableWidget.is(currentWidget)) {
             const uri = currentWidget.getResourceUri();
-            if (uri && uri.path.ext === '.menu') { return uri; }
+            if (CooklangUri.isMenu(uri)) { return uri; }
         }
         return undefined;
     }
