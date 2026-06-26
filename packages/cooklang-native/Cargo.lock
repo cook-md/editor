@@ -446,6 +446,8 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "nutrition-client",
+ "nutrition-jinja",
  "serde",
  "serde_json",
  "tokio",
@@ -1705,6 +1707,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "nutrition-client"
+version = "0.1.0"
+source = "git+ssh://git@github.com/cook-md/db?rev=82eb404cd9c45fadb5bb998cb55d6fb4a44b2da6#82eb404cd9c45fadb5bb998cb55d6fb4a44b2da6"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "nutrition-jinja"
+version = "0.1.0"
+source = "git+ssh://git@github.com/cook-md/db?rev=82eb404cd9c45fadb5bb998cb55d6fb4a44b2da6#82eb404cd9c45fadb5bb998cb55d6fb4a44b2da6"
+dependencies = [
+ "cooklang",
+ "cooklang-reports",
+ "minijinja",
+ "nutrition-client",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2033,6 +2062,7 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64",
  "bytes",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http",
