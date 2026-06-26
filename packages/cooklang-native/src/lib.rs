@@ -911,6 +911,10 @@ struct ReportConfig {
     aisle_path: Option<String>,
     pantry_path: Option<String>,
     datastore_path: Option<String>,
+    // Consumed only under `cfg(feature = "nutrition")`; always deserialized so
+    // the TS layer sends an identical config shape regardless of build features.
+    nutrition_api_url: Option<String>,
+    nutrition_token: Option<String>,
 }
 
 /// Render a Jinja2 report template against a recipe via cooklang-reports
@@ -935,6 +939,18 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
         builder.datastore_path(p);
     }
     let config = builder.build();
+    #[cfg(feature = "nutrition")]
+    let config = match cfg.nutrition_api_url {
+        Some(url) => {
+            let mut client = nutrition_client::Client::new(url);
+            if let Some(tok) = cfg.nutrition_token.filter(|t| !t.is_empty()) {
+                client = client.with_auth_token(tok);
+            }
+            let ext = nutrition_jinja::NutritionExtension::new(std::sync::Arc::new(client));
+            config.with_extension(ext)
+        }
+        None => config,
+    };
     match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
         Ok(output) => serde_json::json!({ "output": output }).to_string(),
         Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
@@ -976,5 +992,35 @@ mod render_report_tests {
         let result = super::render_report(garbage.into(), "{{ scale }}".into(), "{}".into());
         let v: serde_json::Value = serde_json::from_str(&result).expect("must return valid JSON");
         assert!(v.get("output").is_some() || v.get("error").is_some());
+    }
+}
+
+#[cfg(test)]
+mod nutrition_wiring_tests {
+    // A template that calls nutrition_for. When the nutrition feature is OFF the
+    // function is unregistered (render errors with "unknown"); when ON the
+    // extension is registered and attempts a call to the configured URL.
+    const NUTRITION_TEMPLATE: &str =
+        "{{ nutrition_for(ingredient='salmon', amount=100, unit='g').kcal }}";
+    const RECIPE: &str = "Add @salmon{100%g}.";
+
+    #[cfg(not(feature = "nutrition"))]
+    #[test]
+    fn feature_off_nutrition_for_is_unregistered() {
+        let cfg = r#"{"nutritionApiUrl":"http://127.0.0.1:9"}"#;
+        let out = super::render_report(RECIPE.into(), NUTRITION_TEMPLATE.into(), cfg.into());
+        assert!(out.contains("\"error\""), "expected an error payload, got: {out}");
+        assert!(out.contains("nutrition_for"), "error should mention the unknown function: {out}");
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn feature_on_registers_extension_and_attempts_call() {
+        // Point at a closed port so the call fails fast with a transport error,
+        // proving the extension was registered and invoked.
+        let cfg = r#"{"nutritionApiUrl":"http://127.0.0.1:9","nutritionToken":"tok"}"#;
+        let out = super::render_report(RECIPE.into(), NUTRITION_TEMPLATE.into(), cfg.into());
+        assert!(out.contains("\"error\""), "expected an error payload, got: {out}");
+        assert!(!out.contains("unknown"), "function should be registered: {out}");
     }
 }
