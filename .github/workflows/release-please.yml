@@ -193,7 +193,9 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ matrix.rust_target }}" ]; then
-            npx napi build --release --platform --target ${{ matrix.rust_target }}
+            # Keep --features nutrition in sync with `npm run build` (package.json);
+            # the cross-target path bypasses that script, so set the flag here too.
+            npx napi build --release --platform --target ${{ matrix.rust_target }} --features nutrition
           else
             npm run build
           fi
