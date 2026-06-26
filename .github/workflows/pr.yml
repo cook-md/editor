@@ -73,20 +73,27 @@ jobs:
       # (nutrition-client/nutrition-jinja) over SSH. Load a read-only deploy key
       # so the `--features nutrition` build can fetch them. Set DB_DEPLOY_KEY in
       # the repo's Actions secrets (private half of a deploy key on cook-md/db).
-      - name: Authenticate to private nutrition crates (cook-md/db)
+      # cooklang-native git-depends on the private cook-md/db crates
+      # (nutrition-client/nutrition-jinja). Mint a short-lived, repo-scoped token
+      # from a GitHub App (Contents: read on cook-md/db) and rewrite the ssh URL
+      # to authenticated https so the `--features nutrition` build can fetch them.
+      # Requires DB_APP_ID + DB_APP_PRIVATE_KEY secrets on this repo.
+      - name: Mint cook-md/db access token
+        id: db_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DB_APP_ID }}
+          private-key: ${{ secrets.DB_APP_PRIVATE_KEY }}
+          owner: cook-md
+          repositories: db
+
+      - name: Configure git for private nutrition crates
         env:
-          DB_DEPLOY_KEY: ${{ secrets.DB_DEPLOY_KEY }}
+          DB_TOKEN: ${{ steps.db_token.outputs.token }}
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DB_DEPLOY_KEY" > ~/.ssh/db_deploy_key
-          chmod 600 ~/.ssh/db_deploy_key
-          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
-          cat >> ~/.ssh/config <<'EOF'
-          Host github.com
-            User git
-            IdentityFile ~/.ssh/db_deploy_key
-            IdentitiesOnly yes
-          EOF
+          git config --global \
+            url."https://x-access-token:${DB_TOKEN}@github.com/cook-md/db".insteadOf \
+            "ssh://git@github.com/cook-md/db"
           echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
 
       - name: Build native addon
