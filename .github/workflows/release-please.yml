@@ -188,6 +188,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
+      # cooklang-native git-depends on the private cook-md/db crates over SSH;
+      # load a read-only deploy key (DB_DEPLOY_KEY secret) so the
+      # `--features nutrition` build can fetch them across all targets.
+      - name: Authenticate to private nutrition crates (cook-md/db)
+        shell: bash
+        env:
+          DB_DEPLOY_KEY: ${{ secrets.DB_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DB_DEPLOY_KEY" > ~/.ssh/db_deploy_key
+          chmod 600 ~/.ssh/db_deploy_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'EOF'
+          Host github.com
+            User git
+            IdentityFile ~/.ssh/db_deploy_key
+            IdentitiesOnly yes
+          EOF
+          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
+
       - name: Build native addon
         working-directory: packages/cooklang-native
         shell: bash
