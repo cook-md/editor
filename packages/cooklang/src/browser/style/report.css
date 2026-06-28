@@ -1,5 +1,8 @@
 .theia-cooklang-report {
-    padding: 0 20px 20px 20px;
+    /* Page margins: comfortable top breathing room under the
+       breadcrumb, and side gutters that grow a little with the
+       pane width without ballooning on very wide screens. */
+    padding: 28px clamp(24px, 4vw, 64px) 64px;
     color: var(--theia-editor-foreground);
     background: var(--theia-editor-background);
 }
@@ -19,4 +22,187 @@
     white-space: pre-wrap;
     font-family: var(--theia-code-font-family);
     font-size: var(--theia-code-font-size);
+}
+
+/* ============================================================
+   Rendered-markdown report typography
+   ------------------------------------------------------------
+   Reports (e.g. the Nutrition Report) are jinja -> markdown ->
+   HTML, landing inside `.theia-cooklang-report-content`. The
+   raw markdown renders with no rhythm: numbers float left,
+   2-column tables stretch full width, sections run together.
+
+   Treatment: a clinical, editorial data report. The data
+   tables are the signature — set like a nutrition panel with
+   tabular figures, hairline rules, and a quiet header band.
+   Personality comes from scale, weight and spacing, not from
+   fonts (the editor may run offline). All colour is derived
+   from the active Theia theme, so it adapts to light & dark.
+   ============================================================ */
+
+.theia-cooklang-report-content {
+    /* Hairline / zebra / muted tones mixed from the live theme.
+       Plain rgba fallbacks first for engines without color-mix. */
+    --report-rule: rgba(128, 128, 128, 0.22);
+    --report-rule: color-mix(in srgb, var(--theia-editor-foreground) 16%, transparent);
+    --report-rule-strong: rgba(128, 128, 128, 0.42);
+    --report-rule-strong: color-mix(in srgb, var(--theia-editor-foreground) 32%, transparent);
+    --report-faint: rgba(128, 128, 128, 0.08);
+    --report-faint: color-mix(in srgb, var(--theia-editor-foreground) 6%, transparent);
+    --report-muted: var(--theia-descriptionForeground, #888);
+
+    max-width: 62rem;
+    font-size: var(--theia-content-font-size, 13px);
+    line-height: 1.65;
+    /* Lining + tabular figures everywhere so digit columns align. */
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Let a wide table (per-ingredient breakdown) scroll rather
+       than wrap its cells. */
+    overflow-x: auto;
+}
+
+.theia-cooklang-report-content > :first-child {
+    margin-top: 0;
+}
+
+/* --- Heading scale & vertical rhythm --------------------- */
+
+.theia-cooklang-report-content h1 {
+    font-size: 1.95em;
+    line-height: 1.12;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.15em;
+}
+
+.theia-cooklang-report-content h2 {
+    font-size: 1.28em;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    /* The top hairline encodes section boundaries. */
+    margin: 2.6em 0 0.85em;
+    padding-top: 1.15em;
+    border-top: 1px solid var(--report-rule);
+}
+
+.theia-cooklang-report-content h3 {
+    font-size: 0.96em;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--report-muted);
+    margin: 1.9em 0 0.7em;
+}
+
+/* --- Standfirst: the metadata line under the title ------- */
+
+.theia-cooklang-report-content h1 + p {
+    font-size: 1.06em;
+    line-height: 1.5;
+    color: var(--report-muted);
+    max-width: 48rem;
+    margin: 0 0 0.4em;
+}
+
+.theia-cooklang-report-content h1 + p em {
+    font-style: normal;
+}
+
+.theia-cooklang-report-content h1 + p strong {
+    color: var(--theia-editor-foreground);
+    font-weight: 650;
+}
+
+/* --- Body copy ------------------------------------------- */
+
+.theia-cooklang-report-content p,
+.theia-cooklang-report-content li {
+    max-width: 48rem;
+}
+
+.theia-cooklang-report-content p {
+    margin: 0.65em 0;
+}
+
+.theia-cooklang-report-content ul {
+    margin: 0.7em 0;
+    padding-left: 1.3em;
+}
+
+.theia-cooklang-report-content li {
+    margin: 0.25em 0;
+}
+
+.theia-cooklang-report-content em {
+    color: var(--report-muted);
+}
+
+/* --- Tables: the signature ------------------------------- */
+
+.theia-cooklang-report-content table {
+    border-collapse: collapse;
+    /* Hug content so 2-column tables stop stretching across the
+       full width with vast gaps. */
+    width: auto;
+    max-width: 100%;
+    margin: 0.5em 0 0.3em;
+    font-variant-numeric: tabular-nums lining-nums;
+}
+
+.theia-cooklang-report-content th,
+.theia-cooklang-report-content td {
+    padding: 0.42em 1.4em 0.42em 0;
+    text-align: left;
+    vertical-align: baseline;
+    /* Keep amounts like "3.0 slices" on one line. */
+    white-space: nowrap;
+}
+
+.theia-cooklang-report-content th:last-child,
+.theia-cooklang-report-content td:last-child {
+    padding-right: 0.2em;
+}
+
+.theia-cooklang-report-content thead th {
+    font-size: 0.8em;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--report-muted);
+    padding-bottom: 0.55em;
+    border-bottom: 1px solid var(--report-rule-strong);
+}
+
+.theia-cooklang-report-content tbody td {
+    border-bottom: 1px solid var(--report-rule);
+}
+
+.theia-cooklang-report-content tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.theia-cooklang-report-content tbody tr:hover td {
+    background: var(--report-faint);
+}
+
+/* --- Inline code / source & code tokens ------------------ */
+
+.theia-cooklang-report-content code {
+    font-family: var(--theia-code-font-family);
+    font-size: 0.88em;
+    padding: 0.08em 0.36em;
+    border-radius: 3px;
+    background: var(--report-faint);
+}
+
+/* --- Section divider ------------------------------------- */
+
+.theia-cooklang-report-content hr {
+    border: none;
+    border-top: 1px solid var(--report-rule-strong);
+    margin: 2.6em 0;
 }
