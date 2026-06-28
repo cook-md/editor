@@ -15,8 +15,8 @@
   },
   "license": "AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception",
   "scripts": {
-    "build": "napi build --release --platform",
-    "build:debug": "napi build --platform"
+    "build": "napi build --release --platform --features nutrition",
+    "build:debug": "napi build --platform --features nutrition"
   },
   "devDependencies": {
     "@napi-rs/cli": "^2.18.0"

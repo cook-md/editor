@@ -50,27 +50,37 @@ class FakeWorkspaceService {
     }
 }
 
-function createService(root: URI | undefined, existing: string[] = []): {
+function createService(root: URI | undefined, existing: string[] = [], opts: {
+    serviceUrl?: string;
+    getToken?: () => Promise<string | undefined>;
+} = {}): {
     service: ReportConfigService;
     fileService: FakeFileService;
 } {
     const fileService = new FakeFileService();
     existing.forEach(p => fileService.existing.add(p));
     const service = new ReportConfigService();
-    // Property injection — assign the fakes the service actually uses.
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (service as any).fileService = fileService;
     (service as any).workspaceService = new FakeWorkspaceService(root);
+    (service as any).preferences = {
+        get: (_key: string, fallback?: string) => opts.serviceUrl ?? fallback,
+    };
+    (service as any).authService = { getToken: opts.getToken ?? (async () => 'tok-123') };
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { service, fileService };
 }
 
 describe('ReportConfigService#buildConfigJson', () => {
 
-    it('returns only the scale when there is no workspace root', async () => {
+    it('returns scale + nutrition fields when there is no workspace root', async () => {
         const { service } = createService(undefined);
         const config = JSON.parse(await service.buildConfigJson());
-        expect(config).to.deep.equal({ scale: 1 });
+        expect(config).to.deep.equal({
+            scale: 1,
+            nutritionApiUrl: 'https://nutrition.cook.md',
+            nutritionToken: 'tok-123',
+        });
     });
 
     it('respects the scale argument', async () => {
@@ -108,6 +118,30 @@ describe('ReportConfigService#buildConfigJson', () => {
         const { service } = createService(root, [db, configDb]);
         const config = JSON.parse(await service.buildConfigJson());
         expect(config.datastorePath).to.equal(db);
+    });
+
+    it('uses the configured nutrition service URL', async () => {
+        const { service } = createService(undefined, [], { serviceUrl: 'http://127.0.0.1:8080' });
+        const config = JSON.parse(await service.buildConfigJson());
+        expect(config.nutritionApiUrl).to.equal('http://127.0.0.1:8080');
+    });
+
+    it('plumbs the auth token from AuthService', async () => {
+        const { service } = createService(undefined, [], { getToken: async () => 'jwt-xyz' });
+        const config = JSON.parse(await service.buildConfigJson());
+        expect(config.nutritionToken).to.equal('jwt-xyz');
+    });
+
+    it('sends an empty token when logged out (getToken returns undefined)', async () => {
+        const { service } = createService(undefined, [], { getToken: async () => undefined });
+        const config = JSON.parse(await service.buildConfigJson());
+        expect(config.nutritionToken).to.equal('');
+    });
+
+    it('sends an empty token when getToken rejects', async () => {
+        const { service } = createService(undefined, [], { getToken: async () => { throw new Error('no session'); } });
+        const config = JSON.parse(await service.buildConfigJson());
+        expect(config.nutritionToken).to.equal('');
     });
 });
 

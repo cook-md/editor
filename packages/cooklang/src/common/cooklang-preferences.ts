@@ -26,12 +26,18 @@ export const cooklangPreferencesSchema: PreferenceSchema = {
             'type': 'boolean',
             'description': 'Open .cook files in preview mode by default.',
             'default': true
+        },
+        'cooklang.nutrition.serviceUrl': {
+            'type': 'string',
+            'description': 'Base URL of the Cooklang nutrition service used by report templates.',
+            'default': 'https://nutrition.cook.md'
         }
     }
 };
 
 export interface CooklangConfiguration {
     'cooklang.openInPreviewMode': boolean;
+    'cooklang.nutrition.serviceUrl': string;
 }
 
 export const CooklangPreferenceContribution = Symbol('CooklangPreferenceContribution');

@@ -18,7 +18,11 @@ import { EditorManager } from '@theia/editor/lib/browser';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
+import { PreferenceService } from '@theia/core/lib/common/preferences';
+import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
+
+const DEFAULT_NUTRITION_SERVICE_URL = 'https://nutrition.cook.md';
 
 /**
  * Resolves the active recipe/menu URI and assembles the render config from
@@ -40,6 +44,12 @@ export class ReportConfigService {
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
+
+    @inject(PreferenceService)
+    protected readonly preferences: PreferenceService;
+
+    @inject(AuthService)
+    protected readonly authService: AuthService;
 
     /**
      * Resolves the recipe URI from the focused widget, the current main-area
@@ -115,7 +125,19 @@ export class ReportConfigService {
             aislePath?: string;
             pantryPath?: string;
             datastorePath?: string;
-        } = { scale };
+            nutritionApiUrl: string;
+            nutritionToken: string;
+        } = {
+            scale,
+            nutritionApiUrl: this.preferences.get<string>('cooklang.nutrition.serviceUrl', DEFAULT_NUTRITION_SERVICE_URL),
+            nutritionToken: '',
+        };
+        try {
+            config.nutritionToken = (await this.authService.getToken()) ?? '';
+        } catch (err) {
+            console.debug('[cooklang] nutrition token unavailable (logged out?):', err);
+            config.nutritionToken = '';
+        }
         const root = this.workspaceService.tryGetRoots()[0];
         if (root) {
             config.basePath = root.resource.toString();
