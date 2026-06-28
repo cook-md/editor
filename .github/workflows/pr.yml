@@ -70,10 +70,6 @@ jobs:
         run: npx lerna run afterInstall
 
       # cooklang-native git-depends on the private cook-md/db crates
-      # (nutrition-client/nutrition-jinja) over SSH. Load a read-only deploy key
-      # so the `--features nutrition` build can fetch them. Set DB_DEPLOY_KEY in
-      # the repo's Actions secrets (private half of a deploy key on cook-md/db).
-      # cooklang-native git-depends on the private cook-md/db crates
       # (nutrition-client/nutrition-jinja). Mint a short-lived, repo-scoped token
       # from a GitHub App (Contents: read on cook-md/db) and rewrite the ssh URL
       # to authenticated https so the `--features nutrition` build can fetch them.

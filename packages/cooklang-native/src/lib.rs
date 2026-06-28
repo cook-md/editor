@@ -923,7 +923,13 @@ struct ReportConfig {
 /// Returns JSON: `{"output": "..."}` on success or `{"error": "..."}` on failure.
 #[napi]
 pub fn render_report(recipe: String, template: String, config_json: String) -> String {
-    let cfg: ReportConfig = serde_json::from_str(&config_json).unwrap_or_default();
+    // A malformed config silently degrades to defaults (no base path, no
+    // nutrition wiring); log it so a bad config surfaces in the addon's stderr
+    // rather than as a confusing downstream "extension not registered" error.
+    let cfg: ReportConfig = serde_json::from_str(&config_json).unwrap_or_else(|e| {
+        eprintln!("[cooklang-native] invalid report config JSON, using defaults: {e}");
+        ReportConfig::default()
+    });
     let mut builder = cooklang_reports::config::Config::builder();
     builder.scale(cfg.scale.unwrap_or(1.0));
     if let Some(p) = cfg.base_path {
