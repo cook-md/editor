@@ -18,6 +18,8 @@ import { RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { AutoUpdaterContribution } from './auto-updater-contribution';
 import { UpdateService, UpdateServicePath } from '../common/update-protocol';
 import { UpdateServiceImpl } from './update-service-impl';
+import { ReportExportService, ReportExportServicePath } from '../common/report-export-protocol';
+import { ReportExportServiceImpl } from './report-export-service-impl';
 
 export default new ContainerModule(bind => {
     bind(UpdateServiceImpl).toSelf().inSingletonScope();
@@ -25,6 +27,13 @@ export default new ContainerModule(bind => {
 
     bind(ElectronConnectionHandler).toDynamicValue(ctx =>
         new RpcConnectionHandler(UpdateServicePath, () => ctx.container.get<UpdateService>(UpdateService))
+    ).inSingletonScope();
+
+    bind(ReportExportServiceImpl).toSelf().inSingletonScope();
+    bind(ReportExportService).toService(ReportExportServiceImpl);
+
+    bind(ElectronConnectionHandler).toDynamicValue(ctx =>
+        new RpcConnectionHandler(ReportExportServicePath, () => ctx.container.get<ReportExportService>(ReportExportService))
     ).inSingletonScope();
 
     bind(AutoUpdaterContribution).toSelf().inSingletonScope();
