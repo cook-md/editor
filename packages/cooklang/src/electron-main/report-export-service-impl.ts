@@ -25,14 +25,23 @@ export class ReportExportServiceImpl implements ReportExportService {
     /** Fixed logical content width (px) for offscreen rendering / PNG capture. */
     protected static readonly CONTENT_WIDTH = 820;
 
+    /** Guard against a print callback that never fires, so cleanup always runs. */
+    protected static readonly PRINT_TIMEOUT_MS = 60_000;
+
     async print(html: string): Promise<void> {
         await this.withWindow(html, win => new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(
+                () => reject(new Error('Print timed out')),
+                ReportExportServiceImpl.PRINT_TIMEOUT_MS
+            );
             win.webContents.print({ printBackground: true }, (success, failureReason) => {
+                clearTimeout(timer);
                 // A user cancel reports "Print job canceled" (Chromium uses the American
-                // single-l spelling); treat any cancel wording as a quiet success.
-                const cancelled = !failureReason || /cancel/i.test(failureReason);
+                // single-l spelling); treat only known cancel wording as a quiet success.
+                // A falsy reason is an unknown failure and is surfaced, not swallowed.
+                const cancelled = typeof failureReason === 'string' && /cancel/i.test(failureReason);
                 if (!success && !cancelled) {
-                    reject(new Error(failureReason));
+                    reject(new Error(failureReason || 'Print failed'));
                 } else {
                     resolve();
                 }
@@ -58,8 +67,12 @@ export class ReportExportServiceImpl implements ReportExportService {
                     'Math.ceil(document.body.scrollHeight)'
                 );
                 win.setContentSize(ReportExportServiceImpl.CONTENT_WIDTH, Math.max(1, Number(height) || 1));
-                // Give the compositor a moment to paint the resized page.
-                await new Promise(resolve => setTimeout(resolve, 150));
+                // Wait for the resize reflow to actually paint before capturing: two
+                // animation frames in the page absorb the unbounded layout time better
+                // than a fixed timeout. capturePage() then waits for the next frame.
+                await win.webContents.executeJavaScript(
+                    'new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))'
+                );
                 const image = await win.webContents.capturePage();
                 return this.saveBuffer(image.toPNG(), defaultFileName, 'png', 'PNG Image');
             });
@@ -83,7 +96,15 @@ export class ReportExportServiceImpl implements ReportExportService {
             paintWhenInitiallyHidden: true,
             width: ReportExportServiceImpl.CONTENT_WIDTH,
             height: 1024,
-            webPreferences: { backgroundThrottling: false }
+            // The window loads report HTML from a local file: keep the renderer
+            // locked down (these are the current Electron defaults, stated explicitly
+            // for a security-sensitive operation).
+            webPreferences: {
+                backgroundThrottling: false,
+                contextIsolation: true,
+                sandbox: true,
+                nodeIntegration: false
+            }
         });
         try {
             await win.loadFile(tmpFile);
