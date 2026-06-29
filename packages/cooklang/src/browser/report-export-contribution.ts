@@ -24,7 +24,7 @@ export namespace CooklangReportExportCommands {
     export const PRINT: Command = Command.toLocalizedCommand({
         id: 'cooklang.report.print',
         label: 'Cooklang: Print Report',
-        iconClass: 'codicon codicon-printer'
+        iconClass: 'codicon codicon-print'
     }, 'theia/cooklang/printReport');
     export const EXPORT_PDF: Command = Command.toLocalizedCommand({
         id: 'cooklang.report.exportPdf',
