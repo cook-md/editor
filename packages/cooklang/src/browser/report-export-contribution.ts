@@ -72,19 +72,19 @@ export class ReportExportContribution implements CommandContribution, TabBarTool
         toolbar.registerItem({
             id: CooklangReportExportCommands.PRINT.id + '.toolbar',
             command: CooklangReportExportCommands.PRINT.id,
-            tooltip: nls.localize('theia/cooklang/printReport', 'Print Report'),
+            tooltip: nls.localize('theia/cooklang/printReportTooltip', 'Print Report'),
             isVisible: widget => widget instanceof ReportWidget,
         });
         toolbar.registerItem({
             id: CooklangReportExportCommands.EXPORT_PDF.id + '.toolbar',
             command: CooklangReportExportCommands.EXPORT_PDF.id,
-            tooltip: nls.localize('theia/cooklang/exportReportPdf', 'Export Report as PDF'),
+            tooltip: nls.localize('theia/cooklang/exportReportPdfTooltip', 'Export Report as PDF'),
             isVisible: widget => widget instanceof ReportWidget,
         });
         toolbar.registerItem({
             id: CooklangReportExportCommands.EXPORT_PNG.id + '.toolbar',
             command: CooklangReportExportCommands.EXPORT_PNG.id,
-            tooltip: nls.localize('theia/cooklang/exportReportPng', 'Export Report as PNG'),
+            tooltip: nls.localize('theia/cooklang/exportReportPngTooltip', 'Export Report as PNG'),
             isVisible: widget => widget instanceof ReportWidget,
         });
     }
