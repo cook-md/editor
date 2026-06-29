@@ -25,6 +25,7 @@ import * as React from '@theia/core/shared/react';
 import * as DOMPurify from '@theia/core/shared/dompurify';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
 import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
+import { buildReportExportDocument } from './report-export-document';
 
 import '../../src/browser/style/report.css';
 
@@ -110,6 +111,31 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     createMoveToUri(resourceUri: URI): URI | undefined {
         return resourceUri;
+    }
+
+    // --- Export ---
+
+    /**
+     * Build a self-contained, print-friendly HTML document from the currently
+     * rendered report, plus a sensible default file name. Returns `undefined`
+     * while the report is still loading or in an error state.
+     */
+    getExportDocument(): { html: string; defaultFileName: string } | undefined {
+        if (this.errorMessage !== undefined || this.output === undefined) {
+            return undefined;
+        }
+        const contentNode = this.node.querySelector(
+            '.theia-cooklang-report-content, .theia-cooklang-report-text'
+        );
+        if (!contentNode) {
+            return undefined;
+        }
+        const html = buildReportExportDocument({
+            contentHtml: contentNode.outerHTML,
+            title: this.title.label,
+        });
+        const defaultFileName = `${this.uri.path.name} - ${this.options.templateLabel}`;
+        return { html, defaultFileName };
     }
 
     // --- Report rendering ---
