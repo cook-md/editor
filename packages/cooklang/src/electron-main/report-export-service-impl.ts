@@ -28,8 +28,10 @@ export class ReportExportServiceImpl implements ReportExportService {
     async print(html: string): Promise<void> {
         await this.withWindow(html, win => new Promise<void>((resolve, reject) => {
             win.webContents.print({ printBackground: true }, (success, failureReason) => {
-                // `success` is false when the user cancels the dialog — treat as quiet success.
-                if (!success && failureReason && failureReason !== 'cancelled') {
+                // A user cancel reports "Print job canceled" (Chromium uses the American
+                // single-l spelling); treat any cancel wording as a quiet success.
+                const cancelled = !failureReason || /cancel/i.test(failureReason);
+                if (!success && !cancelled) {
                     reject(new Error(failureReason));
                 } else {
                     resolve();
