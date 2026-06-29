@@ -37,6 +37,7 @@ import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-
 import { MenuPreviewContribution } from './menu-preview-contribution';
 import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './report-widget';
 import { ReportContribution } from './report-contribution';
+import { ReportExportContribution } from './report-export-contribution';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportWidgetPresenter } from './report-widget-presenter';
@@ -107,6 +108,11 @@ export default new ContainerModule(bind => {
     bind(ReportContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(ReportContribution);
     bind(MenuContribution).toService(ReportContribution);
+
+    // Report print/export commands + toolbar
+    bind(ReportExportContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(ReportExportContribution);
+    bind(TabBarToolbarContribution).toService(ReportExportContribution);
 
     // Cooklang preferences
     bindCooklangPreferences(bind);
