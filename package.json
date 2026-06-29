@@ -106,7 +106,8 @@
   "theiaPluginsDir": "plugins",
   "theiaPlugins": {
     "vscode-builtin-extensions": "https://github.com/eclipse-theia/vscode-builtin-extensions/releases/download/1.108.2/vscode-builtin-extensions-1.108.2.tar.gz",
-    "tamasfe.even-better-toml": "https://open-vsx.org/api/tamasfe/even-better-toml/0.21.2/file/tamasfe.even-better-toml-0.21.2.vsix"
+    "tamasfe.even-better-toml": "https://open-vsx.org/api/tamasfe/even-better-toml/0.21.2/file/tamasfe.even-better-toml-0.21.2.vsix",
+    "samuelcolvin.jinjahtml": "https://open-vsx.org/api/samuelcolvin/jinjahtml/0.20.0/file/samuelcolvin.jinjahtml-0.20.0.vsix"
   },
   "theiaPluginsExcludeIds": [
     "ms-vscode.js-debug-companion",

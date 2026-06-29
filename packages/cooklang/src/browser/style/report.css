@@ -7,6 +7,19 @@
     background: var(--theia-editor-background);
 }
 
+/* Printer toolbar icon: this Monaco build ships no printer codicon, so we
+   render a themed SVG mask that inherits the toolbar's text colour. Sized to
+   match adjacent codicons (16px). */
+.cooklang-print-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M5%201h6a1%201%200%200%201%201%201v2h1a2%202%200%200%201%202%202v4a1%201%200%200%201-1%201h-2v3a1%201%200%200%201-1%201H5a1%201%200%200%201-1-1v-3H2a1%201%200%200%201-1-1V6a2%202%200%200%201%202-2h1V2a1%201%200%200%201%201-1zm1%203h4V2H6v2zm5%207H5v3h6v-3zm2-5a1%201%200%201%200%200%202%201%201%200%200%200%200-2z'/%3E%3C/svg%3E") no-repeat center / 16px;
+    mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M5%201h6a1%201%200%200%201%201%201v2h1a2%202%200%200%201%202%202v4a1%201%200%200%201-1%201h-2v3a1%201%200%200%201-1%201H5a1%201%200%200%201-1-1v-3H2a1%201%200%200%201-1-1V6a2%202%200%200%201%202-2h1V2a1%201%200%200%201%201-1zm1%203h4V2H6v2zm5%207H5v3h6v-3zm2-5a1%201%200%201%200%200%202%201%201%200%200%200%200-2z'/%3E%3C/svg%3E") no-repeat center / 16px;
+}
+
 .theia-cooklang-report-error pre {
     color: var(--theia-errorForeground);
     white-space: pre-wrap;

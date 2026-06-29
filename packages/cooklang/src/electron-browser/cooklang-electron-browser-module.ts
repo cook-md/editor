@@ -17,10 +17,15 @@ import { MenuContribution } from '@theia/core/lib/common/menu';
 import { ElectronIpcConnectionProvider } from '@theia/core/lib/electron-browser/messaging/electron-ipc-connection-source';
 import { UpdateService, UpdateServicePath } from '../common/update-protocol';
 import { UpdateContribution } from '../browser/update-contribution';
+import { ReportExportService, ReportExportServicePath } from '../common/report-export-protocol';
 
 export default new ContainerModule(bind => {
     bind(UpdateService).toDynamicValue(ctx =>
         ElectronIpcConnectionProvider.createProxy<UpdateService>(ctx.container, UpdateServicePath)
+    ).inSingletonScope();
+
+    bind(ReportExportService).toDynamicValue(ctx =>
+        ElectronIpcConnectionProvider.createProxy<ReportExportService>(ctx.container, ReportExportServicePath)
     ).inSingletonScope();
 
     bind(UpdateContribution).toSelf().inSingletonScope();
