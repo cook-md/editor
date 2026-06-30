@@ -14,6 +14,7 @@
     "@theia/cooklang-native": "0.1.0",
     "@theia/cooklang-account": "1.70.0",
     "@theia/workspace": "1.70.0",
+    "mermaid": "^11.4.0",
     "tslib": "^2.6.2"
   },
   "main": "lib/common",
