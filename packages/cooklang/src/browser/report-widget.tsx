@@ -16,7 +16,6 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { MarkdownRenderer } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
-import { Markdown } from '@theia/core/lib/browser/markdown-rendering/markdown';
 import { ThemeService } from '@theia/core/lib/browser/theming';
 import { nls } from '@theia/core/lib/common/nls';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
@@ -28,6 +27,7 @@ import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, Repo
 import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
 import { buildReportExportDocument } from './report-export-document';
 import { MermaidRenderer, themeTypeToMermaidTheme } from './mermaid-renderer';
+import { MermaidMarkdown } from './report-markdown';
 
 import '../../src/browser/style/report.css';
 
@@ -246,27 +246,16 @@ export class ReportWidget extends ReactWidget implements Navigatable {
                 return <pre className='theia-cooklang-report-text'>{this.output}</pre>;
             default:
                 return (
-                    <Markdown
+                    <MermaidMarkdown
                         markdown={this.output}
                         markdownRenderer={this.markdownRenderer}
+                        mermaidRenderer={this.mermaidRenderer}
+                        theme={themeTypeToMermaidTheme(this.themeService.getCurrentTheme().type)}
                         className='theia-cooklang-report-content'
-                        onRender={this.onMarkdownRendered}
                     />
                 );
         }
     }
-
-    protected onMarkdownRendered = (element: HTMLElement | undefined): void => {
-        if (!element) {
-            return;
-        }
-        const theme = themeTypeToMermaidTheme(this.themeService.getCurrentTheme().type);
-        // Fire-and-forget: a stale render is harmless because the next update
-        // re-runs this against fresh DOM.
-        this.mermaidRenderer.renderInto(element, theme).catch(error =>
-            console.error('Mermaid rendering failed', error)
-        );
-    };
 
     /**
      * Workspace templates declare their output format via the inner file

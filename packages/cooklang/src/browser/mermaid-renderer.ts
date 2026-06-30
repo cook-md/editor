@@ -17,41 +17,27 @@ import { ThemeType } from '@theia/core/lib/common/theme';
 /** The subset of mermaid built-in themes this feature uses. */
 export type MermaidTheme = 'default' | 'dark';
 
-/** CSS selector for a mermaid code fence produced by the markdown renderer. */
-export const MERMAID_CODE_SELECTOR = 'code.language-mermaid';
+/** Class on the wrapper element produced for each rendered diagram. */
+export const MERMAID_WRAPPER_CLASS = 'theia-cooklang-mermaid';
+
+/** Class added to a wrapper whose diagram failed to render. */
+export const MERMAID_ERROR_CLASS = 'theia-cooklang-mermaid-error';
 
 /** Map a Theia theme type to the mermaid theme used for live rendering. */
 export function themeTypeToMermaidTheme(type: ThemeType): MermaidTheme {
     return (type === 'dark' || type === 'hc') ? 'dark' : 'default';
 }
 
-/**
- * Find the `<pre>` blocks inside `container` that wrap a mermaid code fence.
- * Returns the enclosing `<pre>` elements (the nodes we replace with an SVG).
- */
-export function findMermaidBlocks(container: HTMLElement): HTMLElement[] {
-    const blocks: HTMLElement[] = [];
-    container.querySelectorAll(MERMAID_CODE_SELECTOR).forEach(code => {
-        const pre = code.closest('pre');
-        if (pre instanceof HTMLElement) {
-            blocks.push(pre);
-        }
-    });
-    return blocks;
-}
-
-/** Extract the raw diagram source from a mermaid `<pre>` block. */
-export function extractMermaidSource(block: HTMLElement): string {
-    const code = block.querySelector(MERMAID_CODE_SELECTOR);
-    return (code?.textContent ?? block.textContent ?? '').trim();
-}
-
 type MermaidModule = typeof import('mermaid');
 
 /**
- * Renders mermaid diagrams that appear as fenced code blocks in rendered
- * markdown reports. The `mermaid` library is imported lazily the first time a
- * diagram is encountered, so reports without diagrams pay no cost.
+ * Renders mermaid diagrams for fenced ` ```mermaid ` code blocks in markdown
+ * reports. The markdown renderer surfaces code blocks through a
+ * `codeBlockRenderer(languageId, value)` callback (it does not emit
+ * `<code class="language-*">` nodes), so this service produces a ready-to-mount
+ * element per block rather than scanning the rendered DOM. The `mermaid`
+ * library is imported lazily the first time a diagram is rendered, so reports
+ * without diagrams pay no cost.
  */
 @injectable()
 export class MermaidRenderer {
@@ -72,45 +58,40 @@ export class MermaidRenderer {
     }
 
     /**
-     * Replace every mermaid code block in `container` with a rendered SVG.
-     * Each block is rendered independently: a failing diagram is replaced with
-     * an inline error node and does not abort the remaining diagrams. If the
-     * mermaid module fails to load, the raw code blocks are left untouched.
+     * Render a single mermaid `source` to a wrapper element containing the SVG.
+     * The wrapper carries the original source in `data-mermaid-src` so it can be
+     * re-themed later (see {@link renderExport}). On a diagram error the wrapper
+     * shows the error message; if the mermaid module fails to load entirely, the
+     * wrapper falls back to the raw source text.
      */
-    async renderInto(container: HTMLElement, theme: MermaidTheme): Promise<void> {
-        const blocks = findMermaidBlocks(container);
-        if (blocks.length === 0) {
-            return;
-        }
+    async renderDiagram(source: string, theme: MermaidTheme): Promise<HTMLElement> {
+        const wrapper = document.createElement('div');
+        wrapper.className = MERMAID_WRAPPER_CLASS;
+        wrapper.setAttribute('data-mermaid-src', source);
         let mermaid: MermaidModule['default'];
         try {
             mermaid = (await this.load()).default;
         } catch (error) {
-            console.error('Failed to load mermaid; leaving diagram source as-is.', error);
-            return;
+            console.error('Failed to load mermaid; showing diagram source as-is.', error);
+            wrapper.textContent = source;
+            return wrapper;
         }
         mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
-        for (const block of blocks) {
-            const source = extractMermaidSource(block);
-            const wrapper = container.ownerDocument.createElement('div');
-            wrapper.className = 'theia-cooklang-mermaid';
-            wrapper.setAttribute('data-mermaid-src', source);
-            try {
-                const { svg } = await mermaid.render(this.nextId(), source);
-                wrapper.innerHTML = svg;
-            } catch (error) {
-                wrapper.classList.add('theia-cooklang-mermaid-error');
-                wrapper.textContent = String(error instanceof Error ? error.message : error);
-            }
-            block.replaceWith(wrapper);
+        try {
+            const { svg } = await mermaid.render(this.nextId(), source);
+            wrapper.innerHTML = svg;
+        } catch (error) {
+            wrapper.classList.add(MERMAID_ERROR_CLASS);
+            wrapper.textContent = String(error instanceof Error ? error.message : error);
         }
+        return wrapper;
     }
 
     /**
      * Re-render diagrams in a (cloned) export container using the given theme.
      * Operates on `.theia-cooklang-mermaid[data-mermaid-src]` wrappers produced
-     * by {@link renderInto}, so already-rendered live diagrams can be recolored
-     * for print without re-reading the markdown.
+     * by {@link renderDiagram}, so already-rendered live diagrams can be
+     * recolored for print without re-reading the markdown.
      */
     async renderExport(container: HTMLElement, theme: MermaidTheme): Promise<void> {
         const wrappers = Array.from(
