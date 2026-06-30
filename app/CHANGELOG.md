@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.0-alpha.25](https://github.com/cook-md/editor/compare/v0.1.0-alpha.24...v0.1.0-alpha.25) (2026-06-30)
+
+
+### Features
+
+* **cooklang-native:** register nutrition extension when feature + url present ([75693f5](https://github.com/cook-md/editor/commit/75693f526b333b0c16824b1a73452f7fb4f773bc))
+* **cooklang:** add cooklang.nutrition.serviceUrl preference ([467f3fe](https://github.com/cook-md/editor/commit/467f3fe8f982e2b01d9d635aaa94c561da08bf8c))
+* **cooklang:** add electron-main report export service ([6ef9764](https://github.com/cook-md/editor/commit/6ef9764d5ee1beff45a9cd5271c8c7b804e5374c))
+* **cooklang:** add report export RPC protocol ([3de4e06](https://github.com/cook-md/editor/commit/3de4e06f61eae8a7a16585698fe983534f844618))
+* **cooklang:** add report print/export commands and toolbar ([3b96589](https://github.com/cook-md/editor/commit/3b965896ca971149c6dc7ff4605be8fa059c2aec))
+* **cooklang:** add standalone report export document builder ([eefa92b](https://github.com/cook-md/editor/commit/eefa92bc94d3c8f49bb275a14fd8e7687f9dcc47))
+* **cooklang:** bind report export service proxy ([a8a59ab](https://github.com/cook-md/editor/commit/a8a59ab4a9b6d04a4bd62b83e52749dcd4e43bf0))
+* **cooklang:** expose export document from report widget ([61fc26d](https://github.com/cook-md/editor/commit/61fc26d8e07142246f55d0f1119512c4c34acf23))
+* **cooklang:** inject nutrition service URL + cook.md token into report config ([f627cd8](https://github.com/cook-md/editor/commit/f627cd8f5d178bb018d9cba96ffd2f6161534a9a))
+* **cooklang:** register report export contribution ([193ebdd](https://github.com/cook-md/editor/commit/193ebdd365bfb30b9c37e419ede5d4a2d4406fbf))
+* **cooklang:** register report export RPC handler ([15d9c9b](https://github.com/cook-md/editor/commit/15d9c9bc20772ef8c3368d15c910499cc66ea5a1))
+* **cooklang:** render mermaid diagrams in jinja reports ([#55](https://github.com/cook-md/editor/issues/55)) ([f959407](https://github.com/cook-md/editor/commit/f959407598402d96dfb0e30d40a3cd7e382810ee))
+* nutrition reports for Cook Pro users ([cc9dcca](https://github.com/cook-md/editor/commit/cc9dccabbfa6b2c16bebaf4ab418ced85433b1d1))
+* **reports:** bundle jinjahtml for jinja report-template syntax highlighting ([43edd71](https://github.com/cook-md/editor/commit/43edd710c677b0157aa83c546784240c887d4da6))
+* **reports:** print, export PDF, and export PNG for rendered reports ([efe7f33](https://github.com/cook-md/editor/commit/efe7f333799d79b224ad2ff1f2734cf4ffca3b6a))
+* **report:** typographic treatment + page margins for rendered reports ([6ae5625](https://github.com/cook-md/editor/commit/6ae5625b2234cbca13a2bbd907cd53e0731da534))
+
+
+### Bug Fixes
+
+* **cooklang:** harden report export per review ([9f29039](https://github.com/cook-md/editor/commit/9f290392211d132140181643533132ca6c64344f))
+* **cooklang:** match recipe/menu file extensions case-insensitively ([#50](https://github.com/cook-md/editor/issues/50)) ([#51](https://github.com/cook-md/editor/issues/51)) ([5c933e5](https://github.com/cook-md/editor/commit/5c933e584b3aa061eef695d41930b1a314bdc0ae))
+* **cooklang:** render printer toolbar icon via themed SVG mask ([5379139](https://github.com/cook-md/editor/commit/537913904dd1546e10b91fded2f7305f208d7852))
+* **cooklang:** treat print dialog cancel as quiet success ([8d82d36](https://github.com/cook-md/editor/commit/8d82d3658f9faa7331e9fe92a25eb1057b2778b6))
+* **cooklang:** use distinct nls keys for export toolbar tooltips ([0d42070](https://github.com/cook-md/editor/commit/0d420708d794d1a3a013a437e5423906fc7d0439))
+* **cooklang:** use valid codicon-print for print toolbar icon ([75bb46f](https://github.com/cook-md/editor/commit/75bb46f9a06bb5efe534e96c062214a6be1c1037))
+
 ## [0.1.0-alpha.24](https://github.com/cook-md/editor/compare/v0.1.0-alpha.23...v0.1.0-alpha.24) (2026-06-14)
 
 
