@@ -225,6 +225,8 @@
 .theia-cooklang-mermaid {
     margin: 1.4em 0;
     text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 .theia-cooklang-mermaid svg {

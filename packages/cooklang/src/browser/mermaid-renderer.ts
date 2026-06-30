@@ -44,6 +44,7 @@ export class MermaidRenderer {
 
     protected mermaidPromise: Promise<MermaidModule> | undefined;
     protected idCounter = 0;
+    protected initializedTheme: MermaidTheme | undefined;
 
     /** Lazily import and memoize the mermaid module. */
     protected load(): Promise<MermaidModule> {
@@ -55,6 +56,19 @@ export class MermaidRenderer {
 
     protected nextId(): string {
         return `cooklang-mermaid-${++this.idCounter}`;
+    }
+
+    /**
+     * Initialize the (singleton) mermaid module for `theme`, skipping the call
+     * when the last initialization already used that theme. A report with N
+     * diagrams fires N concurrent renders; without this guard each one would
+     * redundantly re-initialize with identical options.
+     */
+    protected ensureInitialized(mermaid: MermaidModule['default'], theme: MermaidTheme): void {
+        if (this.initializedTheme !== theme) {
+            mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+            this.initializedTheme = theme;
+        }
     }
 
     /**
@@ -76,7 +90,7 @@ export class MermaidRenderer {
             wrapper.textContent = source;
             return wrapper;
         }
-        mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+        this.ensureInitialized(mermaid, theme);
         try {
             const { svg } = await mermaid.render(this.nextId(), source);
             wrapper.innerHTML = svg;
@@ -107,13 +121,13 @@ export class MermaidRenderer {
             console.error('Failed to load mermaid for export.', error);
             return;
         }
-        mermaid.initialize({ startOnLoad: false, theme, securityLevel: 'strict' });
+        this.ensureInitialized(mermaid, theme);
         for (const wrapper of wrappers) {
             const source = wrapper.getAttribute('data-mermaid-src') ?? '';
             try {
                 const { svg } = await mermaid.render(this.nextId(), source);
                 wrapper.innerHTML = svg;
-                wrapper.classList.remove('theia-cooklang-mermaid-error');
+                wrapper.classList.remove(MERMAID_ERROR_CLASS);
             } catch {
                 // Keep whatever was already rendered for this block.
             }
