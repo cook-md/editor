@@ -1,8 +1,22 @@
 # Mermaid Diagrams in Jinja Reports
 
 **Date:** 2026-06-29
-**Status:** Approved design
+**Status:** Implemented (with a mid-flight correction — see below)
 **Package:** `packages/cooklang`
+
+> **Implementation correction (2026-06-30).** This design assumed Theia's
+> markdown renderer emits `<pre><code class="language-mermaid">` nodes that a
+> post-render DOM scan could replace. Running the real app showed that the
+> bound renderer is Monaco's `MarkdownRendererService`, which surfaces fenced
+> code blocks through a `codeBlockRenderer(languageId, value)` callback and
+> emits empty `<div data-code>` placeholders otherwise. The shipped
+> implementation therefore renders report markdown imperatively (the core
+> `Markdown` component does not forward render options) via a dedicated
+> `MermaidMarkdown` component that supplies a `codeBlockRenderer`: it delegates
+> `mermaid` blocks to `MermaidRenderer.renderDiagram(source, theme)` and falls
+> back to `<pre><code>` for other languages. The `MermaidRenderer.renderExport`
+> light re-theme for print, the lazy import, and the theme-follow behaviour are
+> all unchanged from this design.
 
 ## Goal
 

@@ -4,7 +4,9 @@
 
 **Goal:** Render Mermaid diagrams embedded as ` ```mermaid ` fenced code blocks inside markdown-format Jinja reports, both in the live report widget and in exported PDF/PNG/print output.
 
-**Architecture:** Let Theia's `MarkdownRenderer` produce its normal DOM (a mermaid fence becomes `<pre><code class="language-mermaid">`). A dedicated `MermaidRenderer` service then does a post-render DOM pass to replace each mermaid block with a rendered SVG, using a lazily imported `mermaid` library themed to match the editor. The export path re-renders the stored diagram sources in mermaid's light theme so printed output stays legible on white paper.
+> **Correction (applied during execution).** Tasks 2/3/5 below assume Theia's markdown renderer emits `<pre><code class="language-mermaid">` and that a post-render DOM scan can replace it. That is wrong: the bound renderer is Monaco's `MarkdownRendererService`, which feeds fenced code blocks to a `codeBlockRenderer(languageId, value)` callback. The shipped code (commit `fix(cooklang): render mermaid via markdown codeBlockRenderer`) replaces `findMermaidBlocks`/`extractMermaidSource`/`renderInto` with `MermaidRenderer.renderDiagram(source, theme)` and a `MermaidMarkdown` component (`report-markdown.tsx`) that renders markdown imperatively with a mermaid-aware `codeBlockRenderer`. Read this note alongside Tasks 2/3/5. Tasks 1, 4, 6, 7 are unchanged.
+
+**Architecture:** Theia's Monaco-backed `MarkdownRenderer` feeds fenced code blocks to a `codeBlockRenderer(languageId, value)` callback. A `MermaidMarkdown` component renders report markdown imperatively and supplies a `codeBlockRenderer` that delegates `mermaid` blocks to a `MermaidRenderer` service (lazily importing the `mermaid` library, themed to match the editor) and falls back to `<pre><code>` for other languages. The export path re-renders the stored diagram sources in mermaid's light theme so printed output stays legible on white paper.
 
 **Tech Stack:** TypeScript, React 18, Theia (`MarkdownRenderer`, `Markdown` component, `ThemeService`, InversifyJS), `mermaid` (lazy dynamic import), mocha + chai + jsdom for tests.
 
