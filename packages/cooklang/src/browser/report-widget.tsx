@@ -17,6 +17,7 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { MarkdownRenderer } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
 import { Markdown } from '@theia/core/lib/browser/markdown-rendering/markdown';
+import { ThemeService } from '@theia/core/lib/browser/theming';
 import { nls } from '@theia/core/lib/common/nls';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -26,6 +27,7 @@ import * as DOMPurify from '@theia/core/shared/dompurify';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
 import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
 import { buildReportExportDocument } from './report-export-document';
+import { MermaidRenderer, themeTypeToMermaidTheme } from './mermaid-renderer';
 
 import '../../src/browser/style/report.css';
 
@@ -55,6 +57,12 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     @inject(MarkdownRenderer)
     protected readonly markdownRenderer: MarkdownRenderer;
 
+    @inject(MermaidRenderer)
+    protected readonly mermaidRenderer: MermaidRenderer;
+
+    @inject(ThemeService)
+    protected readonly themeService: ThemeService;
+
     protected uri: URI;
     protected options: ReportWidgetOptions;
     protected output: string | undefined;
@@ -81,6 +89,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
                     this.debouncedRender();
                 }
             })
+        );
+        this.toDispose.push(
+            this.themeService.onDidColorThemeChange(() => this.update())
         );
     }
 
@@ -234,10 +245,23 @@ export class ReportWidget extends ReactWidget implements Navigatable {
                         markdown={this.output}
                         markdownRenderer={this.markdownRenderer}
                         className='theia-cooklang-report-content'
+                        onRender={this.onMarkdownRendered}
                     />
                 );
         }
     }
+
+    protected onMarkdownRendered = (element: HTMLElement | undefined): void => {
+        if (!element) {
+            return;
+        }
+        const theme = themeTypeToMermaidTheme(this.themeService.getCurrentTheme().type);
+        // Fire-and-forget: a stale render is harmless because the next update
+        // re-runs this against fresh DOM.
+        this.mermaidRenderer.renderInto(element, theme).catch(error =>
+            console.error('Mermaid rendering failed', error)
+        );
+    };
 
     /**
      * Workspace templates declare their output format via the inner file
