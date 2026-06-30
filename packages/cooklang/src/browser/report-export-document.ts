@@ -87,6 +87,20 @@ body {
     font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
     font-size: 13px; padding: 24px; color: #1a1a1a;
 }
+.theia-cooklang-mermaid {
+    margin: 1.4em 0;
+    text-align: center;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.theia-cooklang-mermaid svg { max-width: 100%; height: auto; }
+.theia-cooklang-mermaid-error {
+    text-align: left;
+    color: #b00020;
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
 `;
 
 export interface ReportExportDocumentOptions {

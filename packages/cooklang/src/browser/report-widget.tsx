@@ -128,10 +128,12 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     /**
      * Build a self-contained, print-friendly HTML document from the currently
-     * rendered report, plus a sensible default file name. Returns `undefined`
-     * while the report is still loading or in an error state.
+     * rendered report, plus a sensible default file name. Mermaid diagrams are
+     * re-rendered in the light theme so they stay legible on white paper.
+     * Resolves to `undefined` while the report is still loading or in an error
+     * state.
      */
-    getExportDocument(): { html: string; defaultFileName: string } | undefined {
+    async getExportDocument(): Promise<{ html: string; defaultFileName: string } | undefined> {
         if (this.errorMessage !== undefined || this.output === undefined) {
             return undefined;
         }
@@ -141,8 +143,11 @@ export class ReportWidget extends ReactWidget implements Navigatable {
         if (!contentNode) {
             return undefined;
         }
+        const clone = contentNode.cloneNode(true) as HTMLElement;
+        // Re-render diagrams in the light theme so they print legibly on white.
+        await this.mermaidRenderer.renderExport(clone, 'default');
         const html = buildReportExportDocument({
-            contentHtml: contentNode.outerHTML,
+            contentHtml: clone.outerHTML,
             title: this.title.label,
         });
         const defaultFileName = `${this.uri.path.name} - ${this.options.templateLabel}`;
