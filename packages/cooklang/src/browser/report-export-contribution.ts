@@ -98,7 +98,7 @@ export class ReportExportContribution implements CommandContribution, TabBarTool
     }
 
     protected async print(arg?: unknown): Promise<void> {
-        const document = this.getReportWidget(arg)?.getExportDocument();
+        const document = await this.getReportWidget(arg)?.getExportDocument();
         if (!document) {
             return;
         }
@@ -110,7 +110,7 @@ export class ReportExportContribution implements CommandContribution, TabBarTool
     }
 
     protected async exportPdf(arg?: unknown): Promise<void> {
-        const document = this.getReportWidget(arg)?.getExportDocument();
+        const document = await this.getReportWidget(arg)?.getExportDocument();
         if (!document) {
             return;
         }
@@ -118,7 +118,7 @@ export class ReportExportContribution implements CommandContribution, TabBarTool
     }
 
     protected async exportPng(arg?: unknown): Promise<void> {
-        const document = this.getReportWidget(arg)?.getExportDocument();
+        const document = await this.getReportWidget(arg)?.getExportDocument();
         if (!document) {
             return;
         }

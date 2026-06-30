@@ -16,7 +16,7 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { MarkdownRenderer } from '@theia/core/lib/browser/markdown-rendering/markdown-renderer';
-import { Markdown } from '@theia/core/lib/browser/markdown-rendering/markdown';
+import { ThemeService } from '@theia/core/lib/browser/theming';
 import { nls } from '@theia/core/lib/common/nls';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -26,6 +26,8 @@ import * as DOMPurify from '@theia/core/shared/dompurify';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
 import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
 import { buildReportExportDocument } from './report-export-document';
+import { MermaidRenderer, themeTypeToMermaidTheme } from './mermaid-renderer';
+import { MermaidMarkdown } from './report-markdown';
 
 import '../../src/browser/style/report.css';
 
@@ -55,6 +57,12 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     @inject(MarkdownRenderer)
     protected readonly markdownRenderer: MarkdownRenderer;
 
+    @inject(MermaidRenderer)
+    protected readonly mermaidRenderer: MermaidRenderer;
+
+    @inject(ThemeService)
+    protected readonly themeService: ThemeService;
+
     protected uri: URI;
     protected options: ReportWidgetOptions;
     protected output: string | undefined;
@@ -81,6 +89,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
                     this.debouncedRender();
                 }
             })
+        );
+        this.toDispose.push(
+            this.themeService.onDidColorThemeChange(() => this.update())
         );
     }
 
@@ -117,10 +128,12 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     /**
      * Build a self-contained, print-friendly HTML document from the currently
-     * rendered report, plus a sensible default file name. Returns `undefined`
-     * while the report is still loading or in an error state.
+     * rendered report, plus a sensible default file name. Mermaid diagrams are
+     * re-rendered in the light theme so they stay legible on white paper.
+     * Resolves to `undefined` while the report is still loading or in an error
+     * state.
      */
-    getExportDocument(): { html: string; defaultFileName: string } | undefined {
+    async getExportDocument(): Promise<{ html: string; defaultFileName: string } | undefined> {
         if (this.errorMessage !== undefined || this.output === undefined) {
             return undefined;
         }
@@ -130,8 +143,11 @@ export class ReportWidget extends ReactWidget implements Navigatable {
         if (!contentNode) {
             return undefined;
         }
+        const clone = contentNode.cloneNode(true) as HTMLElement;
+        // Re-render diagrams in the light theme so they print legibly on white.
+        await this.mermaidRenderer.renderExport(clone, 'default');
         const html = buildReportExportDocument({
-            contentHtml: contentNode.outerHTML,
+            contentHtml: clone.outerHTML,
             title: this.title.label,
         });
         const defaultFileName = `${this.uri.path.name} - ${this.options.templateLabel}`;
@@ -230,9 +246,11 @@ export class ReportWidget extends ReactWidget implements Navigatable {
                 return <pre className='theia-cooklang-report-text'>{this.output}</pre>;
             default:
                 return (
-                    <Markdown
+                    <MermaidMarkdown
                         markdown={this.output}
                         markdownRenderer={this.markdownRenderer}
+                        mermaidRenderer={this.mermaidRenderer}
+                        theme={themeTypeToMermaidTheme(this.themeService.getCurrentTheme().type)}
                         className='theia-cooklang-report-content'
                     />
                 );
