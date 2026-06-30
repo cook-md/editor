@@ -79,6 +79,10 @@ export const MermaidMarkdown: React.FC<MermaidMarkdownProps> = ({
         });
         resultRef.current = rendered;
         container.replaceChildren(rendered.element);
+        // The mermaid `codeBlockRenderer` promises may still be in flight when a
+        // re-render disposes this result. Those late fills land on the old,
+        // now-detached element and are harmless: the next render owns the
+        // container's children via `replaceChildren`.
         return () => {
             resultRef.current?.dispose();
             resultRef.current = undefined;

@@ -11,8 +11,19 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+// `renderDiagram` builds DOM, so set up jsdom before importing the module.
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+const disableJSDOM = enableJSDOM();
+
 import { expect } from 'chai';
-import { themeTypeToMermaidTheme } from './mermaid-renderer';
+import {
+    themeTypeToMermaidTheme,
+    MermaidRenderer,
+    MERMAID_WRAPPER_CLASS,
+    MERMAID_ERROR_CLASS
+} from './mermaid-renderer';
+
+after(() => disableJSDOM());
 
 describe('mermaid-renderer helpers', () => {
 
@@ -21,5 +32,27 @@ describe('mermaid-renderer helpers', () => {
         expect(themeTypeToMermaidTheme('hc')).to.equal('dark');
         expect(themeTypeToMermaidTheme('light')).to.equal('default');
         expect(themeTypeToMermaidTheme('hcLight')).to.equal('default');
+    });
+});
+
+describe('MermaidRenderer.renderDiagram', () => {
+
+    // Subclass that forces the mermaid module to fail to load, exercising the
+    // graceful-degradation branch without depending on the real (browser-only)
+    // mermaid runtime.
+    class FailingMermaidRenderer extends MermaidRenderer {
+        protected override load(): Promise<typeof import('mermaid')> {
+            return Promise.reject(new Error('boom'));
+        }
+    }
+
+    it('falls back to the raw source when mermaid fails to load', async () => {
+        const renderer = new FailingMermaidRenderer();
+        const source = 'graph TD; A-->B;';
+        const wrapper = await renderer.renderDiagram(source, 'default');
+        expect(wrapper.classList.contains(MERMAID_WRAPPER_CLASS)).to.equal(true);
+        expect(wrapper.classList.contains(MERMAID_ERROR_CLASS)).to.equal(false);
+        expect(wrapper.getAttribute('data-mermaid-src')).to.equal(source);
+        expect(wrapper.textContent).to.equal(source);
     });
 });
