@@ -219,3 +219,23 @@
     border-top: 1px solid var(--report-rule-strong);
     margin: 2.6em 0;
 }
+
+/* --- Mermaid diagrams ------------------------------------ */
+
+.theia-cooklang-mermaid {
+    margin: 1.4em 0;
+    text-align: center;
+}
+
+.theia-cooklang-mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.theia-cooklang-mermaid-error {
+    text-align: left;
+    color: var(--theia-errorForeground);
+    font-family: var(--theia-code-font-family);
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
