@@ -188,19 +188,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
-      # Cache resolved SwiftPM packages for the Quick Look appex, including the
-      # downloaded CooklangParserFFI.xcframework (~26 MB). Without this, every
-      # macOS build re-fetches it from GitHub release assets during xcodebuild;
-      # a single stalled download previously hung the job for the full 6h budget
-      # (release 0.1.0-alpha.25). Keyed on project.yml, which pins the version.
-      - name: Cache SwiftPM packages (Quick Look, macOS)
+      # Cache the local cooklang-rs package that build-quicklook.sh prepares (source
+      # clone + the curl-fetched CooklangParserFFI.xcframework, ~26 MB, + patched
+      # manifest). On a cache hit the script skips the network entirely. xcodebuild's
+      # own SPM resolver hangs on that xcframework download in CI (tuist/tuist#9967,
+      # actions/runner-images#13175), so we curl it out-of-band and vendor it locally.
+      # Keyed on project.yml, which carries the pinned cooklang-rs version.
+      - name: Cache Quick Look cooklang-rs package (macOS)
         if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
-          path: macos/QuickLookExtension/build/SourcePackages
-          key: ${{ runner.os }}-spm-quicklook-${{ hashFiles('macos/QuickLookExtension/project.yml') }}
+          path: macos/QuickLookExtension/build/cooklang-rs
+          key: ${{ runner.os }}-ql-cooklang-rs-${{ hashFiles('macos/QuickLookExtension/project.yml') }}
           restore-keys: |
-            ${{ runner.os }}-spm-quicklook-
+            ${{ runner.os }}-ql-cooklang-rs-
 
       # cooklang-native git-depends on the private cook-md/db crates. Mint a
       # short-lived, repo-scoped GitHub App token (Contents: read on cook-md/db)
