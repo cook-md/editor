@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.27](https://github.com/cook-md/editor/compare/v0.1.0-alpha.26...v0.1.0-alpha.27) (2026-07-01)
+
+
+### Bug Fixes
+
+* **macos:** vendor cooklang-rs xcframework via curl to dodge flaky CI download ([#58](https://github.com/cook-md/editor/issues/58)) ([d440c60](https://github.com/cook-md/editor/commit/d440c60541da215f938b153c8b2c3ce7522b1190))
+
 ## [0.1.0-alpha.26](https://github.com/cook-md/editor/compare/v0.1.0-alpha.25...v0.1.0-alpha.26) (2026-07-01)
 
 
