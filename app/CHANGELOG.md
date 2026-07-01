@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.26](https://github.com/cook-md/editor/compare/v0.1.0-alpha.25...v0.1.0-alpha.26) (2026-07-01)
+
+
+### Bug Fixes
+
+* **macos:** stop Quick Look build hanging on SwiftPM artifact download ([#56](https://github.com/cook-md/editor/issues/56)) ([0711ffe](https://github.com/cook-md/editor/commit/0711ffedc4f14bad4d70b1afaa3160635373e9ae))
+
 ## [0.1.0-alpha.25](https://github.com/cook-md/editor/compare/v0.1.0-alpha.24...v0.1.0-alpha.25) (2026-06-30)
 
 
