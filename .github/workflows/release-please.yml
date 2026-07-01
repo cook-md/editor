@@ -188,6 +188,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
+      # Cache resolved SwiftPM packages for the Quick Look appex, including the
+      # downloaded CooklangParserFFI.xcframework (~26 MB). Without this, every
+      # macOS build re-fetches it from GitHub release assets during xcodebuild;
+      # a single stalled download previously hung the job for the full 6h budget
+      # (release 0.1.0-alpha.25). Keyed on project.yml, which pins the version.
+      - name: Cache SwiftPM packages (Quick Look, macOS)
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: macos/QuickLookExtension/build/SourcePackages
+          key: ${{ runner.os }}-spm-quicklook-${{ hashFiles('macos/QuickLookExtension/project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-quicklook-
+
       # cooklang-native git-depends on the private cook-md/db crates. Mint a
       # short-lived, repo-scoped GitHub App token (Contents: read on cook-md/db)
       # and rewrite the ssh URL to authenticated https so the
@@ -266,6 +280,10 @@ jobs:
 
       - name: Build & sign Quick Look extension (macOS)
         if: runner.os == 'macOS'
+        # Hard backstop: the script bounds SwiftPM resolution itself, but cap the
+        # whole step too so any unexpected hang (xcodebuild, keychain, codesign)
+        # fails fast and re-runnable instead of consuming the 6h job budget.
+        timeout-minutes: 25
         shell: bash
         env:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -311,6 +329,10 @@ jobs:
 
       - name: Package & Publish
         working-directory: app
+        # Notarization round-trips to Apple can stall; bound the step so a hang
+        # fails fast rather than eating the 6h job budget. Generous because
+        # notarization legitimately takes a while.
+        timeout-minutes: 60
         shell: bash
         run: |
           PUBLISH="${{ (needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
