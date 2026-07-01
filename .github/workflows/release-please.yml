@@ -188,16 +188,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.electron_arch || 'host' }}-eb-
 
-      # Cache resolved SwiftPM packages for the Quick Look appex, including the
-      # downloaded CooklangParserFFI.xcframework (~26 MB). Without this, every
-      # macOS build re-fetches it from GitHub release assets during xcodebuild;
-      # a single stalled download previously hung the job for the full 6h budget
-      # (release 0.1.0-alpha.25). Keyed on project.yml, which pins the version.
+      # Cache the SHARED SwiftPM artifact cache (checksum-keyed), where the
+      # `swift package resolve` warmer in build-quicklook.sh stores the downloaded
+      # CooklangParserFFI.xcframework (~26 MB). xcodebuild's own resolver hangs on
+      # that download in CI (tuist/tuist#9967, actions/runner-images#13175); once
+      # this cache is warm, both the warmer and xcodebuild fetch "from cache" and
+      # never touch the flaky download. Persisting it means the download happens
+      # ~once per version instead of on every macOS build. Keyed on project.yml,
+      # which pins the version.
       - name: Cache SwiftPM packages (Quick Look, macOS)
         if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
-          path: macos/QuickLookExtension/build/SourcePackages
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            macos/QuickLookExtension/build/SourcePackages
           key: ${{ runner.os }}-spm-quicklook-${{ hashFiles('macos/QuickLookExtension/project.yml') }}
           restore-keys: |
             ${{ runner.os }}-spm-quicklook-

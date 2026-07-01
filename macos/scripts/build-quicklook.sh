@@ -73,11 +73,15 @@ if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
   )
 fi
 
-# --- Pre-resolve SwiftPM dependencies with a bounded timeout + retries ---
-# `xcodebuild build` resolves packages implicitly, but SwiftPM's binary-artifact
-# download (CooklangParserFFI.xcframework) has no internal timeout: a stalled
-# connection makes the build hang indefinitely (alpha.25 burned the entire 6h CI
-# budget right here). Resolving separately lets us cap each attempt and retry.
+# --- Resolve SwiftPM dependencies without hitting xcodebuild's hanging download ---
+# Xcode's SPM resolver (`xcodebuild -resolvePackageDependencies`) intermittently
+# HANGS on the CooklangParserFFI.xcframework binary-artifact download in CI, while
+# the `swift` CLI and curl fetch the same URL reliably in ~2s. This is a known,
+# widespread Xcode/SwiftPM CI bug — see tuist/tuist#9967 and
+# actions/runner-images#13175. The documented fix: run `swift package resolve`
+# first (it populates the shared, checksum-keyed on-disk artifact cache), so the
+# later xcodebuild resolve fetches the xcframework "from cache" and never touches
+# the hanging download path. Everything below is additionally capped + retried;
 # macOS ships no `timeout` binary, so use a small background watchdog.
 run_with_timeout() {
   local secs="$1"; shift
@@ -93,6 +97,41 @@ run_with_timeout() {
   return "$rc"
 }
 
+# Step 1: warm the shared SwiftPM artifact cache with the reliable `swift` CLI.
+# A throwaway package that depends on cooklang-rs at the pinned version triggers
+# the same xcframework download (using cooklang-rs's own checksum — nothing to
+# hardcode here). The version is read from project.yml's exactVersion pin.
+CRS_VERSION=$(sed -nE 's/^[[:space:]]*exactVersion:[[:space:]]*"?([0-9][^"[:space:]]*)"?.*/\1/p' project.yml | head -1)
+if [[ -n "${CRS_VERSION:-}" ]]; then
+  WARM_DIR="build/spm-warmer"
+  mkdir -p "$WARM_DIR/Sources/Warm"
+  echo 'public let warm = 1' > "$WARM_DIR/Sources/Warm/Warm.swift"
+  cat > "$WARM_DIR/Package.swift" <<EOF
+// swift-tools-version:5.7
+import PackageDescription
+let package = Package(
+  name: "Warm",
+  dependencies: [.package(url: "https://github.com/cooklang/cooklang-rs", exact: "$CRS_VERSION")],
+  targets: [.target(name: "Warm", dependencies: [.product(name: "CooklangParser", package: "cooklang-rs")])]
+)
+EOF
+  warmed=0
+  for attempt in 1 2 3; do
+    echo "Warming SwiftPM artifact cache via swift package resolve (attempt ${attempt}/3)..."
+    if run_with_timeout 240 swift package resolve --package-path "$WARM_DIR"; then
+      warmed=1
+      break
+    fi
+    echo "warning: cache-warm attempt ${attempt} failed or timed out; retrying..." >&2
+    sleep 5
+  done
+  [[ "$warmed" -eq 1 ]] || echo "warning: could not warm SwiftPM cache; xcodebuild will attempt its own download" >&2
+else
+  echo "warning: could not read cooklang-rs version from project.yml; skipping cache warm" >&2
+fi
+
+# Step 2: xcodebuild resolves into its own SourcePackages dir — now that the
+# artifact is in the shared cache, this fetches "from cache" instead of hanging.
 resolved=0
 for attempt in 1 2 3; do
   echo "Resolving SwiftPM dependencies (attempt ${attempt}/3)..."
