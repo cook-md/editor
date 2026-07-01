@@ -42,6 +42,11 @@ APP_VERSION=$(node -p "require('$REPO_ROOT/app/package.json').version" 2>/dev/nu
 VERSION_ARGS=("MARKETING_VERSION=${APP_VERSION}" "CURRENT_PROJECT_VERSION=${APP_VERSION}")
 
 DERIVED="build/DerivedData"
+# Keep resolved SwiftPM checkouts + the downloaded CooklangParserFFI.xcframework
+# (~26 MB, pulled from GitHub release assets) in a fixed, cacheable location. CI
+# caches this dir so the artifact is fetched roughly once per version instead of
+# on every macOS build — see the bounded, retried pre-resolve below.
+SPM_PACKAGES="build/SourcePackages"
 SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO)
 # In CI, QUICKLOOK_SIGN_IDENTITY (a "Developer ID Application" identity hash/name) is
 # provided so xcodebuild signs the appex AND its embedded CooklangParserFFI.framework
@@ -68,11 +73,56 @@ if [[ -n "${QUICKLOOK_SIGN_IDENTITY:-}" ]]; then
   )
 fi
 
+# --- Pre-resolve SwiftPM dependencies with a bounded timeout + retries ---
+# `xcodebuild build` resolves packages implicitly, but SwiftPM's binary-artifact
+# download (CooklangParserFFI.xcframework) has no internal timeout: a stalled
+# connection makes the build hang indefinitely (alpha.25 burned the entire 6h CI
+# budget right here). Resolving separately lets us cap each attempt and retry.
+# macOS ships no `timeout` binary, so use a small background watchdog.
+run_with_timeout() {
+  local secs="$1"; shift
+  "$@" &
+  local cmd_pid=$!
+  ( sleep "$secs"; kill -TERM "$cmd_pid" 2>/dev/null || true
+    sleep 5; kill -KILL "$cmd_pid" 2>/dev/null || true ) &
+  local watch_pid=$!
+  local rc=0
+  wait "$cmd_pid" 2>/dev/null || rc=$?
+  kill -TERM "$watch_pid" 2>/dev/null || true
+  wait "$watch_pid" 2>/dev/null || true
+  return "$rc"
+}
+
+resolved=0
+for attempt in 1 2 3; do
+  echo "Resolving SwiftPM dependencies (attempt ${attempt}/3)..."
+  if run_with_timeout 300 xcodebuild \
+      -project CookQuickLook.xcodeproj \
+      -scheme CookQuickLook \
+      -derivedDataPath "$DERIVED" \
+      -clonedSourcePackagesDirPath "$SPM_PACKAGES" \
+      -resolvePackageDependencies; then
+    resolved=1
+    break
+  fi
+  echo "warning: SwiftPM resolution attempt ${attempt} failed or timed out; retrying..." >&2
+  sleep 5
+done
+if [[ "$resolved" -ne 1 ]]; then
+  echo "error: SwiftPM dependency resolution failed after 3 attempts" >&2
+  exit 1
+fi
+
+# Build against the already-resolved packages. -disableAutomaticPackageResolution
+# keeps `build` off the network, so it can never hang on a download — the
+# pre-resolve above (with its timeout/retry) owns all network access.
 xcodebuild \
   -project CookQuickLook.xcodeproj \
   -scheme CookQuickLook \
   -configuration Release \
   -derivedDataPath "$DERIVED" \
+  -clonedSourcePackagesDirPath "$SPM_PACKAGES" \
+  -disableAutomaticPackageResolution \
   -destination 'generic/platform=macOS' \
   ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
   "${VERSION_ARGS[@]}" \
