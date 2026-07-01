@@ -6,9 +6,14 @@ options:
   createIntermediateGroups: true
 
 packages:
+  # cooklang-rs is consumed as a LOCAL package prepared by build-quicklook.sh: it
+  # curls the CooklangParserFFI xcframework and patches out cooklang-rs's remote
+  # binaryTarget, because that GitHub-release-asset download intermittently stalls
+  # and hangs xcodebuild/SwiftPM (which have no download timeout) in CI. The script
+  # parses the version from the comment below — keep it in sync when bumping.
+  # cooklang-rs-version: 0.18.7
   CooklangParser:
-    url: https://github.com/cooklang/cooklang-rs
-    exactVersion: 0.18.7
+    path: build/cooklang-rs
 
 targets:
   CookQuickLook:
