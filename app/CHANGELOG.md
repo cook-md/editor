@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.29](https://github.com/cook-md/editor/compare/v0.1.0-alpha.28...v0.1.0-alpha.29) (2026-07-02)
+
+
+### Bug Fixes
+
+* **electron:** point bundled rgPath at app.asar.unpacked ([#62](https://github.com/cook-md/editor/issues/62)) ([60c6e70](https://github.com/cook-md/editor/commit/60c6e70a9140d60cc0e6a17876cf8b538220db22))
+
 ## [0.1.0-alpha.28](https://github.com/cook-md/editor/compare/v0.1.0-alpha.27...v0.1.0-alpha.28) (2026-07-02)
 
 
