@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.28](https://github.com/cook-md/editor/compare/v0.1.0-alpha.27...v0.1.0-alpha.28) (2026-07-02)
+
+
+### Bug Fixes
+
+* **electron:** unpack native executables from asar ([#60](https://github.com/cook-md/editor/issues/60)) ([79205f0](https://github.com/cook-md/editor/commit/79205f06f129b350004c2bb71c09efb51f997426))
+
 ## [0.1.0-alpha.27](https://github.com/cook-md/editor/compare/v0.1.0-alpha.26...v0.1.0-alpha.27) (2026-07-01)
 
 
