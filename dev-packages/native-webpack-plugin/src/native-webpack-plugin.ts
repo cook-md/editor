@@ -190,7 +190,12 @@ async function buildFile(root: string, name: string, content: string): Promise<s
 const ripgrepReplacement = (nativePath: string = '.'): string => `
 const path = require('path');
 
-exports.rgPath = path.join(__dirname, \`./${nativePath}/rg\${process.platform === 'win32' ? '.exe' : ''}\`);
+const rgPath = path.join(__dirname, \`./${nativePath}/rg\${process.platform === 'win32' ? '.exe' : ''}\`);
+// A native binary cannot be spawned from inside an asar archive (ENOTDIR):
+// child_process is not asar-aware, unlike fs. When packaged, __dirname lives
+// under app.asar, so redirect to the unpacked copy on disk (the binary must be
+// listed in electron-builder asarUnpack). No-op in dev where there is no asar.
+exports.rgPath = rgPath.replace(/([\\\\/])app\\.asar([\\\\/])/, '$1app.asar.unpacked$2');
 `;
 
 const bindingsReplacement = (issuer: string, entries: [string, string][]): string => {
