@@ -15,6 +15,17 @@ electronVersion: 38.4.0
 asar: true
 asarUnpack:
   - "**/*.node"
+  # Native *executables* invoked via child_process.spawn cannot run from
+  # inside the asar archive. The bundled backend copies them into lib/**
+  # (see @theia/native-webpack-plugin), where electron-builder's smart-unpack
+  # does not reach (only node_modules are auto-unpacked). Unlike the *.node
+  # addons above they are extensionless, so "**/*.node" misses them. Leaving
+  # them packed silently breaks ripgrep-backed file search (report templates,
+  # quick open, find-in-files), move-to-trash, and the terminal.
+  - "**/backend/native/**"    # ripgrep `rg`
+  - "**/backend/*trash*"      # trash helper (macos-trash / windows-trash.exe)
+  - "**/prebuilds/**"         # node-pty `spawn-helper`
+  - "**/build/Release/**"     # node-pty `spawn-helper` (alternate copy)
 nodeGypRebuild: false
 npmRebuild: false
 
