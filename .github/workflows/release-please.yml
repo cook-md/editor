@@ -242,6 +242,19 @@ jobs:
       - name: Compile TypeScript
         run: npm run compile
 
+      # Download the bundled VS Code plugins into `plugins/` (theiaPluginsDir).
+      # `plugins/` is gitignored (downloaded artifacts, not committed) and the
+      # node_modules cache doesn't cover it, so this must run every build.
+      # electron-builder's `extraResources` (../plugins -> app/plugins) copies
+      # this dir into the package; without it the release ships zero plugins and
+      # every bundled language (YAML, Jinja, Markdown, ...) has no highlighting.
+      - name: Download builtin plugins
+        run: npm run download:plugins
+        env:
+          # theiaPlugins pulls a GitHub release tarball (vscode-builtin-extensions);
+          # a token avoids anonymous rate limits (403).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Bundle Electron app
         working-directory: app
         run: npm run bundle
