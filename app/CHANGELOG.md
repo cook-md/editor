@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.30](https://github.com/cook-md/editor/compare/v0.1.0-alpha.29...v0.1.0-alpha.30) (2026-07-04)
+
+
+### Bug Fixes
+
+* **electron:** load bundled VS Code plugins in packaged app ([#64](https://github.com/cook-md/editor/issues/64)) ([4621c9b](https://github.com/cook-md/editor/commit/4621c9b0892601626a743696af856fc0d63fd9e2))
+
 ## [0.1.0-alpha.29](https://github.com/cook-md/editor/compare/v0.1.0-alpha.28...v0.1.0-alpha.29) (2026-07-02)
 
 
