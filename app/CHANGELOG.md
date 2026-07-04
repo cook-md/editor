@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.31](https://github.com/cook-md/editor/compare/v0.1.0-alpha.30...v0.1.0-alpha.31) (2026-07-04)
+
+
+### Bug Fixes
+
+* **electron:** actually ship + resolve bundled plugins in the release ([#66](https://github.com/cook-md/editor/issues/66)) ([21e9121](https://github.com/cook-md/editor/commit/21e9121b42713e05172b2b989c5888118a3ac21a))
+
 ## [0.1.0-alpha.30](https://github.com/cook-md/editor/compare/v0.1.0-alpha.29...v0.1.0-alpha.30) (2026-07-04)
 
 
