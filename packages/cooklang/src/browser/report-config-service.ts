@@ -116,9 +116,11 @@ export class ReportConfigService {
 
     /**
      * Builds the render config from workspace conventions. Paths are sent as
-     * URI strings; the backend converts them to filesystem paths.
+     * URI strings; the backend converts them to filesystem paths. Pass the
+     * source `recipeUri` so `.menu` plans render through the plan expander
+     * (recipe refs → `plan.*` context) instead of as a bare recipe.
      */
-    async buildConfigJson(scale: number = 1): Promise<string> {
+    async buildConfigJson(scale: number = 1, recipeUri?: URI): Promise<string> {
         const config: {
             scale: number;
             basePath?: string;
@@ -127,11 +129,15 @@ export class ReportConfigService {
             datastorePath?: string;
             nutritionApiUrl: string;
             nutritionToken: string;
+            isMenu?: boolean;
         } = {
             scale,
             nutritionApiUrl: this.preferences.get<string>('cooklang.nutrition.serviceUrl', DEFAULT_NUTRITION_SERVICE_URL),
             nutritionToken: '',
         };
+        if (recipeUri?.path.ext === '.menu') {
+            config.isMenu = true;
+        }
         try {
             config.nutritionToken = (await this.authService.getToken()) ?? '';
         } catch (err) {

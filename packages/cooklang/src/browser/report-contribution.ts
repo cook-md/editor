@@ -102,7 +102,7 @@ export class ReportContribution implements CommandContribution, MenuContribution
             templateId: template.id,
             templateLabel: template.label,
             templateUri: template.uri,
-            configJson: await this.reportConfigService.buildConfigJson(),
+            configJson: await this.reportConfigService.buildConfigJson(1, uri),
         };
         await this.reportPresenter.show(options);
     }

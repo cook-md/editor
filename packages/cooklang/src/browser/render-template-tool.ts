@@ -130,7 +130,7 @@ export class RenderTemplateTool implements ToolProvider {
         } catch (e) {
             return this.fail(`Could not read recipe ${recipeUri.toString()}: ${this.message(e)}`);
         }
-        const configJson = await this.reportConfigService.buildConfigJson(args.scale ?? 1);
+        const configJson = await this.reportConfigService.buildConfigJson(args.scale ?? 1, recipeUri);
         let resultJson: string;
         try {
             resultJson = await this.languageService.renderReport(recipeContent, args.templateContent, configJson);
