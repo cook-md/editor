@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.32](https://github.com/cook-md/editor/compare/v0.1.0-alpha.31...v0.1.0-alpha.32) (2026-07-13)
+
+
+### Features
+
+* **reports:** expose expanded plan context when rendering .menu reports ([#68](https://github.com/cook-md/editor/issues/68)) ([32bd821](https://github.com/cook-md/editor/commit/32bd821731e0e8d5a56ad87e907750103a64cb27))
+
 ## [0.1.0-alpha.31](https://github.com/cook-md/editor/compare/v0.1.0-alpha.30...v0.1.0-alpha.31) (2026-07-04)
 
 
