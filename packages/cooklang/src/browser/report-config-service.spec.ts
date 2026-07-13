@@ -89,6 +89,16 @@ describe('ReportConfigService#buildConfigJson', () => {
         expect(config.scale).to.equal(2.5);
     });
 
+    it('sets isMenu for .menu sources and omits it otherwise', async () => {
+        const { service } = createService(undefined);
+        const menuConfig = JSON.parse(await service.buildConfigJson(1, new URI('file:///ws/Plans/Week.menu')));
+        expect(menuConfig.isMenu).to.equal(true);
+        const cookConfig = JSON.parse(await service.buildConfigJson(1, new URI('file:///ws/Borsch.cook')));
+        expect(cookConfig.isMenu).to.equal(undefined);
+        const noUriConfig = JSON.parse(await service.buildConfigJson(1));
+        expect(noUriConfig.isMenu).to.equal(undefined);
+    });
+
     it('includes basePath but omits optional paths when files are absent', async () => {
         const root = new URI('file:///ws');
         const { service } = createService(root, []);

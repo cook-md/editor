@@ -415,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "cooklang-language-server"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "cooklang",
@@ -1709,7 +1709,7 @@ dependencies = [
 [[package]]
 name = "nutrition-client"
 version = "0.1.0"
-source = "git+ssh://git@github.com/cook-md/db?rev=aeabf6af121c483a866f8e8f536a7a0e397ccb3d#aeabf6af121c483a866f8e8f536a7a0e397ccb3d"
+source = "git+ssh://git@github.com/cook-md/db?rev=41a3727#41a3727771f73b4543fbf69936ed9696bc32532c"
 dependencies = [
  "reqwest",
  "serde",
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "nutrition-jinja"
 version = "0.1.0"
-source = "git+ssh://git@github.com/cook-md/db?rev=aeabf6af121c483a866f8e8f536a7a0e397ccb3d#aeabf6af121c483a866f8e8f536a7a0e397ccb3d"
+source = "git+ssh://git@github.com/cook-md/db?rev=41a3727#41a3727771f73b4543fbf69936ed9696bc32532c"
 dependencies = [
  "cooklang",
  "cooklang-reports",

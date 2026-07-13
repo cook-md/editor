@@ -915,6 +915,10 @@ struct ReportConfig {
     // the TS layer sends an identical config shape regardless of build features.
     nutrition_api_url: Option<String>,
     nutrition_token: Option<String>,
+    // True when the source is a `.menu` plan. Under `nutrition` the plan is
+    // expanded (recipe refs -> ingredients) and exposed as `plan.*` template
+    // context; the menu source itself is not rendered as a recipe.
+    is_menu: Option<bool>,
 }
 
 /// Render a Jinja2 report template against a recipe via cooklang-reports
@@ -930,6 +934,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
         eprintln!("[cooklang-native] invalid report config JSON, using defaults: {e}");
         ReportConfig::default()
     });
+    let base_path = cfg.base_path.clone();
     let mut builder = cooklang_reports::config::Config::builder();
     builder.scale(cfg.scale.unwrap_or(1.0));
     if let Some(p) = cfg.base_path {
@@ -946,7 +951,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     }
     let config = builder.build();
     #[cfg(feature = "nutrition")]
-    let config = match cfg.nutrition_api_url {
+    let mut config = match cfg.nutrition_api_url {
         Some(url) => {
             let mut client = nutrition_client::Client::new(url);
             if let Some(tok) = cfg.nutrition_token.filter(|t| !t.is_empty()) {
@@ -957,6 +962,33 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
         }
         None => config,
     };
+    // `.menu` plans additionally get `plan.*` context (recipe refs expanded
+    // into days/meals/ingredients, dangling refs surfaced). The menu source
+    // still renders as a recipe, so templates built on the recipe-shaped
+    // `ingredients` (e.g. shopping lists via get_ingredient_list) keep
+    // working; plan-aware templates check `plan is defined`. Without the
+    // nutrition feature the menu renders as a plain recipe, as before.
+    #[cfg(feature = "nutrition")]
+    if cfg.is_menu == Some(true) {
+        let base = base_path.clone().unwrap_or_else(|| ".".to_string());
+        let plan = match nutrition_jinja::plan::build_plan_from_source(
+            &recipe,
+            std::path::Path::new(&base),
+            None,
+        ) {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "error": format!("plan error: {e}") }).to_string(),
+        };
+        match serde_json::to_value(&plan) {
+            Ok(v) => config = config.with_context("plan", v),
+            Err(e) => {
+                return serde_json::json!({ "error": format!("plan serialize error: {e}") })
+                    .to_string();
+            }
+        }
+    }
+    #[cfg(not(feature = "nutrition"))]
+    let _ = &base_path;
     match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
         Ok(output) => serde_json::json!({ "output": output }).to_string(),
         Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
