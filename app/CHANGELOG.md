@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.33](https://github.com/cook-md/editor/compare/v0.1.0-alpha.32...v0.1.0-alpha.33) (2026-07-15)
+
+
+### Features
+
+* **nutrition:** allergen support — bump nutrition crates to db 8af0735 ([#70](https://github.com/cook-md/editor/issues/70)) ([6cf0321](https://github.com/cook-md/editor/commit/6cf03213e1b9c28fecfb96b46a89e1810c19a459))
+
 ## [0.1.0-alpha.32](https://github.com/cook-md/editor/compare/v0.1.0-alpha.31...v0.1.0-alpha.32) (2026-07-13)
 
 
