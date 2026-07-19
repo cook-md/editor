@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.0-alpha.34](https://github.com/cook-md/editor/compare/v0.1.0-alpha.33...v0.1.0-alpha.34) (2026-07-19)
+
+
+### Features
+
+* nutrition deps from crates.io (public cooklang-reports-nutrition) ([#72](https://github.com/cook-md/editor/issues/72)) ([b51717d](https://github.com/cook-md/editor/commit/b51717d89efc6c93a9abfd8f6d7dd9041ce9c6d7))
+
 ## [0.1.0-alpha.33](https://github.com/cook-md/editor/compare/v0.1.0-alpha.32...v0.1.0-alpha.33) (2026-07-15)
 
 
