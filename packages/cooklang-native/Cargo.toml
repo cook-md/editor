@@ -20,11 +20,11 @@ tokio = { version = "1", features = ["full"] }
 cooklang-language-server = { path = "../../../cooklang-language-server" }
 cooklang-sync-client = "0.5"
 chrono = "0.4"
-nutrition-client = { git = "ssh://git@github.com/cook-md/db", rev = "8af0735", optional = true }
-nutrition-jinja  = { git = "ssh://git@github.com/cook-md/db", rev = "8af0735", optional = true }
+cookmd-nutrition-client = { version = "0.1", optional = true }
+cooklang-reports-nutrition = { version = "0.1", optional = true }
 
 [features]
-nutrition = ["dep:nutrition-client", "dep:nutrition-jinja"]
+nutrition = ["dep:cookmd-nutrition-client", "dep:cooklang-reports-nutrition"]
 
 [build-dependencies]
 napi-build = "2"

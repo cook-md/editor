@@ -442,12 +442,12 @@ dependencies = [
  "cooklang-find",
  "cooklang-language-server",
  "cooklang-reports",
+ "cooklang-reports-nutrition",
  "cooklang-sync-client",
+ "cookmd-nutrition-client",
  "napi",
  "napi-build",
  "napi-derive",
- "nutrition-client",
- "nutrition-jinja",
  "serde",
  "serde_json",
  "tokio",
@@ -469,6 +469,23 @@ dependencies = [
  "serde_yaml",
  "thiserror 2.0.18",
  "yaml-datastore",
+]
+
+[[package]]
+name = "cooklang-reports-nutrition"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47c30b1dda78e184e84649d11f92f046376f8aca9f5cce9fa3ca4fce068369aa"
+dependencies = [
+ "cooklang",
+ "cooklang-reports",
+ "cookmd-nutrition-client",
+ "minijinja",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -499,6 +516,18 @@ dependencies = [
  "tokio-util",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "cookmd-nutrition-client"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291517bf73e91e62cf571ca84fb69ad5f600ec496104a6fa3117b8e29908029f"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1704,33 +1733,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "nutrition-client"
-version = "0.1.0"
-source = "git+ssh://git@github.com/cook-md/db?rev=8af0735#8af073540c64b200995a191544981c17fc640d82"
-dependencies = [
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "nutrition-jinja"
-version = "0.1.0"
-source = "git+ssh://git@github.com/cook-md/db?rev=8af0735#8af073540c64b200995a191544981c17fc640d82"
-dependencies = [
- "cooklang",
- "cooklang-reports",
- "minijinja",
- "nutrition-client",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
 ]
 
 [[package]]
