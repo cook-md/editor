@@ -203,30 +203,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ql-cooklang-rs-
 
-      # cooklang-native git-depends on the private cook-md/db crates. Mint a
-      # short-lived, repo-scoped GitHub App token (Contents: read on cook-md/db)
-      # and rewrite the ssh URL to authenticated https so the
-      # `--features nutrition` build can fetch them across all targets.
-      # Requires DB_APP_ID + DB_APP_PRIVATE_KEY secrets on this repo.
-      - name: Mint cook-md/db access token
-        id: db_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.DB_APP_ID }}
-          private-key: ${{ secrets.DB_APP_PRIVATE_KEY }}
-          owner: cook-md
-          repositories: db
-
-      - name: Configure git for private nutrition crates
-        shell: bash
-        env:
-          DB_TOKEN: ${{ steps.db_token.outputs.token }}
-        run: |
-          git config --global \
-            url."https://x-access-token:${DB_TOKEN}@github.com/cook-md/db".insteadOf \
-            "ssh://git@github.com/cook-md/db"
-          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
-
       - name: Build native addon
         working-directory: packages/cooklang-native
         shell: bash

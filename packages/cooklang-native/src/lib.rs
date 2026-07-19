@@ -953,11 +953,11 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     #[cfg(feature = "nutrition")]
     let mut config = match cfg.nutrition_api_url {
         Some(url) => {
-            let mut client = nutrition_client::Client::new(url);
+            let mut client = cookmd_nutrition_client::Client::new(url);
             if let Some(tok) = cfg.nutrition_token.filter(|t| !t.is_empty()) {
                 client = client.with_auth_token(tok);
             }
-            let ext = nutrition_jinja::NutritionExtension::new(std::sync::Arc::new(client));
+            let ext = cooklang_reports_nutrition::NutritionExtension::new(std::sync::Arc::new(client));
             config.with_extension(ext)
         }
         None => config,
@@ -971,7 +971,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     #[cfg(feature = "nutrition")]
     if cfg.is_menu == Some(true) {
         let base = base_path.clone().unwrap_or_else(|| ".".to_string());
-        let plan = match nutrition_jinja::plan::build_plan_from_source(
+        let plan = match cooklang_reports_nutrition::plan::build_plan_from_source(
             &recipe,
             std::path::Path::new(&base),
             None,

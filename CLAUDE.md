@@ -36,10 +36,9 @@ This is an **Electron-only** application. There is no browser target. Only `app/
 - `cd packages/cooklang-native && cargo build` - Build the NAPI-RS native addon (Rust)
 - `cd packages/cooklang-native && npm run build` - Build native addon for Node.js (requires @napi-rs/cli)
   - The `build`/`build:debug` scripts compile with `--features nutrition`, which
-    git-depends on the private `cook-md/db` crates over SSH. Building the addon
-    therefore requires read access to `cook-md/db` (CI mints a GitHub App token;
-    locally use your own SSH access). A plain `cargo build` with no feature flag
-    builds without nutrition and needs no `cook-md/db` access.
+    pulls the public crates.io crates `cookmd-nutrition-client` and
+    `cooklang-reports-nutrition`. A plain `cargo build` with no feature flag
+    builds without nutrition.
 
 **Package-specific (using lerna):**
 - `npx lerna run compile --scope @theia/package-name` - Build specific package
