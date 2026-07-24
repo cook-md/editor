@@ -156,3 +156,12 @@
     flex: 1;
     border: 1px solid var(--theia-panel-border);
 }
+
+.cooklang-import-browser-hint {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 16px;
+    color: var(--theia-descriptionForeground);
+}
