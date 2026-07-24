@@ -80,8 +80,9 @@ New package **`packages/cooklang-import` (`@theia/cooklang-import`)**, registere
      schema.org `Recipe` object (including `@graph` nesting); if found, sends the
      serialized Recipe JSON as text;
    - otherwise falls back to the page's rendered `document.body.innerText`;
-   - either way the payload goes to `convertText`. No client-side truncation;
-     oversized payloads are the server's concern (it returns 422).
+   - either way the payload goes to `convertText`. Clip payloads are clamped
+     client-side (200 000 chars per JSON-LD block and for page text) as an
+     untrusted-input defense; the server may still 422 oversized content.
    Clip is disabled until a page has finished loading.
    The `<webview>` runs with node integration disabled and an isolated session
    partition (`partition="import-browser"`) — it must have no access to the app's

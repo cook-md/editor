@@ -34,6 +34,9 @@ export interface ConvertFailure {
 
 export type ConvertResult = ConvertSuccess | ConvertFailure;
 
+/** Maximum number of images accepted by a single `convertImages` call. */
+export const MAX_IMPORT_IMAGES = 5;
+
 /**
  * Converts recipes to Cooklang via the cook.md cookify REST API.
  * Remote service: interface + symbol (used from both frontend and backend).
@@ -41,6 +44,6 @@ export type ConvertResult = ConvertSuccess | ConvertFailure;
 export interface RecipeImportService {
     convertUrl(url: string): Promise<ConvertResult>;
     convertText(text: string): Promise<ConvertResult>;
-    /** Base64-encoded JPEGs, max 5. Requires a signed-in user. */
+    /** Base64-encoded JPEGs, max {@link MAX_IMPORT_IMAGES}. Requires a signed-in user. */
     convertImages(imagesBase64: string[]): Promise<ConvertResult>;
 }

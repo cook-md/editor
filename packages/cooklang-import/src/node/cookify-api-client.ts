@@ -16,7 +16,7 @@ import * as https from 'https';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { ApplicationServer } from '@theia/core/lib/common/application-protocol';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
-import { ConvertResult, ImportErrorCode, RecipeImportService } from '../common/recipe-import-protocol';
+import { ConvertResult, ImportErrorCode, MAX_IMPORT_IMAGES, RecipeImportService } from '../common/recipe-import-protocol';
 
 export interface HttpResponse {
     status: number;
@@ -24,7 +24,6 @@ export interface HttpResponse {
 }
 
 const REQUEST_TIMEOUT_MS = 60_000;
-const MAX_IMAGES = 5;
 
 /**
  * REST client for the cook.md cookify API. Mirrors the contract used by the
@@ -53,7 +52,7 @@ export class CookifyApiClient implements RecipeImportService {
     }
 
     convertImages(imagesBase64: string[]): Promise<ConvertResult> {
-        if (imagesBase64.length === 0 || imagesBase64.length > MAX_IMAGES) {
+        if (imagesBase64.length === 0 || imagesBase64.length > MAX_IMPORT_IMAGES) {
             return Promise.resolve({ error: 'conversion-failed' });
         }
         return this.post('/api/cookify/images', { images: imagesBase64 }, true);

@@ -11,7 +11,6 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-export const MAX_IMPORT_IMAGES = 5;
 const MAX_EDGE_PX = 2048;
 const JPEG_QUALITY = 0.7;
 

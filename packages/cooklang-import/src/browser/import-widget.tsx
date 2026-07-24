@@ -16,11 +16,12 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
 import * as React from '@theia/core/shared/react';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { AuthService, AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
-import { ConvertResult, ImportErrorCode, RecipeImportService } from '../common/recipe-import-protocol';
+import { ConvertResult, ImportErrorCode, MAX_IMPORT_IMAGES, RecipeImportService } from '../common/recipe-import-protocol';
 import { DraftSaver, DRAFTS_FOLDER_NAME } from './draft-saver';
-import { ImageEncoder, MAX_IMPORT_IMAGES } from './image-encoder';
+import { ImageEncoder } from './image-encoder';
 import { ImportBrowserTab } from './import-browser-tab';
 
 export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
@@ -41,6 +42,9 @@ export class ImportWidget extends ReactWidget {
 
     @inject(DraftSaver)
     protected readonly draftSaver: DraftSaver;
+
+    @inject(WorkspaceService)
+    protected readonly workspaceService: WorkspaceService;
 
     @inject(AuthService)
     protected readonly authService: AuthService;
@@ -107,7 +111,7 @@ export class ImportWidget extends ReactWidget {
         this.update();
     }
 
-    // Shared conversion pipeline used by all tabs (Tasks 8-10 call this).
+    // Shared conversion pipeline used by all tabs.
     protected async runImport(convert: () => Promise<ConvertResult>): Promise<void> {
         if (this.busy) {
             return;
@@ -118,6 +122,13 @@ export class ImportWidget extends ReactWidget {
         this.successMessage = undefined;
         this.update();
         try {
+            // Checked here (before the rate-limited conversion API call) as well as in
+            // DraftSaver.save (backstop): failing fast avoids wasting a rate-limited request.
+            const roots = await this.workspaceService.roots;
+            if (roots.length === 0) {
+                this.errorMessage = nls.localize('theia/cooklang-import/noWorkspace', 'Open a folder before importing recipes.');
+                return;
+            }
             const result = await convert();
             if (result.error !== undefined) {
                 this.showError(result.error);
