@@ -82,6 +82,20 @@ describe('CookifyApiClient', () => {
         expect(JSON.parse(client.requests[0].body)).to.deep.equal({ images: ['aaa', 'bbb'] });
     });
 
+    it('rejects convertImages locally when more than 5 images are given', async () => {
+        const client = createClient('jwt-token');
+        const result = await client.convertImages(['1', '2', '3', '4', '5', '6']);
+        expect(result.error).to.equal('conversion-failed');
+        expect(client.requests).to.have.length(0);
+    });
+
+    it('rejects convertImages locally when the image list is empty', async () => {
+        const client = createClient('jwt-token');
+        const result = await client.convertImages([]);
+        expect(result.error).to.equal('conversion-failed');
+        expect(client.requests).to.have.length(0);
+    });
+
     const statusCases: Array<[number, string]> = [
         [401, 'unauthorized'],
         [422, 'conversion-failed'],

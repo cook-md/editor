@@ -23,6 +23,9 @@ export interface HttpResponse {
     body: string;
 }
 
+const REQUEST_TIMEOUT_MS = 60_000;
+const MAX_IMAGES = 5;
+
 /**
  * REST client for the cook.md cookify API. Mirrors the contract used by the
  * iOS app: POST /api/cookify/{url,text,images}; Bearer token optional for
@@ -50,6 +53,9 @@ export class CookifyApiClient implements RecipeImportService {
     }
 
     convertImages(imagesBase64: string[]): Promise<ConvertResult> {
+        if (imagesBase64.length === 0 || imagesBase64.length > MAX_IMAGES) {
+            return Promise.resolve({ error: 'conversion-failed' });
+        }
         return this.post('/api/cookify/images', { images: imagesBase64 }, true);
     }
 
@@ -110,9 +116,11 @@ export class CookifyApiClient implements RecipeImportService {
         return new Promise((resolve, reject) => {
             const req = lib.request(url, { method: 'POST', headers }, (res: http.IncomingMessage) => {
                 let data = '';
-                res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+                res.setEncoding('utf8');
+                res.on('data', (chunk: string) => { data += chunk; });
                 res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
             });
+            req.setTimeout(REQUEST_TIMEOUT_MS, () => req.destroy(new Error('cookify request timed out')));
             req.on('error', reject);
             req.end(body);
         });
