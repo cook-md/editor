@@ -27,6 +27,18 @@ describe('DraftName', () => {
             expect(DraftName.resolveTitle('Mix @eggs{2}.', undefined)).to.equal(undefined);
             expect(DraftName.resolveTitle('---\nservings: 4\n---\nMix.', undefined)).to.equal(undefined);
         });
+        it('reads the frontmatter title from CRLF content', () => {
+            expect(DraftName.resolveTitle('---\r\ntitle: Pancakes\r\n---\r\nMix @eggs{2}.', undefined)).to.equal('Pancakes');
+        });
+        it('collapses newlines in the API-provided name', () => {
+            expect(DraftName.resolveTitle('Mix.', 'Pan\ncakes')).to.equal('Pan cakes');
+        });
+        it('unquotes a double-quoted frontmatter title', () => {
+            expect(DraftName.resolveTitle('---\ntitle: "Mom\'s Pancakes"\n---\nMix.', undefined)).to.equal("Mom's Pancakes");
+        });
+        it('unquotes a single-quoted frontmatter title', () => {
+            expect(DraftName.resolveTitle("---\ntitle: 'Pancakes'\n---\nMix.", undefined)).to.equal('Pancakes');
+        });
     });
 
     describe('ensureTitleFrontmatter', () => {
@@ -42,6 +54,18 @@ describe('DraftName', () => {
             expect(DraftName.ensureTitleFrontmatter('Mix @eggs{2}.', 'Pancakes'))
                 .to.equal('---\ntitle: Pancakes\n---\n\nMix @eggs{2}.');
         });
+        it('inserts title into a CRLF frontmatter and normalizes it to LF', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\r\nservings: 4\r\n---\r\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+        it('leaves CRLF content with a titled frontmatter unchanged', () => {
+            const src = '---\r\ntitle: Pancakes\r\n---\r\nMix @eggs{2}.';
+            expect(DraftName.ensureTitleFrontmatter(src, 'Pancakes')).to.equal(src);
+        });
+        it('collapses newlines in the title to prevent frontmatter injection', () => {
+            expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes\nservings: 99'))
+                .to.equal('---\ntitle: Pancakes servings: 99\n---\n\nMix.');
+        });
     });
 
     describe('sanitizeFilename', () => {
@@ -54,6 +78,17 @@ describe('DraftName', () => {
         it('falls back for names that sanitize to nothing', () => {
             expect(DraftName.sanitizeFilename('::""//')).to.equal('Imported Recipe');
         });
+        it('appends Recipe to Windows reserved device names', () => {
+            expect(DraftName.sanitizeFilename('Nul')).to.equal('Nul Recipe');
+            expect(DraftName.sanitizeFilename('COM1')).to.equal('COM1 Recipe');
+        });
+        it('truncates overly long names to 120 characters', () => {
+            expect(DraftName.sanitizeFilename('A'.repeat(200))).to.equal('A'.repeat(120));
+        });
+        it('re-trims trailing dots and spaces after truncation', () => {
+            const name = DraftName.sanitizeFilename(`${'A'.repeat(119)} B`);
+            expect(name).to.equal('A'.repeat(119));
+        });
     });
 
     describe('uniqueBaseName', () => {
@@ -65,6 +100,11 @@ describe('DraftName', () => {
             const taken = new Set(['Pancakes', 'Pancakes-2']);
             const name = await DraftName.uniqueBaseName('Pancakes', async candidate => taken.has(candidate));
             expect(name).to.equal('Pancakes-3');
+        });
+        it('falls back to a timestamp suffix when every counter is taken', async () => {
+            const name = await DraftName.uniqueBaseName('Pancakes', async () => true);
+            expect(name.startsWith('Pancakes-')).to.equal(true);
+            expect(name).to.not.equal('Pancakes-1000');
         });
     });
 });
