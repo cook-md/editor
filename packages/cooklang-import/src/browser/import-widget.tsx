@@ -309,7 +309,7 @@ export class ImportWidget extends ReactWidget {
 
     protected importFromUrl = (): void => {
         const raw = this.urlValue.trim();
-        const url = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw) ? raw : `https://${raw}`;
+        const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
         try {
             new URL(url);
         } catch {
@@ -368,7 +368,7 @@ export class ImportWidget extends ReactWidget {
                 {this.images.length > 0 &&
                     <div className='cooklang-import-thumbs'>
                         {this.images.map((image, index) => <ImageThumb key={image.previewUrl} index={index}
-                            previewUrl={image.previewUrl} onRemove={this.onRemoveImage} />)}
+                            previewUrl={image.previewUrl} fileName={image.file.name} onRemove={this.onRemoveImage} />)}
                     </div>}
                 <button className='theia-button main' onClick={this.importFromImages}
                     disabled={this.busy || this.images.length === 0}>
@@ -384,7 +384,10 @@ export class ImportWidget extends ReactWidget {
         this.update();
     };
 
-    protected onDragLeave = (): void => {
+    protected onDragLeave = (event: React.DragEvent): void => {
+        if (event.currentTarget.contains(event.relatedTarget as Node)) {
+            return;
+        }
         this.dropActive = false;
         this.update();
     };
@@ -392,6 +395,10 @@ export class ImportWidget extends ReactWidget {
     protected onDrop = (event: React.DragEvent): void => {
         event.preventDefault();
         this.dropActive = false;
+        if (this.busy) {
+            this.update();
+            return;
+        }
         this.addImageFiles(Array.from(event.dataTransfer.files));
     };
 
@@ -427,7 +434,17 @@ export class ImportWidget extends ReactWidget {
     protected importFromImages = (): void => {
         const files = this.images.map(image => image.file);
         this.runImport(async () => {
-            const encoded = await Promise.all(files.map(file => ImageEncoder.toBase64Jpeg(file)));
+            // Encode sequentially so at most one full-resolution bitmap is held in memory at a time.
+            const encoded: string[] = [];
+            for (const file of files) {
+                try {
+                    encoded.push(await ImageEncoder.toBase64Jpeg(file));
+                } catch {
+                    // E.g. HEIC photos: Chromium cannot decode them, so createImageBitmap rejects.
+                    throw new Error(nls.localize('theia/cooklang-import/imageDecodeFailed',
+                        'Couldn’t read {0}. Convert it to JPEG or PNG and try again.', file.name));
+                }
+            }
             return this.importService.convertImages(encoded);
         }).then(() => {
             if (this.successMessage) {
@@ -470,6 +487,7 @@ class TabButton extends React.Component<TabButtonProps> {
 interface ImageThumbProps {
     index: number;
     previewUrl: string;
+    fileName: string;
     onRemove: (index: number) => void;
 }
 
@@ -477,7 +495,7 @@ class ImageThumb extends React.Component<ImageThumbProps> {
     override render(): React.ReactNode {
         return (
             <div className='cooklang-import-thumb'>
-                <img src={this.props.previewUrl} />
+                <img src={this.props.previewUrl} alt={this.props.fileName} />
                 <button className='cooklang-import-thumb-remove' onClick={this.handleRemove}
                     title={nls.localizeByDefault('Remove')}>
                     <i className='codicon codicon-close' />
