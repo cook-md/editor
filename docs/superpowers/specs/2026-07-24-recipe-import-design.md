@@ -70,8 +70,8 @@ New package **`packages/cooklang-import` (`@theia/cooklang-import`)**, registere
 1. **URL** — input field + Import button → `convertUrl`.
 2. **Text** — textarea + Import button → `convertText`.
 3. **Images** — drag-and-drop zone + file picker. Up to **5** images (iOS parity).
-   Client-side resize + JPEG compression (canvas, quality 0.7) → base64 →
-   `convertImages`. When signed out, the tab content is replaced by
+   Client-side JPEG compression (canvas, quality 0.7; downscale so the longest edge
+   is ≤ 2048 px) → base64 → `convertImages`. When signed out, the tab content is replaced by
    "Sign in to CookCloud to use image clipping" + a Sign in button that runs the
    existing `cooked.login` command.
 4. **Web Browser** — Electron `<webview>` with URL bar, back/forward/reload, and a
@@ -80,8 +80,12 @@ New package **`packages/cooklang-import` (`@theia/cooklang-import`)**, registere
      schema.org `Recipe` object (including `@graph` nesting); if found, sends the
      serialized Recipe JSON as text;
    - otherwise falls back to the page's rendered `document.body.innerText`;
-   - either way the payload goes to `convertText`.
+   - either way the payload goes to `convertText`. No client-side truncation;
+     oversized payloads are the server's concern (it returns 422).
    Clip is disabled until a page has finished loading.
+   The `<webview>` runs with node integration disabled and an isolated session
+   partition (`partition="import-browser"`) — it must have no access to the app's
+   context.
 
 Cross-tab UI:
 
@@ -104,6 +108,8 @@ Browser-side service that, given a `ConvertResult`:
    `WorkspaceService`), dedupes collisions with a counter (`Name-2.cook`).
 4. Writes the file and opens it in the editor.
 
+There is deliberately **no preview/confirm step**: a successful conversion is saved
+to `Drafts/` immediately and opened in the editor, which serves as the preview.
 Nothing is written to disk unless conversion succeeds.
 
 ### `src/browser/import-contribution.ts`
