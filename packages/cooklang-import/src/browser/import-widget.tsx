@@ -20,6 +20,7 @@ import { AuthService, AuthState } from '@theia/cooklang-account/lib/common/auth-
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { ConvertResult, ImportErrorCode, RecipeImportService } from '../common/recipe-import-protocol';
 import { DraftSaver, DRAFTS_FOLDER_NAME } from './draft-saver';
+import { ImageEncoder, MAX_IMPORT_IMAGES } from './image-encoder';
 
 export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
 
@@ -59,6 +60,8 @@ export class ImportWidget extends ReactWidget {
     protected successMessage: string | undefined;
     protected urlValue = '';
     protected textValue = '';
+    protected images: Array<{ file: File; previewUrl: string }> = [];
+    protected dropActive = false;
 
     @postConstruct()
     protected init(): void {
@@ -70,6 +73,7 @@ export class ImportWidget extends ReactWidget {
         this.addClass('cooklang-import-widget');
         this.refreshAuthState();
         this.toDispose.push(this.authContribution.onDidChangeAuth(() => this.refreshAuthState()));
+        this.toDispose.push({ dispose: () => this.clearImages() });
     }
 
     protected refreshAuthState(): void {
@@ -304,7 +308,17 @@ export class ImportWidget extends ReactWidget {
     };
 
     protected importFromUrl = (): void => {
-        const url = this.urlValue.trim();
+        const raw = this.urlValue.trim();
+        const url = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(raw) ? raw : `https://${raw}`;
+        try {
+            new URL(url);
+        } catch {
+            this.errorMessage = nls.localize('theia/cooklang-import/invalidUrl', 'Enter a valid web address.');
+            this.errorShowsSignIn = false;
+            this.successMessage = undefined;
+            this.update();
+            return;
+        }
         this.runImport(() => this.importService.convertUrl(url)).catch(err => console.error('Failed to import from URL:', err));
     };
 
@@ -333,8 +347,95 @@ export class ImportWidget extends ReactWidget {
     };
 
     protected renderImagesTab(): React.ReactNode {
-        return <div />;
+        if (!this.signedIn) {
+            return (
+                <div className='cooklang-import-signin-gate'>
+                    <i className='codicon codicon-account' />
+                    <span>{nls.localize('theia/cooklang-import/imagesSignIn', 'Sign in to CookCloud to use image clipping.')}</span>
+                    <button className='theia-button main' onClick={this.signIn}>
+                        {nls.localizeByDefault('Sign in')}
+                    </button>
+                </div>
+            );
+        }
+        return (
+            <div className='cooklang-import-form'>
+                <div className={'cooklang-import-dropzone' + (this.dropActive ? ' cooklang-import-dropzone-active' : '')}
+                    onDragOver={this.onDragOver} onDragLeave={this.onDragLeave} onDrop={this.onDrop}>
+                    {nls.localize('theia/cooklang-import/dropImages', 'Drop up to {0} recipe photos here, or', MAX_IMPORT_IMAGES)}
+                    <input type='file' accept='image/*' multiple onChange={this.onFilesPicked} disabled={this.busy} />
+                </div>
+                {this.images.length > 0 &&
+                    <div className='cooklang-import-thumbs'>
+                        {this.images.map((image, index) => <ImageThumb key={image.previewUrl} index={index}
+                            previewUrl={image.previewUrl} onRemove={this.onRemoveImage} />)}
+                    </div>}
+                <button className='theia-button main' onClick={this.importFromImages}
+                    disabled={this.busy || this.images.length === 0}>
+                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
+                </button>
+            </div>
+        );
     }
+
+    protected onDragOver = (event: React.DragEvent): void => {
+        event.preventDefault();
+        this.dropActive = true;
+        this.update();
+    };
+
+    protected onDragLeave = (): void => {
+        this.dropActive = false;
+        this.update();
+    };
+
+    protected onDrop = (event: React.DragEvent): void => {
+        event.preventDefault();
+        this.dropActive = false;
+        this.addImageFiles(Array.from(event.dataTransfer.files));
+    };
+
+    protected onFilesPicked = (event: React.ChangeEvent<HTMLInputElement>): void => {
+        this.addImageFiles(Array.from(event.target.files ?? []));
+        event.target.value = '';
+    };
+
+    protected addImageFiles(files: File[]): void {
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        for (const file of imageFiles) {
+            if (this.images.length >= MAX_IMPORT_IMAGES) {
+                break;
+            }
+            this.images.push({ file, previewUrl: URL.createObjectURL(file) });
+        }
+        this.update();
+    }
+
+    protected onRemoveImage = (index: number): void => {
+        const [removed] = this.images.splice(index, 1);
+        if (removed) {
+            URL.revokeObjectURL(removed.previewUrl);
+        }
+        this.update();
+    };
+
+    protected clearImages(): void {
+        this.images.forEach(image => URL.revokeObjectURL(image.previewUrl));
+        this.images = [];
+    }
+
+    protected importFromImages = (): void => {
+        const files = this.images.map(image => image.file);
+        this.runImport(async () => {
+            const encoded = await Promise.all(files.map(file => ImageEncoder.toBase64Jpeg(file)));
+            return this.importService.convertImages(encoded);
+        }).then(() => {
+            if (this.successMessage) {
+                this.clearImages();
+                this.update();
+            }
+        }, (err: unknown) => console.error('Image import failed:', err));
+    };
 
     protected renderBrowserTab(): React.ReactNode {
         return <div />;
@@ -363,5 +464,28 @@ class TabButton extends React.Component<TabButtonProps> {
     };
     protected handleKeyDown = (event: React.KeyboardEvent): void => {
         this.props.onKeyDown(this.props.tab, event);
+    };
+}
+
+interface ImageThumbProps {
+    index: number;
+    previewUrl: string;
+    onRemove: (index: number) => void;
+}
+
+class ImageThumb extends React.Component<ImageThumbProps> {
+    override render(): React.ReactNode {
+        return (
+            <div className='cooklang-import-thumb'>
+                <img src={this.props.previewUrl} />
+                <button className='cooklang-import-thumb-remove' onClick={this.handleRemove}
+                    title={nls.localizeByDefault('Remove')}>
+                    <i className='codicon codicon-close' />
+                </button>
+            </div>
+        );
+    }
+    protected handleRemove = (): void => {
+        this.props.onRemove(this.props.index);
     };
 }

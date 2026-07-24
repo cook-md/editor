@@ -103,6 +103,28 @@
     border-radius: 3px;
 }
 
+.cooklang-import-thumb {
+    position: relative;
+    display: inline-flex;
+}
+
+.cooklang-import-thumb-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--theia-panel-border);
+    background-color: var(--theia-editorWidget-background);
+    color: var(--theia-foreground);
+    cursor: pointer;
+}
+
 .cooklang-import-signin-gate {
     display: flex;
     flex-direction: column;
