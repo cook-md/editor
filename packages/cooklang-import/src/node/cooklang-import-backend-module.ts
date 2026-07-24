@@ -12,6 +12,16 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
+import { RecipeImportService, RecipeImportServicePath } from '../common/recipe-import-protocol';
+import { CookifyApiClient } from './cookify-api-client';
 
 export default new ContainerModule(bind => {
+    bind(CookifyApiClient).toSelf().inSingletonScope();
+    bind(RecipeImportService).toService(CookifyApiClient);
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new RpcConnectionHandler(RecipeImportServicePath, () =>
+            ctx.container.get(RecipeImportService)
+        )
+    ).inSingletonScope();
 });
