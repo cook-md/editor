@@ -21,6 +21,7 @@ import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/li
 import { ConvertResult, ImportErrorCode, RecipeImportService } from '../common/recipe-import-protocol';
 import { DraftSaver, DRAFTS_FOLDER_NAME } from './draft-saver';
 import { ImageEncoder, MAX_IMPORT_IMAGES } from './image-encoder';
+import { ImportBrowserTab } from './import-browser-tab';
 
 export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
 
@@ -272,7 +273,6 @@ export class ImportWidget extends ReactWidget {
     }
 
     protected renderActiveTab(): React.ReactNode {
-        // Images and browser tabs are implemented in Tasks 9-10; placeholders until then.
         switch (this.activeTab) {
             case 'url': return this.renderUrlTab();
             case 'text': return this.renderTextTab();
@@ -455,8 +455,14 @@ export class ImportWidget extends ReactWidget {
     };
 
     protected renderBrowserTab(): React.ReactNode {
-        return <div />;
+        // Navigation state (address bar, loaded page) lives inside ImportBrowserTab's own
+        // React state; it is intentionally lost when the user switches away from this tab.
+        return <ImportBrowserTab busy={this.busy} onClip={this.onClipPayload} />;
     }
+
+    protected onClipPayload = (payload: string): void => {
+        this.runImport(() => this.importService.convertText(payload)).catch(err => console.error('Clip import failed:', err));
+    };
 }
 
 interface TabButtonProps {

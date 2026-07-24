@@ -22,9 +22,18 @@ export class CooklangElectronMainApplication extends ElectronMainApplication {
 
     protected override getDefaultOptions(): TheiaBrowserWindowOptions {
         const options = super.getDefaultOptions();
-        return {
+        const resolved = {
             ...options,
             ...this.resolveWindowOptions(this.config.electron?.windowOptions || {}),
+        };
+        return {
+            ...resolved,
+            webPreferences: {
+                ...resolved.webPreferences,
+                // Required by the recipe-import clipping browser (<webview> tag). Placed after the
+                // config-derived spread so it cannot be disabled via windowOptions.
+                webviewTag: true,
+            },
         };
     }
 
