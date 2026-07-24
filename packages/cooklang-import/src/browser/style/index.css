@@ -1,0 +1,136 @@
+.cooklang-import-widget {
+    display: flex;
+    flex-direction: column;
+}
+
+.cooklang-import-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: var(--theia-ui-padding);
+}
+
+.cooklang-import-tabbar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--theia-panel-border);
+    margin-bottom: var(--theia-ui-padding);
+}
+
+.cooklang-import-tab {
+    padding: 4px 12px;
+    cursor: pointer;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-tab-active {
+    color: var(--theia-foreground);
+    border-bottom: 2px solid var(--theia-focusBorder);
+}
+
+.cooklang-import-banner {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 8px;
+    margin-bottom: var(--theia-ui-padding);
+    background-color: var(--theia-editorWidget-background);
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+}
+
+.cooklang-import-banner a {
+    cursor: pointer;
+    color: var(--theia-textLink-foreground);
+}
+
+.cooklang-import-status {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.cooklang-import-error {
+    color: var(--theia-errorForeground);
+}
+
+.cooklang-import-success {
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-tab-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.cooklang-import-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theia-ui-padding);
+    max-width: 640px;
+}
+
+.cooklang-import-form textarea {
+    min-height: 200px;
+    resize: vertical;
+}
+
+.cooklang-import-dropzone {
+    border: 2px dashed var(--theia-panel-border);
+    border-radius: 4px;
+    padding: 32px;
+    text-align: center;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-dropzone.cooklang-import-dropzone-active {
+    border-color: var(--theia-focusBorder);
+}
+
+.cooklang-import-thumbs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cooklang-import-thumbs img {
+    max-width: 96px;
+    max-height: 96px;
+    object-fit: cover;
+    border-radius: 3px;
+}
+
+.cooklang-import-signin-gate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--theia-ui-padding);
+    padding: 48px 16px;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-browser {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 4px;
+}
+
+.cooklang-import-browser-toolbar {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.cooklang-import-browser-toolbar input {
+    flex: 1;
+}
+
+.cooklang-import-browser webview {
+    flex: 1;
+    border: 1px solid var(--theia-panel-border);
+}

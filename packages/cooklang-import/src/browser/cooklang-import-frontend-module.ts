@@ -11,9 +11,28 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+import '../../src/browser/style/index.css';
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
+import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
+import { bindViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
+import { RecipeImportService, RecipeImportServicePath } from '../common/recipe-import-protocol';
 import { DraftSaver } from './draft-saver';
+import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
+import { ImportContribution } from './import-contribution';
 
 export default new ContainerModule(bind => {
+    bind(RecipeImportService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy<RecipeImportService>(ctx.container, RecipeImportServicePath)
+    ).inSingletonScope();
+
     bind(DraftSaver).toSelf().inSingletonScope();
+
+    bind(ImportWidget).toSelf().inSingletonScope();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: IMPORT_WIDGET_ID,
+        createWidget: () => ctx.container.get(ImportWidget),
+    })).inSingletonScope();
+
+    bindViewContribution(bind, ImportContribution);
 });
