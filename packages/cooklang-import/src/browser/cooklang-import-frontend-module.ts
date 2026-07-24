@@ -12,6 +12,8 @@
 // *****************************************************************************
 
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { DraftSaver } from './draft-saver';
 
 export default new ContainerModule(bind => {
+    bind(DraftSaver).toSelf().inSingletonScope();
 });
