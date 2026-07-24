@@ -25,6 +25,9 @@ export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
 
 export type ImportTab = 'url' | 'text' | 'images' | 'browser';
 
+const TAB_ORDER: ImportTab[] = ['url', 'text', 'images', 'browser'];
+const TAB_PANEL_ID = 'cooklang-import-tabpanel';
+
 @injectable()
 export class ImportWidget extends ReactWidget {
 
@@ -54,6 +57,8 @@ export class ImportWidget extends ReactWidget {
     protected errorMessage: string | undefined;
     protected errorShowsSignIn = false;
     protected successMessage: string | undefined;
+    protected urlValue = '';
+    protected textValue = '';
 
     @postConstruct()
     protected init(): void {
@@ -154,7 +159,7 @@ export class ImportWidget extends ReactWidget {
                 {this.renderTabBar()}
                 {!this.signedIn && this.activeTab !== 'images' && this.renderLimitsBanner()}
                 {this.renderStatus()}
-                <div className='cooklang-import-tab-body' role='tabpanel'>
+                <div className='cooklang-import-tab-body' role='tabpanel' id={TAB_PANEL_ID} aria-labelledby={this.tabElementId(this.activeTab)}>
                     {this.renderActiveTab()}
                 </div>
             </div>
@@ -162,26 +167,74 @@ export class ImportWidget extends ReactWidget {
     }
 
     protected renderTabBar(): React.ReactNode {
-        const tabs: Array<{ id: ImportTab; label: string }> = [
-            { id: 'url', label: nls.localizeByDefault('URL') },
-            { id: 'text', label: nls.localizeByDefault('Text') },
-            { id: 'images', label: nls.localize('theia/cooklang-import/tabImages', 'Images') },
-            { id: 'browser', label: nls.localize('theia/cooklang-import/tabBrowser', 'Web Browser') },
-        ];
         return (
             <div className='cooklang-import-tabbar' role='tablist'>
-                {tabs.map(tab => (
-                    <TabButton key={tab.id} tab={tab.id} label={tab.label}
-                        active={this.activeTab === tab.id}
-                        onSelect={this.onTabSelected} />
+                {TAB_ORDER.map(tab => (
+                    <TabButton key={tab} tab={tab} label={this.tabLabel(tab)}
+                        active={this.activeTab === tab}
+                        id={this.tabElementId(tab)}
+                        ariaControls={TAB_PANEL_ID}
+                        onSelect={this.onTabSelected}
+                        onKeyDown={this.onTabKeyDown} />
                 ))}
             </div>
         );
     }
 
+    protected tabLabel(tab: ImportTab): string {
+        switch (tab) {
+            case 'url': return nls.localizeByDefault('URL');
+            case 'text': return nls.localizeByDefault('Text');
+            case 'images': return nls.localize('theia/cooklang-import/tabImages', 'Images');
+            case 'browser': return nls.localize('theia/cooklang-import/tabBrowser', 'Web Browser');
+        }
+    }
+
+    protected tabElementId(tab: ImportTab): string {
+        return `cooklang-import-tab-${tab}`;
+    }
+
     protected onTabSelected = (tab: ImportTab): void => {
         this.selectTab(tab);
     };
+
+    protected onTabKeyDown = (tab: ImportTab, event: React.KeyboardEvent): void => {
+        switch (event.key) {
+            case 'Enter':
+            case ' ':
+                event.preventDefault();
+                this.selectTab(tab);
+                break;
+            case 'ArrowRight':
+                event.preventDefault();
+                this.focusTab(this.adjacentTab(tab, 1));
+                break;
+            case 'ArrowLeft':
+                event.preventDefault();
+                this.focusTab(this.adjacentTab(tab, -1));
+                break;
+            case 'Home':
+                event.preventDefault();
+                this.focusTab(TAB_ORDER[0]);
+                break;
+            case 'End':
+                event.preventDefault();
+                this.focusTab(TAB_ORDER[TAB_ORDER.length - 1]);
+                break;
+        }
+    };
+
+    protected adjacentTab(tab: ImportTab, delta: number): ImportTab {
+        const index = TAB_ORDER.indexOf(tab);
+        const nextIndex = (index + delta + TAB_ORDER.length) % TAB_ORDER.length;
+        return TAB_ORDER[nextIndex];
+    }
+
+    protected focusTab(tab: ImportTab): void {
+        this.selectTab(tab);
+        const element = this.node.querySelector<HTMLElement>(`#${this.tabElementId(tab)}`);
+        element?.focus();
+    }
 
     protected renderLimitsBanner(): React.ReactNode {
         return (
@@ -215,7 +268,7 @@ export class ImportWidget extends ReactWidget {
     }
 
     protected renderActiveTab(): React.ReactNode {
-        // Tabs are implemented in Tasks 8-10; placeholders until then.
+        // Images and browser tabs are implemented in Tasks 9-10; placeholders until then.
         switch (this.activeTab) {
             case 'url': return this.renderUrlTab();
             case 'text': return this.renderTextTab();
@@ -225,12 +278,59 @@ export class ImportWidget extends ReactWidget {
     }
 
     protected renderUrlTab(): React.ReactNode {
-        return <div />;
+        return (
+            <div className='cooklang-import-form'>
+                <label>{nls.localize('theia/cooklang-import/urlLabel', 'Recipe page URL')}</label>
+                <input className='theia-input' type='text' value={this.urlValue}
+                    placeholder='https://example.com/best-pancakes'
+                    onChange={this.onUrlChanged} onKeyDown={this.onUrlKeyDown} disabled={this.busy} />
+                <button className='theia-button main' onClick={this.importFromUrl}
+                    disabled={this.busy || this.urlValue.trim().length === 0}>
+                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
+                </button>
+            </div>
+        );
     }
 
+    protected onUrlChanged = (event: React.ChangeEvent<HTMLInputElement>): void => {
+        this.urlValue = event.target.value;
+        this.update();
+    };
+
+    protected onUrlKeyDown = (event: React.KeyboardEvent): void => {
+        if (event.key === 'Enter' && this.urlValue.trim().length > 0 && !this.busy) {
+            this.importFromUrl();
+        }
+    };
+
+    protected importFromUrl = (): void => {
+        const url = this.urlValue.trim();
+        this.runImport(() => this.importService.convertUrl(url)).catch(err => console.error('Failed to import from URL:', err));
+    };
+
     protected renderTextTab(): React.ReactNode {
-        return <div />;
+        return (
+            <div className='cooklang-import-form'>
+                <label>{nls.localize('theia/cooklang-import/textLabel', 'Paste the recipe text')}</label>
+                <textarea className='theia-input' value={this.textValue}
+                    onChange={this.onTextChanged} disabled={this.busy} />
+                <button className='theia-button main' onClick={this.importFromText}
+                    disabled={this.busy || this.textValue.trim().length === 0}>
+                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
+                </button>
+            </div>
+        );
     }
+
+    protected onTextChanged = (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
+        this.textValue = event.target.value;
+        this.update();
+    };
+
+    protected importFromText = (): void => {
+        const text = this.textValue.trim();
+        this.runImport(() => this.importService.convertText(text)).catch(err => console.error('Failed to import from text:', err));
+    };
 
     protected renderImagesTab(): React.ReactNode {
         return <div />;
@@ -245,13 +345,16 @@ interface TabButtonProps {
     tab: ImportTab;
     label: string;
     active: boolean;
+    id: string;
+    ariaControls: string;
     onSelect: (tab: ImportTab) => void;
+    onKeyDown: (tab: ImportTab, event: React.KeyboardEvent) => void;
 }
 
 class TabButton extends React.Component<TabButtonProps> {
     override render(): React.ReactNode {
-        const { label, active } = this.props;
-        return <div role='tab' aria-selected={active} tabIndex={active ? 0 : -1}
+        const { label, active, id, ariaControls } = this.props;
+        return <div role='tab' id={id} aria-selected={active} aria-controls={ariaControls} tabIndex={active ? 0 : -1}
             className={'cooklang-import-tab' + (active ? ' cooklang-import-tab-active' : '')}
             onClick={this.handleClick} onKeyDown={this.handleKeyDown}>{label}</div>;
     }
@@ -259,9 +362,6 @@ class TabButton extends React.Component<TabButtonProps> {
         this.props.onSelect(this.props.tab);
     };
     protected handleKeyDown = (event: React.KeyboardEvent): void => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            this.props.onSelect(this.props.tab);
-        }
+        this.props.onKeyDown(this.props.tab, event);
     };
 }
