@@ -45,6 +45,7 @@
     "@theia/cooklang-account": "1.70.0",
     "@theia/cooklang-ai": "1.70.0",
     "@theia/cooklang-branding": "1.70.0",
+    "@theia/cooklang-import": "1.70.0",
     "@theia/core": "1.70.0",
     "@theia/editor": "1.70.0",
     "@theia/editor-preview": "1.70.0",
