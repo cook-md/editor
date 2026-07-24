@@ -28,7 +28,10 @@ export default new ContainerModule(bind => {
 
     bind(DraftSaver).toSelf().inSingletonScope();
 
-    bind(ImportWidget).toSelf().inSingletonScope();
+    // Deliberately NOT inSingletonScope: the widget is closable and gets disposed on
+    // close. WidgetManager caches live instances itself; a singleton binding would
+    // hand back the same disposed instance on reopen, which never renders again.
+    bind(ImportWidget).toSelf();
     bind(WidgetFactory).toDynamicValue(ctx => ({
         id: IMPORT_WIDGET_ID,
         createWidget: () => ctx.container.get(ImportWidget),

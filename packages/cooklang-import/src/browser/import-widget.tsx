@@ -19,7 +19,7 @@ import * as React from '@theia/core/shared/react';
 import { AuthService, AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { ConvertResult, ImportErrorCode, RecipeImportService } from '../common/recipe-import-protocol';
-import { DraftSaver } from './draft-saver';
+import { DraftSaver, DRAFTS_FOLDER_NAME } from './draft-saver';
 
 export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
 
@@ -48,6 +48,8 @@ export class ImportWidget extends ReactWidget {
 
     protected activeTab: ImportTab = 'url';
     protected authState: AuthState = { status: 'logged-out' };
+    // Import status is deliberately widget-global (not per-tab) for v1:
+    // only one import runs at a time and switching tabs clears it.
     protected busy = false;
     protected errorMessage: string | undefined;
     protected errorShowsSignIn = false;
@@ -69,7 +71,7 @@ export class ImportWidget extends ReactWidget {
         this.authService.getAuthState().then(state => {
             this.authState = state;
             this.update();
-        });
+        }).catch(err => console.warn('Failed to refresh auth state:', err));
     }
 
     protected get signedIn(): boolean {
@@ -80,17 +82,29 @@ export class ImportWidget extends ReactWidget {
         this.commandService.executeCommand(CookmdLoginCommand.id);
     };
 
+    protected onSignInKeyDown = (event: React.KeyboardEvent): void => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            this.signIn();
+        }
+    };
+
     protected selectTab(tab: ImportTab): void {
         this.activeTab = tab;
         this.errorMessage = undefined;
+        this.errorShowsSignIn = false;
         this.successMessage = undefined;
         this.update();
     }
 
     // Shared conversion pipeline used by all tabs (Tasks 8-10 call this).
     protected async runImport(convert: () => Promise<ConvertResult>): Promise<void> {
+        if (this.busy) {
+            return;
+        }
         this.busy = true;
         this.errorMessage = undefined;
+        this.errorShowsSignIn = false;
         this.successMessage = undefined;
         this.update();
         try {
@@ -100,7 +114,7 @@ export class ImportWidget extends ReactWidget {
                 return;
             }
             const uri = await this.draftSaver.save(result);
-            this.successMessage = nls.localize('theia/cooklang-import/savedTo', 'Saved to {0}', `Drafts/${uri.path.base}`);
+            this.successMessage = nls.localize('theia/cooklang-import/savedTo', 'Saved to {0}', `${DRAFTS_FOLDER_NAME}/${uri.path.base}`);
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : String(err);
             this.errorShowsSignIn = false;
@@ -128,6 +142,7 @@ export class ImportWidget extends ReactWidget {
             case 'conversion-failed':
                 this.errorMessage = nls.localize('theia/cooklang-import/conversionFailed', 'Couldn’t extract a recipe from this source. Try another one.');
                 break;
+            case 'network':
             default:
                 this.errorMessage = nls.localize('theia/cooklang-import/networkError', 'Connection problem. Please try again.');
         }
@@ -139,7 +154,7 @@ export class ImportWidget extends ReactWidget {
                 {this.renderTabBar()}
                 {!this.signedIn && this.activeTab !== 'images' && this.renderLimitsBanner()}
                 {this.renderStatus()}
-                <div className='cooklang-import-tab-body'>
+                <div className='cooklang-import-tab-body' role='tabpanel'>
                     {this.renderActiveTab()}
                 </div>
             </div>
@@ -172,7 +187,7 @@ export class ImportWidget extends ReactWidget {
         return (
             <div className='cooklang-import-banner'>
                 <span>{nls.localize('theia/cooklang-import/limitsBanner', 'Sign in for higher import limits.')}</span>
-                <a onClick={this.signIn}>{nls.localizeByDefault('Sign in')}</a>
+                <a role='button' tabIndex={0} onClick={this.signIn} onKeyDown={this.onSignInKeyDown}>{nls.localizeByDefault('Sign in')}</a>
             </div>
         );
     }
@@ -236,11 +251,17 @@ interface TabButtonProps {
 class TabButton extends React.Component<TabButtonProps> {
     override render(): React.ReactNode {
         const { label, active } = this.props;
-        return <div role='tab' aria-selected={active}
+        return <div role='tab' aria-selected={active} tabIndex={active ? 0 : -1}
             className={'cooklang-import-tab' + (active ? ' cooklang-import-tab-active' : '')}
-            onClick={this.handleClick}>{label}</div>;
+            onClick={this.handleClick} onKeyDown={this.handleKeyDown}>{label}</div>;
     }
     protected handleClick = (): void => {
         this.props.onSelect(this.props.tab);
+    };
+    protected handleKeyDown = (event: React.KeyboardEvent): void => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            this.props.onSelect(this.props.tab);
+        }
     };
 }
