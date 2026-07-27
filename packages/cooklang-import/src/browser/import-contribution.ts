@@ -17,6 +17,7 @@ import { AbstractViewContribution } from '@theia/core/lib/browser/shell/view-con
 import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { CommonMenus } from '@theia/core/lib/browser/common-frontend-contribution';
 import { Command, CommandRegistry } from '@theia/core/lib/common/command';
+import { KeybindingRegistry } from '@theia/core/lib/browser/keybinding';
 import { MenuModelRegistry } from '@theia/core/lib/common/menu';
 import { FILE_NAVIGATOR_ID } from '@theia/navigator/lib/browser/navigator-widget';
 import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
@@ -61,6 +62,15 @@ export class ImportContribution extends AbstractViewContribution<ImportWidget> i
         menus.registerMenuAction(CommonMenus.FILE, {
             commandId: ImportCommands.OPEN.id,
             order: 'z10',
+        });
+    }
+
+    override registerKeybindings(keybindings: KeybindingRegistry): void {
+        super.registerKeybindings(keybindings);
+        // ctrlcmd+alt+i: ctrlcmd+shift+i is taken by devtools in Electron builds.
+        keybindings.registerKeybinding({
+            command: ImportCommands.OPEN.id,
+            keybinding: 'ctrlcmd+alt+i',
         });
     }
 
