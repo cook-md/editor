@@ -15,6 +15,7 @@ import { injectable, inject, postConstruct } from '@theia/core/shared/inversify'
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { nls } from '@theia/core/lib/common/nls';
+import { PreferenceService } from '@theia/core/lib/common/preferences';
 import * as React from '@theia/core/shared/react';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { AuthService, AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
@@ -23,6 +24,7 @@ import { ConvertResult, ImportErrorCode, MAX_IMPORT_IMAGES, RecipeImportService 
 import { DraftSaver, DRAFTS_FOLDER_NAME } from './draft-saver';
 import { ImageEncoder } from './image-encoder';
 import { ImportBrowserTab } from './import-browser-tab';
+import { IMPORT_BROWSER_START_PAGE_DEFAULT, IMPORT_BROWSER_START_PAGE_PREF } from './import-preferences';
 
 export const IMPORT_WIDGET_ID = 'cooklang-import-widget';
 
@@ -54,6 +56,9 @@ export class ImportWidget extends ReactWidget {
 
     @inject(CommandService)
     protected readonly commandService: CommandService;
+
+    @inject(PreferenceService)
+    protected readonly preferenceService: PreferenceService;
 
     protected activeTab: ImportTab = 'url';
     protected authState: AuthState = { status: 'logged-out' };
@@ -174,7 +179,6 @@ export class ImportWidget extends ReactWidget {
             <div className='cooklang-import-content'>
                 {this.renderTabBar()}
                 {!this.signedIn && this.activeTab !== 'images' && this.renderLimitsBanner()}
-                {this.renderStatus()}
                 <div className='cooklang-import-tab-body' role='tabpanel' id={TAB_PANEL_ID} aria-labelledby={this.tabElementId(this.activeTab)}>
                     {this.renderActiveTab()}
                 </div>
@@ -261,12 +265,13 @@ export class ImportWidget extends ReactWidget {
         );
     }
 
-    protected renderStatus(): React.ReactNode {
+    /**
+     * Error/success message rendered next to the action button (the busy state
+     * lives inside the button itself), so appearing status never shifts the form.
+     */
+    protected renderInlineStatus(): React.ReactNode {
         if (this.busy) {
-            return <div className='cooklang-import-status'>
-                <i className='codicon codicon-loading codicon-modifier-spin' />
-                {nls.localize('theia/cooklang-import/importing', 'Importing…')}
-            </div>;
+            return undefined;
         }
         if (this.errorMessage) {
             return <div className='cooklang-import-status cooklang-import-error'>
@@ -281,6 +286,23 @@ export class ImportWidget extends ReactWidget {
             return <div className='cooklang-import-status cooklang-import-success'>{this.successMessage}</div>;
         }
         return undefined;
+    }
+
+    /** Import button (spinner + 'Importing…' while busy) with the inline status beside it. */
+    protected renderActionRow(onClick: () => void, disabled: boolean): React.ReactNode {
+        return (
+            <div className='cooklang-import-action-row'>
+                <button className='theia-button main' onClick={onClick} disabled={this.busy || disabled}>
+                    {this.busy
+                        ? <React.Fragment>
+                            <i className='codicon codicon-loading codicon-modifier-spin' />
+                            {nls.localize('theia/cooklang-import/importing', 'Importing…')}
+                        </React.Fragment>
+                        : nls.localize('theia/cooklang-import/importButton', 'Import')}
+                </button>
+                {this.renderInlineStatus()}
+            </div>
+        );
     }
 
     protected renderActiveTab(): React.ReactNode {
@@ -299,10 +321,7 @@ export class ImportWidget extends ReactWidget {
                 <input className='theia-input' type='text' value={this.urlValue}
                     placeholder='https://example.com/best-pancakes'
                     onChange={this.onUrlChanged} onKeyDown={this.onUrlKeyDown} disabled={this.busy} />
-                <button className='theia-button main' onClick={this.importFromUrl}
-                    disabled={this.busy || this.urlValue.trim().length === 0}>
-                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
-                </button>
+                {this.renderActionRow(this.importFromUrl, this.urlValue.trim().length === 0)}
             </div>
         );
     }
@@ -339,10 +358,7 @@ export class ImportWidget extends ReactWidget {
                 <label>{nls.localize('theia/cooklang-import/textLabel', 'Paste the recipe text')}</label>
                 <textarea className='theia-input' value={this.textValue}
                     onChange={this.onTextChanged} disabled={this.busy} />
-                <button className='theia-button main' onClick={this.importFromText}
-                    disabled={this.busy || this.textValue.trim().length === 0}>
-                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
-                </button>
+                {this.renderActionRow(this.importFromText, this.textValue.trim().length === 0)}
             </div>
         );
     }
@@ -381,10 +397,7 @@ export class ImportWidget extends ReactWidget {
                         {this.images.map((image, index) => <ImageThumb key={image.previewUrl} index={index}
                             previewUrl={image.previewUrl} fileName={image.file.name} onRemove={this.onRemoveImage} />)}
                     </div>}
-                <button className='theia-button main' onClick={this.importFromImages}
-                    disabled={this.busy || this.images.length === 0}>
-                    {nls.localize('theia/cooklang-import/importButton', 'Import')}
-                </button>
+                {this.renderActionRow(this.importFromImages, this.images.length === 0)}
             </div>
         );
     }
@@ -468,7 +481,9 @@ export class ImportWidget extends ReactWidget {
     protected renderBrowserTab(): React.ReactNode {
         // Navigation state (address bar, loaded page) lives inside ImportBrowserTab's own
         // React state; it is intentionally lost when the user switches away from this tab.
-        return <ImportBrowserTab busy={this.busy} onClip={this.onClipPayload} />;
+        const startPage = this.preferenceService.get<string>(IMPORT_BROWSER_START_PAGE_PREF, IMPORT_BROWSER_START_PAGE_DEFAULT);
+        return <ImportBrowserTab busy={this.busy} onClip={this.onClipPayload}
+            startPage={startPage} statusNode={this.renderInlineStatus()} />;
     }
 
     protected onClipPayload = (payload: string): void => {

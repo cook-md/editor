@@ -95,6 +95,25 @@
     resize: vertical;
 }
 
+.cooklang-import-action-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    align-self: stretch;
+    min-height: 26px;
+}
+
+.cooklang-import-action-row .codicon-loading {
+    margin-right: 4px;
+}
+
+.cooklang-import-browser-status {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 22px;
+}
+
 .cooklang-import-dropzone {
     border: 2px dashed var(--theia-panel-border);
     border-radius: 4px;

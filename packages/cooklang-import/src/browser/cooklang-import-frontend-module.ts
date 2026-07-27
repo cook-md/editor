@@ -18,11 +18,14 @@ import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { bindViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { RecipeImportService, RecipeImportServicePath } from '../common/recipe-import-protocol';
+import { bindCooklangImportPreferences } from './import-preferences';
 import { DraftSaver } from './draft-saver';
 import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
 import { ImportContribution } from './import-contribution';
 
 export default new ContainerModule(bind => {
+    bindCooklangImportPreferences(bind);
+
     bind(RecipeImportService).toDynamicValue(ctx =>
         ServiceConnectionProvider.createProxy<RecipeImportService>(ctx.container, RecipeImportServicePath)
     ).inSingletonScope();

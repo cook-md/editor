@@ -71,6 +71,10 @@ interface ClipScriptResult {
 export interface ImportBrowserTabProps {
     busy: boolean;
     onClip: (payload: string) => void;
+    /** Page loaded when the tab opens (user preference; must be http/https to be honored). */
+    startPage?: string;
+    /** Widget-level import status (error/success) rendered in the browser's status row. */
+    statusNode?: React.ReactNode;
 }
 
 interface ImportBrowserTabState {
@@ -123,9 +127,10 @@ export class ImportBrowserTab extends React.Component<ImportBrowserTabProps, Imp
 
     constructor(props: ImportBrowserTabProps) {
         super(props);
+        const startPage = props.startPage && /^https?:\/\//i.test(props.startPage) ? props.startPage : '';
         this.state = {
-            address: '',
-            committedUrl: '',
+            address: startPage,
+            committedUrl: startPage,
             domReady: false,
             pageLoaded: false,
             pageLoadFailed: false,
@@ -154,16 +159,31 @@ export class ImportBrowserTab extends React.Component<ImportBrowserTabProps, Imp
                         onChange={this.onAddressChanged} onKeyDown={this.onAddressKeyDown} />
                     <button className='theia-button main' onClick={this.clip}
                         disabled={this.props.busy || !this.state.pageLoaded}>
-                        {nls.localize('theia/cooklang-import/clipRecipe', 'Clip Recipe')}
+                        {this.props.busy
+                            ? <React.Fragment>
+                                <i className='codicon codicon-loading codicon-modifier-spin' />
+                                {nls.localize('theia/cooklang-import/importing', 'Importing…')}
+                            </React.Fragment>
+                            : nls.localize('theia/cooklang-import/clipRecipe', 'Clip Recipe')}
                     </button>
                 </div>
-                {this.state.pageLoadFailed &&
-                    <div className='cooklang-import-status cooklang-import-error'>
-                        {nls.localize('theia/cooklang-import/pageLoadFailed', 'Couldn’t load this page.')}
-                    </div>}
+                {this.renderStatusRow()}
                 {this.renderBrowserArea()}
+            </div>
+        );
+    }
+
+    /** Fixed-height status row between toolbar and page, so messages never shift the layout. */
+    protected renderStatusRow(): React.ReactNode {
+        return (
+            <div className='cooklang-import-browser-status'>
+                {this.state.pageLoadFailed &&
+                    <span className='cooklang-import-error'>
+                        {nls.localize('theia/cooklang-import/pageLoadFailed', 'Couldn’t load this page.')}
+                    </span>}
                 {this.state.clipError &&
-                    <div className='cooklang-import-status cooklang-import-error'>{this.state.clipError}</div>}
+                    <span className='cooklang-import-error'>{this.state.clipError}</span>}
+                {this.props.statusNode}
             </div>
         );
     }
