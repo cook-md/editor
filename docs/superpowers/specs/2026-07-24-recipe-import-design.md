@@ -162,14 +162,7 @@ All user-facing strings localized via `nls.localize`.
 - Changes to the gRPC cookbot conversion tools in `@theia/cooklang-ai`.
 - Client-side quota counters (limits are enforced server-side).
 - OCR on-device; image extraction is server-side.
-
-## Phase 2 (planned follow-up, separate spec)
-
-Local conversion via the `cooklang-import` Rust crate (the same library that powers
-the hosted cookify service), wrapped in `packages/cooklang-native` (NAPI-RS) and
-plugged in behind the same `RecipeImportService` protocol: the backend routes to the
-local engine when the user has configured an AI provider (own API key or Ollama),
-falling back to the cook.md REST API otherwise. Local URL/text conversion needs an
-LLM provider key; local image import additionally needs `GOOGLE_API_KEY` for OCR —
-hence the server path (with its anonymous rate limits and sign-in gating) remains
-the default for users without keys. Decided 2026-07-24.
+- Local conversion via the `cooklang-import` Rust crate — considered on 2026-07-24,
+  dropped on 2026-07-27: it needs user-provided LLM keys (and `GOOGLE_API_KEY` for
+  image OCR), while the server path covers everyone. All conversion stays on the
+  cook.md REST API.
