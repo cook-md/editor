@@ -5,6 +5,7 @@
   "dependencies": {
     "@theia/core": "1.70.0",
     "@theia/filesystem": "1.70.0",
+    "@theia/navigator": "1.70.0",
     "@theia/workspace": "1.70.0",
     "@theia/cooklang-account": "1.70.0",
     "tslib": "^2.6.2"

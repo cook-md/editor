@@ -16,6 +16,7 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { bindViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
+import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { RecipeImportService, RecipeImportServicePath } from '../common/recipe-import-protocol';
 import { DraftSaver } from './draft-saver';
 import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
@@ -38,4 +39,5 @@ export default new ContainerModule(bind => {
     })).inSingletonScope();
 
     bindViewContribution(bind, ImportContribution);
+    bind(TabBarToolbarContribution).toService(ImportContribution);
 });

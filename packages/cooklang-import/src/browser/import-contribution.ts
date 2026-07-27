@@ -12,10 +12,13 @@
 // *****************************************************************************
 
 import { injectable } from '@theia/core/shared/inversify';
+import { Widget } from '@theia/core/lib/browser/widgets/widget';
 import { AbstractViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
+import { TabBarToolbarContribution, TabBarToolbarRegistry } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { CommonMenus } from '@theia/core/lib/browser/common-frontend-contribution';
 import { Command, CommandRegistry } from '@theia/core/lib/common/command';
 import { MenuModelRegistry } from '@theia/core/lib/common/menu';
+import { FILE_NAVIGATOR_ID } from '@theia/navigator/lib/browser/navigator-widget';
 import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
 
 export namespace ImportCommands {
@@ -23,10 +26,15 @@ export namespace ImportCommands {
         id: 'cooklang.import.open',
         label: 'Import Recipe…',
     }, 'theia/cooklang-import/openCommand');
+    /** Toolbar variant shown on the Explorer's tab bar (visibility scoped to the navigator widget). */
+    export const OPEN_FROM_NAVIGATOR: Command = {
+        id: 'cooklang.import.openFromNavigator',
+        iconClass: 'codicon codicon-cloud-download',
+    };
 }
 
 @injectable()
-export class ImportContribution extends AbstractViewContribution<ImportWidget> {
+export class ImportContribution extends AbstractViewContribution<ImportWidget> implements TabBarToolbarContribution {
 
     constructor() {
         super({
@@ -41,6 +49,11 @@ export class ImportContribution extends AbstractViewContribution<ImportWidget> {
         registry.registerCommand(ImportCommands.OPEN, {
             execute: () => this.openView({ activate: true, reveal: true }),
         });
+        registry.registerCommand(ImportCommands.OPEN_FROM_NAVIGATOR, {
+            execute: () => this.openView({ activate: true, reveal: true }),
+            isEnabled: widget => this.isNavigator(widget),
+            isVisible: widget => this.isNavigator(widget),
+        });
     }
 
     override registerMenus(menus: MenuModelRegistry): void {
@@ -49,5 +62,18 @@ export class ImportContribution extends AbstractViewContribution<ImportWidget> {
             commandId: ImportCommands.OPEN.id,
             order: 'z10',
         });
+    }
+
+    registerToolbarItems(registry: TabBarToolbarRegistry): void {
+        registry.registerItem({
+            id: ImportCommands.OPEN_FROM_NAVIGATOR.id,
+            command: ImportCommands.OPEN_FROM_NAVIGATOR.id,
+            tooltip: ImportCommands.OPEN.label,
+            priority: 0,
+        });
+    }
+
+    protected isNavigator(widget: Widget | undefined): boolean {
+        return widget instanceof Widget && widget.id === FILE_NAVIGATOR_ID;
     }
 }
