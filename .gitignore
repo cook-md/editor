@@ -44,3 +44,4 @@ license-check-summary.txt*
 .playwright-mcp/*
 /.theia/chatSessions
 /app/dist/
+.worktrees/

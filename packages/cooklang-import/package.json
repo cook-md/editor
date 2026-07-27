@@ -1,0 +1,34 @@
+{
+  "name": "@theia/cooklang-import",
+  "version": "1.70.0",
+  "description": "Theia - Cooklang Recipe Import (URL, text, images, clipping browser)",
+  "dependencies": {
+    "@theia/core": "1.70.0",
+    "@theia/filesystem": "1.70.0",
+    "@theia/navigator": "1.70.0",
+    "@theia/workspace": "1.70.0",
+    "@theia/cooklang-account": "1.70.0",
+    "tslib": "^2.6.2"
+  },
+  "main": "lib/common",
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/cooklang-import-frontend-module",
+      "backend": "lib/node/cooklang-import-backend-module"
+    }
+  ],
+  "keywords": ["theia-extension"],
+  "license": "AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception",
+  "files": ["lib", "src"],
+  "scripts": {
+    "build": "theiaext build",
+    "clean": "theiaext clean",
+    "compile": "theiaext compile",
+    "lint": "theiaext lint",
+    "test": "theiaext test",
+    "watch": "theiaext watch"
+  },
+  "devDependencies": {
+    "@theia/ext-scripts": "1.70.0"
+  }
+}

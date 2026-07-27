@@ -1,0 +1,207 @@
+.cooklang-import-widget {
+    display: flex;
+    flex-direction: column;
+}
+
+.cooklang-import-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: calc(var(--theia-ui-padding) * 3);
+}
+
+.cooklang-import-tabbar {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--theia-panel-border);
+    margin-bottom: calc(var(--theia-ui-padding) * 3);
+}
+
+.cooklang-import-tab {
+    padding: 4px 12px;
+    cursor: pointer;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-tab-active {
+    color: var(--theia-foreground);
+    border-bottom: 2px solid var(--theia-focusBorder);
+}
+
+.cooklang-import-banner {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 8px;
+    margin-bottom: var(--theia-ui-padding);
+    background-color: var(--theia-editorWidget-background);
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+}
+
+.cooklang-import-banner a {
+    cursor: pointer;
+    color: var(--theia-textLink-foreground);
+}
+
+.cooklang-import-status {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 0;
+}
+
+.cooklang-import-error {
+    color: var(--theia-errorForeground);
+}
+
+.cooklang-import-success {
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-tab-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.cooklang-import-form {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(var(--theia-ui-padding) * 2);
+    max-width: 640px;
+}
+
+.cooklang-import-form label {
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-form input,
+.cooklang-import-form textarea,
+.cooklang-import-form .cooklang-import-dropzone,
+.cooklang-import-form .cooklang-import-thumbs {
+    align-self: stretch;
+}
+
+.cooklang-import-form button.theia-button {
+    min-width: 100px;
+    margin-left: 0;
+}
+
+.cooklang-import-form textarea {
+    min-height: 200px;
+    resize: vertical;
+}
+
+.cooklang-import-action-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    align-self: stretch;
+    min-height: 26px;
+}
+
+.cooklang-import-action-row .codicon-loading {
+    margin-right: 4px;
+}
+
+.cooklang-import-browser-status {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 22px;
+}
+
+.cooklang-import-dropzone {
+    border: 2px dashed var(--theia-panel-border);
+    border-radius: 4px;
+    padding: 32px;
+    text-align: center;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-dropzone.cooklang-import-dropzone-active {
+    border-color: var(--theia-focusBorder);
+}
+
+.cooklang-import-dropzone input[type='file'] {
+    margin-left: 8px;
+}
+
+.cooklang-import-thumbs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cooklang-import-thumbs img {
+    max-width: 96px;
+    max-height: 96px;
+    object-fit: cover;
+    border-radius: 3px;
+}
+
+.cooklang-import-thumb {
+    position: relative;
+    display: inline-flex;
+}
+
+.cooklang-import-thumb-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--theia-panel-border);
+    background-color: var(--theia-editorWidget-background);
+    color: var(--theia-foreground);
+    cursor: pointer;
+}
+
+.cooklang-import-signin-gate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--theia-ui-padding);
+    padding: 48px 16px;
+    color: var(--theia-descriptionForeground);
+}
+
+.cooklang-import-browser {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: 4px;
+}
+
+.cooklang-import-browser-toolbar {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.cooklang-import-browser-toolbar input {
+    flex: 1;
+}
+
+.cooklang-import-browser webview {
+    flex: 1;
+    border: 1px solid var(--theia-panel-border);
+}
+
+.cooklang-import-browser-hint {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 16px;
+    color: var(--theia-descriptionForeground);
+}

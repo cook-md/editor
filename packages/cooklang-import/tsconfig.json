@@ -10,25 +10,13 @@
   ],
   "references": [
     {
-      "path": "../ai-core"
-    },
-    {
       "path": "../cooklang-account"
     },
     {
       "path": "../core"
     },
     {
-      "path": "../editor"
-    },
-    {
-      "path": "../file-search"
-    },
-    {
       "path": "../filesystem"
-    },
-    {
-      "path": "../monaco"
     },
     {
       "path": "../navigator"

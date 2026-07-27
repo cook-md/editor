@@ -36,6 +36,9 @@
       "path": "../packages/cooklang-branding"
     },
     {
+      "path": "../packages/cooklang-import"
+    },
+    {
       "path": "../packages/core"
     },
     {
