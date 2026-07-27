@@ -59,9 +59,10 @@ export class ImportContribution extends AbstractViewContribution<ImportWidget> i
 
     override registerMenus(menus: MenuModelRegistry): void {
         super.registerMenus(menus);
-        menus.registerMenuAction(CommonMenus.FILE, {
+        // Group id sorts after the '1_new'/'1_new_text' groups and before '2_open',
+        // placing Import Recipe directly under the New-file entries.
+        menus.registerMenuAction([...CommonMenus.FILE, '1z_import'], {
             commandId: ImportCommands.OPEN.id,
-            order: 'z10',
         });
     }
 
