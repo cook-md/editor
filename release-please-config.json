@@ -10,7 +10,7 @@
       "prerelease": true,
       "prerelease-type": "alpha",
       "versioning": "prerelease",
-      "changelog-path": "app/CHANGELOG.md",
+      "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {
           "type": "json",
