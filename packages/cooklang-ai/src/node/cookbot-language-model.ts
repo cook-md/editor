@@ -115,36 +115,56 @@ export class CookbotLanguageModel implements LanguageModel {
         }
         const token = cancellationToken ?? request.cancellationToken;
 
-        const { stream: grpcStream } = this.grpcClient.sendMessage(allMessages, tools, token);
-
         const that = this;
         const asyncIterator = {
             async *[Symbol.asyncIterator](): AsyncIterableIterator<LanguageModelStreamResponsePart> {
-                const toolCalls: ToolCallback[] = [];
-                let toolCall: ToolCallback | undefined;
-                const currentMessages: CookbotMessageParam[] = [];
+                let sessionRetryDone = false;
+                let toolCalls: ToolCallback[];
+                let currentMessages: CookbotMessageParam[];
                 let currentInputTokens = 0;
                 let currentOutputTokens = 0;
 
-                try {
-                    for await (const chunk of grpcStream) {
-                        const parts = that.processChunk(chunk, toolCalls, toolCall, currentMessages);
-                        for (const part of parts.yields) {
-                            yield part;
+                // The server invalidates idle sessions; the first request after a
+                // long idle then fails with UNAUTHENTICATED (code 16). Re-initialize
+                // and retry once, but only while nothing was streamed to the UI yet.
+                attempt: while (true) {
+                    toolCalls = [];
+                    let toolCall: ToolCallback | undefined;
+                    currentMessages = [];
+                    currentInputTokens = 0;
+                    currentOutputTokens = 0;
+                    let partsYielded = false;
+
+                    const { stream: grpcStream } = that.grpcClient.sendMessage(allMessages, tools, token);
+
+                    try {
+                        for await (const chunk of grpcStream) {
+                            const parts = that.processChunk(chunk, toolCalls, toolCall, currentMessages);
+                            for (const part of parts.yields) {
+                                partsYielded = true;
+                                yield part;
+                            }
+                            toolCall = parts.toolCall;
+                            if (parts.inputTokens !== undefined) {
+                                currentInputTokens = parts.inputTokens;
+                            }
+                            if (parts.outputTokens !== undefined) {
+                                currentOutputTokens = parts.outputTokens;
+                            }
                         }
-                        toolCall = parts.toolCall;
-                        if (parts.inputTokens !== undefined) {
-                            currentInputTokens = parts.inputTokens;
+                        break;
+                    } catch (error: unknown) {
+                        if (error instanceof Error && 'code' in error && (error as { code?: number }).code === 16) {
+                            that.initPromise = undefined;
+                            if (!sessionRetryDone && !partsYielded) {
+                                sessionRetryDone = true;
+                                console.info('[CookbotLM] Session expired, re-initializing and retrying');
+                                await that.ensureInitialized();
+                                continue attempt;
+                            }
                         }
-                        if (parts.outputTokens !== undefined) {
-                            currentOutputTokens = parts.outputTokens;
-                        }
+                        throw error;
                     }
-                } catch (error: unknown) {
-                    if (error instanceof Error && 'code' in error && (error as { code?: number }).code === 16) {
-                        that.initPromise = undefined;
-                    }
-                    throw error;
                 }
 
                 // Yield usage info
