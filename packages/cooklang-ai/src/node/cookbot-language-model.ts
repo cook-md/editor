@@ -23,6 +23,9 @@ import {
     ToolInvocationContext,
     createToolCallError,
     isToolCallContent,
+    isTextResponsePart,
+    isThinkingResponsePart,
+    isToolCallResponsePart,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -36,6 +39,7 @@ import {
     CookbotContentPart,
     CookbotToolDefinition,
 } from '../common/cookbot-protocol';
+import { CookbotError } from '../common/cookbot-error';
 
 interface ToolCallback {
     readonly name: string;
@@ -66,7 +70,12 @@ export class CookbotLanguageModel implements LanguageModel {
 
     protected async ensureInitialized(): Promise<void> {
         if (!this.initPromise) {
-            this.initPromise = this.doInitialize();
+            // Drop a failed initialization so the next request can retry it,
+            // instead of awaiting the same rejected promise forever.
+            this.initPromise = this.doInitialize().catch(error => {
+                this.initPromise = undefined;
+                throw error;
+            });
         }
         await this.initPromise;
     }
@@ -119,14 +128,19 @@ export class CookbotLanguageModel implements LanguageModel {
         const asyncIterator = {
             async *[Symbol.asyncIterator](): AsyncIterableIterator<LanguageModelStreamResponsePart> {
                 let sessionRetryDone = false;
+                let connectionRetryDone = false;
+                let contentProduced = false;
                 let toolCalls: ToolCallback[];
                 let currentMessages: CookbotMessageParam[];
                 let currentInputTokens = 0;
                 let currentOutputTokens = 0;
 
-                // The server invalidates idle sessions; the first request after a
-                // long idle then fails with UNAUTHENTICATED (code 16). Re-initialize
-                // and retry once, but only while nothing was streamed to the UI yet.
+                // Two failures are recoverable without bothering the user, as long as
+                // nothing has been streamed to the UI yet:
+                //  - UNAUTHENTICATED (16): the server invalidates idle sessions, so the
+                //    first request after a long idle fails. Re-initialize and retry.
+                //  - UNAVAILABLE (14): an idle connection was dropped upstream (usually
+                //    `read ECONNRESET`). Reconnect and retry.
                 attempt: while (true) {
                     toolCalls = [];
                     let toolCall: ToolCallback | undefined;
@@ -142,6 +156,7 @@ export class CookbotLanguageModel implements LanguageModel {
                             const parts = that.processChunk(chunk, toolCalls, toolCall, currentMessages);
                             for (const part of parts.yields) {
                                 partsYielded = true;
+                                contentProduced = contentProduced || CookbotLanguageModel.isVisibleContent(part);
                                 yield part;
                             }
                             toolCall = parts.toolCall;
@@ -154,7 +169,7 @@ export class CookbotLanguageModel implements LanguageModel {
                         }
                         break;
                     } catch (error: unknown) {
-                        if (error instanceof Error && 'code' in error && (error as { code?: number }).code === 16) {
+                        if (CookbotError.isSessionExpired(error)) {
                             that.initPromise = undefined;
                             if (!sessionRetryDone && !partsYielded) {
                                 sessionRetryDone = true;
@@ -162,8 +177,14 @@ export class CookbotLanguageModel implements LanguageModel {
                                 await that.ensureInitialized();
                                 continue attempt;
                             }
+                        } else if (CookbotError.isTransientConnection(error) && !connectionRetryDone && !partsYielded) {
+                            connectionRetryDone = true;
+                            console.info('[CookbotLM] Connection lost, reconnecting and retrying');
+                            that.grpcClient.reconnect();
+                            continue attempt;
                         }
-                        throw error;
+                        console.error('[CookbotLM] Request failed:', error);
+                        throw CookbotError.toUserFacing(error);
                     }
                 }
 
@@ -234,13 +255,40 @@ export class CookbotLanguageModel implements LanguageModel {
                     );
 
                     for await (const nestedEvent of result.stream) {
+                        contentProduced = contentProduced || CookbotLanguageModel.isVisibleContent(nestedEvent);
                         yield nestedEvent;
                     }
+                }
+
+                // A stream that completes without a single content block is a
+                // failure the user cannot see otherwise - it renders as a blank
+                // assistant turn. Report it instead of yielding nothing.
+                if (!contentProduced && !token?.isCancellationRequested) {
+                    console.error('[CookbotLM] Stream completed without producing any content');
+                    throw CookbotError.emptyResponse();
                 }
             },
         };
 
         return { stream: asyncIterator };
+    }
+
+    /**
+     * Whether a stream part carries something the user can see. Token usage
+     * parts, empty text deltas and bare signature deltas do not count: a
+     * response consisting only of those renders as a blank assistant turn.
+     */
+    protected static isVisibleContent(part: LanguageModelStreamResponsePart): boolean {
+        if (isTextResponsePart(part)) {
+            return part.content.length > 0;
+        }
+        if (isThinkingResponsePart(part)) {
+            return part.thought.length > 0;
+        }
+        if (isToolCallResponsePart(part)) {
+            return part.tool_calls.length > 0;
+        }
+        return false;
     }
 
     /**
