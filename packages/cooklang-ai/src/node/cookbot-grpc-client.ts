@@ -32,6 +32,7 @@ import {
     CookbotFetchResult,
     CookbotConvertResult,
 } from '../common/cookbot-server-tools-protocol';
+import { CookbotError } from '../common/cookbot-error';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 
 @injectable()
@@ -55,6 +56,21 @@ export class CookbotGrpcClient {
         }
     }
 
+    /**
+     * Drop the current channel and open a fresh one. Used after a transient
+     * connection failure: an idle connection that was closed upstream stays
+     * broken for the next call unless the channel is recreated.
+     */
+    reconnect(): void {
+        try {
+            this.service?.close?.();
+        } catch (error) {
+            console.warn('[Cookbot] Failed to close the gRPC channel, opening a new one anyway:', error);
+        }
+        this.service = undefined;
+        this.connect();
+    }
+
     protected connect(): void {
         const protoPath = path.resolve(__dirname, '../../proto/cookbot.proto');
         const packageDefinition = protoLoader.loadSync(protoPath, {
@@ -75,7 +91,28 @@ export class CookbotGrpcClient {
         this.service = new proto.cookbot.CookbotService(cleanAddress, credentials);
     }
 
+    /**
+     * Run a unary call, retrying it once on a fresh channel when the
+     * connection turns out to have been dropped upstream while idle.
+     */
+    protected async withReconnectRetry<T>(name: string, call: () => Promise<T>): Promise<T> {
+        try {
+            return await call();
+        } catch (error) {
+            if (!CookbotError.isTransientConnection(error)) {
+                throw error;
+            }
+            console.info(`[Cookbot] ${name} lost the connection, reconnecting and retrying once`);
+            this.reconnect();
+            return call();
+        }
+    }
+
     async initialize(recipesDir: string, customInstructions?: string): Promise<CookbotInitResult> {
+        return this.withReconnectRetry('Initialize', () => this.doInitialize(recipesDir, customInstructions));
+    }
+
+    protected async doInitialize(recipesDir: string, customInstructions?: string): Promise<CookbotInitResult> {
         this.ensureConnected();
         const token = await this.authService.getToken();
         return new Promise((resolve, reject) => {
@@ -153,6 +190,10 @@ export class CookbotGrpcClient {
     // ── Server-side tools ────────────────────────────────────────────────
 
     async searchWeb(query: string, maxResults?: number): Promise<CookbotSearchResult[]> {
+        return this.withReconnectRetry('SearchWeb', () => this.doSearchWeb(query, maxResults));
+    }
+
+    protected async doSearchWeb(query: string, maxResults?: number): Promise<CookbotSearchResult[]> {
         this.ensureConnected();
         return new Promise((resolve, reject) => {
             this.service.SearchWeb({
@@ -174,6 +215,10 @@ export class CookbotGrpcClient {
     }
 
     async fetchUrl(url: string): Promise<CookbotFetchResult> {
+        return this.withReconnectRetry('FetchUrl', () => this.doFetchUrl(url));
+    }
+
+    protected async doFetchUrl(url: string): Promise<CookbotFetchResult> {
         this.ensureConnected();
         return new Promise((resolve, reject) => {
             this.service.FetchUrl({
@@ -193,6 +238,10 @@ export class CookbotGrpcClient {
     }
 
     async convertUrlToCooklang(url: string): Promise<CookbotConvertResult> {
+        return this.withReconnectRetry('ConvertUrlToCooklang', () => this.doConvertUrlToCooklang(url));
+    }
+
+    protected async doConvertUrlToCooklang(url: string): Promise<CookbotConvertResult> {
         this.ensureConnected();
         return new Promise((resolve, reject) => {
             this.service.ConvertUrlToCooklang({
@@ -212,6 +261,10 @@ export class CookbotGrpcClient {
     }
 
     async convertTextToCooklang(name: string, text: string): Promise<CookbotConvertResult> {
+        return this.withReconnectRetry('ConvertTextToCooklang', () => this.doConvertTextToCooklang(name, text));
+    }
+
+    protected async doConvertTextToCooklang(name: string, text: string): Promise<CookbotConvertResult> {
         this.ensureConnected();
         return new Promise((resolve, reject) => {
             this.service.ConvertTextToCooklang({

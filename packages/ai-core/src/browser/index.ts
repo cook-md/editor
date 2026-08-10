@@ -25,6 +25,7 @@ export * from '../common/ai-core-preferences';
 export * from './ai-settings-service';
 export * from './ai-view-contribution';
 export * from './frontend-language-model-registry';
+export * from './language-model-stream-state';
 export * from './frontend-language-model-alias-registry';
 export * from './frontend-variable-service';
 export * from './prompttemplate-contribution';

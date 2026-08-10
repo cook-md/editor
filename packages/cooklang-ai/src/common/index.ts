@@ -19,6 +19,10 @@ export {
     CookbotToolDefinition,
 } from './cookbot-protocol';
 export {
+    CookbotError,
+    CookbotGrpcStatus,
+} from './cookbot-error';
+export {
     CookbotServerToolsPath,
     CookbotServerToolsService,
     CookbotSearchResult,

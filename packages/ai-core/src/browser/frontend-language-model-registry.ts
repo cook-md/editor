@@ -48,6 +48,7 @@ import {
     ToolCallResult,
     ToolInvocationContext
 } from '../common';
+import { LanguageModelStreamState } from './language-model-stream-state';
 
 @injectable()
 export class LanguageModelDelegateClientImpl
@@ -80,13 +81,6 @@ export class LanguageModelDelegateClientImpl
     languageModelRemoved(id: string): void {
         this.receiver.languageModelRemoved(id);
     }
-}
-
-interface StreamState {
-    id: string;
-    tokens: (LanguageModelStreamResponsePart | undefined)[];
-    resolve?: (_: unknown) => void;
-    reject?: (_: unknown) => void;
 }
 
 @injectable()
@@ -245,16 +239,8 @@ export class FrontendLanguageModelRegistryImpl
                     return response;
                 }
                 if (isLanguageModelStreamResponseDelegate(response)) {
-                    if (!this.streams.has(response.streamId)) {
-                        const newStreamState = {
-                            id: response.streamId,
-                            tokens: [],
-                        };
-                        this.streams.set(response.streamId, newStreamState);
-                    }
-                    const streamState = this.streams.get(response.streamId)!;
                     return {
-                        stream: this.getIterable(streamState),
+                        stream: this.getIterable(this.getOrCreateStreamState(response.streamId)),
                     };
                 }
                 this.logger.error(
@@ -266,48 +252,31 @@ export class FrontendLanguageModelRegistryImpl
         };
     }
 
-    protected streams = new Map<string, StreamState>();
+    protected streams = new Map<string, LanguageModelStreamState>();
     protected requests = new Map<string, LanguageModelRequest>();
 
-    async *getIterable(
-        state: StreamState
-    ): AsyncIterable<LanguageModelStreamResponsePart> {
-        let current = -1;
-        while (true) {
-            if (current < state.tokens.length - 1) {
-                current++;
-                const token = state.tokens[current];
-                if (token === undefined) {
-                    // message is finished
-                    break;
-                }
-                if (token !== undefined) {
-                    yield token;
-                }
-            } else {
-                await new Promise((resolve, reject) => {
-                    state.resolve = resolve;
-                    state.reject = reject;
-                });
-            }
+    protected getOrCreateStreamState(id: string): LanguageModelStreamState {
+        let state = this.streams.get(id);
+        if (!state) {
+            state = new LanguageModelStreamState(id);
+            this.streams.set(id, state);
         }
-        this.streams.delete(state.id);
+        return state;
+    }
+
+    async *getIterable(
+        state: LanguageModelStreamState
+    ): AsyncIterable<LanguageModelStreamResponsePart> {
+        try {
+            yield* state.getIterable();
+        } finally {
+            this.streams.delete(state.id);
+        }
     }
 
     // called by backend via the "delegate client" with new tokens
     send(id: string, token: LanguageModelStreamResponsePart | undefined): void {
-        if (!this.streams.has(id)) {
-            const newStreamState = {
-                id,
-                tokens: [],
-            };
-            this.streams.set(id, newStreamState);
-        }
-        const streamState = this.streams.get(id)!;
-        streamState.tokens.push(token);
-        if (streamState.resolve) {
-            streamState.resolve(token);
-        }
+        this.getOrCreateStreamState(id).push(token);
     }
 
     // called by backend once tool is invoked
@@ -330,15 +299,7 @@ export class FrontendLanguageModelRegistryImpl
 
     // called by backend via the "delegate client" with the error to use for rejection
     error(id: string, error: Error): void {
-        if (!this.streams.has(id)) {
-            const newStreamState = {
-                id,
-                tokens: [],
-            };
-            this.streams.set(id, newStreamState);
-        }
-        const streamState = this.streams.get(id)!;
-        streamState.reject?.(error);
+        this.getOrCreateStreamState(id).reject(error);
     }
 
     override async selectLanguageModels(request: LanguageModelSelector): Promise<LanguageModel[] | undefined> {
