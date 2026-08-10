@@ -13,6 +13,14 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.36](https://github.com/cook-md/editor/compare/v0.1.0-alpha.35...v0.1.0-alpha.36) (2026-08-10)
+
+
+### Bug Fixes
+
+* re-initialize and retry Cookbot request on expired session ([#78](https://github.com/cook-md/editor/issues/78)) ([1111b4c](https://github.com/cook-md/editor/commit/1111b4ccdfa864484fa0d6d2b15b83f9c7d390a0))
+* surface Cookbot chat errors and auto-retry dropped connections ([#83](https://github.com/cook-md/editor/issues/83)) ([0f29ecd](https://github.com/cook-md/editor/commit/0f29ecd6c1de24804c39f2f8c44058e929fadf6d)), closes [#80](https://github.com/cook-md/editor/issues/80) [#81](https://github.com/cook-md/editor/issues/81)
+
 ## [0.1.0-alpha.35](https://github.com/cook-md/editor/compare/v0.1.0-alpha.34...v0.1.0-alpha.35) (2026-07-27)
 
 
