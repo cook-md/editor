@@ -41,6 +41,9 @@ export class CookbotGrpcClient {
     @inject(AuthService)
     protected readonly authService: AuthService;
 
+    /** Ceiling for a single received gRPC message, in bytes (grpc-js defaults to 4 MB). */
+    protected static readonly MAX_RECEIVE_MESSAGE_LENGTH = 64 * 1024 * 1024;
+
     private service: any;
     private sessionId: string | undefined;
     private authToken: string = '';
@@ -88,7 +91,15 @@ export class CookbotGrpcClient {
         const cleanAddress = address.replace(/^https?:\/\//, '');
         const credentials = useSecure ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();
 
-        this.service = new proto.cookbot.CookbotService(cleanAddress, credentials);
+        // grpc-js defaults `max_receive_message_length` to 4 MB and rejects
+        // anything larger with RESOURCE_EXHAUSTED - the same status used for
+        // usage limits, which makes it read as "Cookbot is busy". Give
+        // responses room rather than fail them at the transport.
+        // `max_send_message_length` is deliberately left alone: it defaults to
+        // -1 (unlimited), so setting it here would impose a new cap.
+        this.service = new proto.cookbot.CookbotService(cleanAddress, credentials, {
+            'grpc.max_receive_message_length': CookbotGrpcClient.MAX_RECEIVE_MESSAGE_LENGTH,
+        });
     }
 
     /**

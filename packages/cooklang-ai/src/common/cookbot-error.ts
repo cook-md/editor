@@ -52,6 +52,53 @@ export namespace CookbotError {
         return typeof error === 'string' ? error : '';
     }
 
+    /**
+     * The server's own explanation, with the `8 RESOURCE_EXHAUSTED: ` style
+     * prefix that @grpc/grpc-js prepends stripped off.
+     */
+    export function detailOf(error: unknown): string {
+        return messageOf(error).replace(/^\d+\s+[A-Z_]+:\s*/, '').trim();
+    }
+
+    /**
+     * Compose user-facing guidance with the server's explanation. Guidance
+     * alone is not enough for statuses that encode a server *decision*: the
+     * detail is the only thing that says which decision it was, and without it
+     * a report is undiagnosable.
+     */
+    function withDetail(guidance: string, error: unknown): Error {
+        const detail = detailOf(error);
+        return new Error(detail ? `${guidance} (${detail})` : guidance);
+    }
+
+    /**
+     * gRPC rejects messages over `max_receive_message_length` with
+     * RESOURCE_EXHAUSTED, the same status used for quota limits. The remedies
+     * are completely different, so they must not be reported alike.
+     */
+    export function isMessageTooLarge(error: unknown): boolean {
+        return statusCode(error) === CookbotGrpcStatus.ResourceExhausted
+            && /larger than max|message.*too large|exceeds maximum/i.test(messageOf(error));
+    }
+
+    /**
+     * Machine-readable reasons the Cookbot server sends as the status message.
+     * They are the server's contract, not free text, so they can be matched
+     * exactly and turned into guidance that is actually correct.
+     */
+    export namespace ServerReason {
+        /** Token allowance for the current billing cycle is used up. */
+        export const QUOTA_EXHAUSTED = 'quota_exhausted';
+        /** The account's plan does not include Cookbot AI at all. */
+        export const AI_FEATURE_NOT_AVAILABLE = 'ai_feature_not_available';
+        /** The server could not read usage and refused rather than risk a quota bypass. */
+        export const QUOTA_CHECK_FAILED = 'quota_check_failed';
+    }
+
+    function hasReason(error: unknown, reason: string): boolean {
+        return detailOf(error) === reason;
+    }
+
     /** The server invalidates idle sessions; the next call then fails with UNAUTHENTICATED. */
     export function isSessionExpired(error: unknown): boolean {
         return statusCode(error) === CookbotGrpcStatus.Unauthenticated;
@@ -79,16 +126,47 @@ export namespace CookbotError {
     }
 
     /**
-     * Translate a backend failure into an error the user can act on. Transport
-     * level failures are replaced entirely - a raw gRPC status line such as
-     * `14 UNAVAILABLE: read ECONNRESET` means nothing to the user. Errors that
-     * carry a message from the model or the server are kept as they are.
+     * Translate a backend failure into an error the user can act on.
+     *
+     * Only pure transport noise is replaced outright - a raw
+     * `14 UNAVAILABLE: read ECONNRESET` tells the user nothing, and the
+     * remedy does not depend on which socket died. Every status that reflects
+     * a decision by the server keeps the server's explanation appended:
+     * dropping it leaves a report that cannot be diagnosed afterwards, and
+     * invites guidance that guesses at the wrong cause.
      */
     export function toUserFacing(error: unknown): Error {
         if (isConversationTooLong(error)) {
             return new Error(nls.localize(
                 'theia/cooklang-ai/error/conversationTooLong',
                 'This conversation has grown too long for Cookbot to continue. Please start a new chat.'
+            ));
+        }
+        if (isMessageTooLarge(error)) {
+            return withDetail(nls.localize(
+                'theia/cooklang-ai/error/messageTooLarge',
+                'This conversation is too large to send to Cookbot. Please start a new chat.'
+            ), error);
+        }
+        // Reasons the server states outright. Retrying never helps for these,
+        // so the guidance must not suggest it.
+        if (hasReason(error, ServerReason.QUOTA_EXHAUSTED)) {
+            return new Error(nls.localize(
+                'theia/cooklang-ai/error/quotaExhausted',
+                'You have used all the Cookbot AI credits included in your plan for this billing cycle. '
+                + 'They reset at the start of the next cycle - see Account for the date, or upgrade your plan for a larger allowance.'
+            ));
+        }
+        if (hasReason(error, ServerReason.AI_FEATURE_NOT_AVAILABLE)) {
+            return new Error(nls.localize(
+                'theia/cooklang-ai/error/aiNotAvailable',
+                'Your plan does not include Cookbot AI. Upgrade your plan in Account to use it.'
+            ));
+        }
+        if (hasReason(error, ServerReason.QUOTA_CHECK_FAILED)) {
+            return new Error(nls.localize(
+                'theia/cooklang-ai/error/quotaCheckFailed',
+                'Cookbot could not verify your remaining AI credits, so it declined the request. Please try again in a moment.'
             ));
         }
         switch (statusCode(error)) {
@@ -103,21 +181,21 @@ export namespace CookbotError {
                     'Your Cookbot session has expired. Please try again, and sign in again if the problem persists.'
                 ));
             case CookbotGrpcStatus.ResourceExhausted:
-                return new Error(nls.localize(
-                    'theia/cooklang-ai/error/rateLimited',
-                    'Cookbot is busy right now. Please wait a moment and try again.'
-                ));
+                return withDetail(nls.localize(
+                    'theia/cooklang-ai/error/resourceExhausted',
+                    'Cookbot declined the request because a limit was reached. Check your remaining AI credits in Account.'
+                ), error);
             case CookbotGrpcStatus.PermissionDenied:
-                return new Error(nls.localize(
+                return withDetail(nls.localize(
                     'theia/cooklang-ai/error/permissionDenied',
                     'Cookbot declined the request. Please make sure you are signed in with an active subscription.'
-                ));
+                ), error);
         }
         if (statusCode(error) !== undefined) {
-            return new Error(nls.localize(
+            return withDetail(nls.localize(
                 'theia/cooklang-ai/error/requestFailed',
                 'Cookbot could not complete the request. Please try again.'
-            ));
+            ), error);
         }
         return error instanceof Error ? error : new Error(messageOf(error) || 'Unknown Cookbot error');
     }

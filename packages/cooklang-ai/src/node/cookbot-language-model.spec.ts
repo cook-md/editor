@@ -31,6 +31,14 @@ function connectionResetError(): Error {
     return Object.assign(new Error('14 UNAVAILABLE: read ECONNRESET'), { code: 14 });
 }
 
+/**
+ * What the cookbot server sends once the account's token allowance for the
+ * billing cycle is spent: `Status::resource_exhausted("quota_exhausted")`.
+ */
+function quotaExhaustedError(): Error {
+    return Object.assign(new Error('8 RESOURCE_EXHAUSTED: quota_exhausted'), { code: 8 });
+}
+
 async function* failingStream(error: Error, ...before: CookbotChatChunk[]): AsyncIterable<CookbotChatChunk> {
     for (const chunk of before) {
         yield chunk;
@@ -284,6 +292,44 @@ describe('CookbotLanguageModel transient connection errors', () => {
         expect(grpcClient.sendMessageCalls).to.equal(3);
         expect(grpcClient.reconnectCalls).to.equal(1);
         expect(grpcClient.initializeCalls).to.equal(2);
+    });
+});
+
+describe('CookbotLanguageModel quota exhaustion', () => {
+
+    // End to end through the language model: the server's reason has to
+    // survive the retry logic and come out of `request()` as the text the
+    // chat UI renders. Classifying it correctly in isolation is not enough.
+    it('surfaces the quota explanation to the caller', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => failingStream(quotaExhaustedError())];
+        const model = createModel(grpcClient);
+
+        let thrown: Error | undefined;
+        try {
+            await collect(model);
+        } catch (error) {
+            thrown = error as Error;
+        }
+
+        expect(thrown?.message).to.contain('credits');
+        expect(thrown?.message).to.contain('billing cycle');
+        // Retrying cannot help, so the message must not ask for it.
+        expect(thrown?.message).to.not.match(/try again|wait a moment/i);
+        expect(thrown?.message).to.not.contain('RESOURCE_EXHAUSTED');
+        expect(thrown?.message).to.not.contain('quota_exhausted');
+    });
+
+    it('does not retry a quota failure', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => failingStream(quotaExhaustedError())];
+        const model = createModel(grpcClient);
+
+        await collect(model).catch(() => undefined);
+
+        expect(grpcClient.sendMessageCalls).to.equal(1);
+        expect(grpcClient.reconnectCalls).to.equal(0);
+        expect(grpcClient.initializeCalls).to.equal(1);
     });
 });
 
