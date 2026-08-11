@@ -14,6 +14,22 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+// The loader hooks registered below only cover the paths Node takes on the
+// supported runtime. On Node 20 a CommonJS spec that requires an ESM module
+// (e.g. @theia/monaco-editor-core) goes through the synchronous `require(esm)`
+// loader, which ignores hooks registered with `register()`. The run then dies
+// with `ERR_UNKNOWN_FILE_EXTENSION ... .css`, or - once mocha retries the file
+// with `require` after the failed `import` - with the far more confusing
+// `The configuration is already set.`. Fail with the real reason instead.
+const MINIMUM_NODE_MAJOR = 22;
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (nodeMajor < MINIMUM_NODE_MAJOR) {
+    throw new Error(
+        `Theia tests require Node.js >= ${MINIMUM_NODE_MAJOR}, but this is Node ${process.versions.node}. `
+        + 'Run `nvm use` (see .nvmrc) and try again.'
+    );
+}
+
 // Register ESM loader hooks so that non-JS imports (e.g. .css files from
 // @theia/monaco-editor-core ESM bundles) are handled before mocha attempts
 // to load test files. Without this, Node's ESM resolver fails on .css
