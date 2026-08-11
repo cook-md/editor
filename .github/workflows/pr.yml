@@ -79,6 +79,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Unit tests only. `npm run test` would also run test:electron, which
+      # needs a display server and the packaged app.
+      - name: Test
+        run: npm run test:theia
+
       - name: Bundle Electron app
         working-directory: app
         run: npm run bundle

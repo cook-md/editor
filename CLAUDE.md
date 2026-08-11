@@ -97,7 +97,12 @@ For more information also look at:
 
 ## Technical Requirements
 
-- Node.js ≥18.17.0, <21
+- Node.js ≥22 (see `engines` in the root `package.json`, and `.nvmrc`)
+  - Older versions do not just warn: on Node 20 the `require(esm)` path bypasses the
+    ESM loader hooks in `@theia/test-setup`, so any browser spec that transitively
+    imports `@theia/monaco-editor-core` aborts the whole mocha run with
+    `ERR_UNKNOWN_FILE_EXTENSION ... .css` (sometimes masked as
+    `The configuration is already set.`).
 - TypeScript ~5.4.5 with strict settings
 - React 18.2.0 for UI components
 - Monaco Editor for code editing
@@ -116,6 +121,10 @@ For more information also look at:
 
 **Adding a new package to the monorepo:**
 1. Create `packages/foo/package.json` with `theiaExtensions`
+   - Only add a `"test": "theiaext test"` script once the package actually has
+     spec files. Mocha exits non-zero on `No test files found`, and `test:theia`
+     runs with `--concurrency=1` under nx bail, so one spec-less package aborts
+     the test run for every package after it.
 2. Create `packages/foo/tsconfig.json` with project references
 3. Add `"@theia/foo": "1.70.0"` to `app/package.json` dependencies
 4. Add `{ "path": "../packages/foo" }` to `app/tsconfig.json` references
