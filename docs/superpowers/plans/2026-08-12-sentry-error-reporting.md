@@ -43,8 +43,27 @@ Splitting `scrub`/`consent`/`options` keeps the correctness-critical logic pure 
 **Files:**
 - Create: `packages/cooklang-telemetry/package.json`
 - Create: `packages/cooklang-telemetry/tsconfig.json`
+- Create: `packages/cooklang-telemetry/.eslintrc.js`
 - Modify: `app/package.json` (dependencies)
 - Modify: `app/tsconfig.json` (references)
+
+- [ ] **Step 0: Create `packages/cooklang-telemetry/.eslintrc.js`**
+
+Every one of the 36 packages in `packages/` has this file; without it
+`theiaext lint` fails with "ESLint couldn't find a configuration file".
+
+```javascript
+/** @type {import('eslint').Linter.Config} */
+module.exports = {
+    extends: [
+        '../../configs/build.eslintrc.json'
+    ],
+    parserOptions: {
+        tsconfigRootDir: __dirname,
+        project: 'tsconfig.json'
+    }
+};
+```
 
 - [ ] **Step 1: Create `packages/cooklang-telemetry/package.json`**
 
