@@ -13,6 +13,14 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.37](https://github.com/cook-md/editor/compare/v0.1.0-alpha.36...v0.1.0-alpha.37) (2026-08-11)
+
+
+### Bug Fixes
+
+* make `npm run test` runnable and enforce it in CI ([#85](https://github.com/cook-md/editor/issues/85)) ([52788d2](https://github.com/cook-md/editor/commit/52788d2f1aab3cc62a02cce4fce70f0186c2d910)), closes [#84](https://github.com/cook-md/editor/issues/84)
+* report Cookbot quota errors accurately instead of "busy, try again" ([#86](https://github.com/cook-md/editor/issues/86)) ([99985b2](https://github.com/cook-md/editor/commit/99985b2d127f21fc18d7f4183534cb1ed13e807e))
+
 ## [0.1.0-alpha.36](https://github.com/cook-md/editor/compare/v0.1.0-alpha.35...v0.1.0-alpha.36) (2026-08-10)
 
 
