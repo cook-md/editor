@@ -39,6 +39,9 @@
       "path": "../packages/cooklang-import"
     },
     {
+      "path": "../packages/cooklang-telemetry"
+    },
+    {
       "path": "../packages/core"
     },
     {
