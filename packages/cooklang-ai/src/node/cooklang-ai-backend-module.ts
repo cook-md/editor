@@ -19,6 +19,7 @@ import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { CookbotServerToolsPath } from '../common/cookbot-server-tools-protocol';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
+import { CookbotSessionInitializer } from './cookbot-session-initializer';
 import { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
 import { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';
 
@@ -29,6 +30,7 @@ import { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';
  */
 const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
     bind(CookbotGrpcClient).toSelf().inSingletonScope();
+    bind(CookbotSessionInitializer).toSelf().inSingletonScope();
     bind(CookbotLanguageModel).toSelf().inSingletonScope();
     bind(CookbotLanguageModelProvider).toSelf().inSingletonScope();
 

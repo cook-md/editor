@@ -28,11 +28,8 @@ import {
     isToolCallResponsePart,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
-import { FileUri } from '@theia/core/lib/common/file-uri';
-import { WorkspaceServer } from '@theia/workspace/lib/common';
-import * as fs from 'fs';
-import * as path from 'path';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
+import { CookbotSessionInitializer } from './cookbot-session-initializer';
 import {
     CookbotChatChunk,
     CookbotMessageParam,
@@ -64,50 +61,16 @@ export class CookbotLanguageModel implements LanguageModel {
     @inject(CookbotGrpcClient)
     protected readonly grpcClient: CookbotGrpcClient;
 
-    @inject(WorkspaceServer)
-    protected readonly workspaceServer: WorkspaceServer;
+    @inject(CookbotSessionInitializer)
+    protected readonly sessionInitializer: CookbotSessionInitializer;
 
     // Optional: error reporting is a separate extension, and the language model
     // must keep working when it is absent.
     @inject(ErrorReporter) @optional()
     protected readonly errorReporter?: ErrorReporter;
 
-    private initPromise: Promise<void> | undefined;
-
-    protected async ensureInitialized(): Promise<void> {
-        if (!this.initPromise) {
-            // Drop a failed initialization so the next request can retry it,
-            // instead of awaiting the same rejected promise forever.
-            this.initPromise = this.doInitialize().catch(error => {
-                this.initPromise = undefined;
-                throw error;
-            });
-        }
-        await this.initPromise;
-    }
-
-    private async doInitialize(): Promise<void> {
-        let recipesDir = '';
-        let customInstructions = '';
-        try {
-            const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
-            if (workspaceUri) {
-                recipesDir = FileUri.fsPath(workspaceUri);
-                const cookMdPath = path.join(recipesDir, 'COOK.md');
-                try {
-                    customInstructions = await fs.promises.readFile(cookMdPath, 'utf-8');
-                } catch {
-                    // COOK.md not present, that's fine
-                }
-            }
-        } catch {
-            // Workspace may not be set yet
-        }
-        await this.grpcClient.initialize(recipesDir, customInstructions);
-    }
-
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
-        await this.ensureInitialized();
+        await this.sessionInitializer.ensureInitialized();
         return this.handleStreamingRequest(request, cancellationToken);
     }
 
@@ -176,11 +139,11 @@ export class CookbotLanguageModel implements LanguageModel {
                         break;
                     } catch (error: unknown) {
                         if (CookbotError.isSessionExpired(error)) {
-                            that.initPromise = undefined;
+                            that.sessionInitializer.reset();
                             if (!sessionRetryDone && !partsYielded) {
                                 sessionRetryDone = true;
                                 console.info('[CookbotLM] Session expired, re-initializing and retrying');
-                                await that.ensureInitialized();
+                                await that.sessionInitializer.ensureInitialized();
                                 continue attempt;
                             }
                         } else if (CookbotError.isTransientConnection(error) && !connectionRetryDone && !partsYielded) {
