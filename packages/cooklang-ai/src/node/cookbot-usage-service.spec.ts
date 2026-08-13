@@ -117,6 +117,7 @@ describe('CookbotUsageServiceImpl', () => {
 
         const usage = await service.getUsage();
 
+        expect(initializer.ensureCalls).to.equal(2);
         expect(initializer.resetCalls).to.equal(1);
         expect(grpcClient.getUsageCalls).to.equal(2);
         expect(usage).to.deep.equal(SAMPLE_USAGE);
