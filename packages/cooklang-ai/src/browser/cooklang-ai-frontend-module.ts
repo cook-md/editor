@@ -17,6 +17,7 @@ import { Agent, bindToolProvider } from '@theia/ai-core/lib/common';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import { CookbotServerToolsPath, CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
+import { CookbotUsagePath, CookbotUsageService } from '../common/cookbot-usage-protocol';
 import { CookbotChatAgent } from './cookbot-chat-agent';
 import {
     CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool,
@@ -50,6 +51,11 @@ export default new ContainerModule(bind => {
     // Server tools — RPC proxy to backend
     bind(CookbotServerToolsService).toDynamicValue(ctx =>
         ServiceConnectionProvider.createProxy(ctx.container, CookbotServerToolsPath)
+    ).inSingletonScope();
+
+    // Usage — RPC proxy to backend (consumed by the chat quota banner)
+    bind(CookbotUsageService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy(ctx.container, CookbotUsagePath)
     ).inSingletonScope();
 
     // Workspace function scope (shared helper for all file tools)
