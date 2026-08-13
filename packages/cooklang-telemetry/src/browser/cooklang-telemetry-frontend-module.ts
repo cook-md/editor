@@ -13,9 +13,12 @@
 
 import * as Sentry from '@sentry/electron/renderer';
 import { ContainerModule } from '@theia/core/shared/inversify';
+import { CommandContribution } from '@theia/core';
 import { FrontendApplicationContribution, WebSocketConnectionProvider } from '@theia/core/lib/browser';
 import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
 import { TelemetryConsentServer, telemetryConsentPath } from '../common/telemetry-consent-server';
+import { TelemetryDiagnostics, telemetryDiagnosticsPath } from '../common/telemetry-diagnostics';
+import { TelemetryDiagnosticsContribution } from './telemetry-diagnostics-contribution';
 import { TelemetryConsentWriter } from './telemetry-consent-writer';
 import { TelemetryPreferencesSchema } from './telemetry-preferences';
 
@@ -32,4 +35,10 @@ export default new ContainerModule(bind => {
     ).inSingletonScope();
     bind(TelemetryConsentWriter).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(TelemetryConsentWriter);
+
+    bind(TelemetryDiagnostics).toDynamicValue(context =>
+        context.container.get(WebSocketConnectionProvider).createProxy<TelemetryDiagnostics>(telemetryDiagnosticsPath)
+    ).inSingletonScope();
+    bind(TelemetryDiagnosticsContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(TelemetryDiagnosticsContribution);
 });
