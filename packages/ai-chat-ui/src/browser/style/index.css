@@ -1691,6 +1691,11 @@ div:last-child>.theia-ChatNode {
     border-color: var(--theia-inputValidation-errorBorder);
 }
 
+.ai-chat-quota-banner-message {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .ai-chat-quota-banner-link {
     cursor: pointer;
     text-decoration: underline;

@@ -997,7 +997,7 @@ Note: no `CommandService` import is needed — the base class (`ChatViewWidget` 
 and in `updateGating()`, in the ungated branch, after the `for (const widget of layout)` loop, add:
 
 ```ts
-        this.renderQuotaBanner();
+        this.refreshUsage();
 ```
 
 - [ ] **Step 2: Add the CSS**

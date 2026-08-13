@@ -54,6 +54,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     private quotaBanner: HTMLDivElement;
     private quotaBannerState: CookbotQuotaBannerState | undefined;
     private readonly usageTracking = new DisposableCollection();
+    private usageRequestSeq = 0;
 
     @postConstruct()
     protected override init(): void {
@@ -67,6 +68,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.quotaBanner = document.createElement('div');
         this.quotaBanner.className = 'ai-chat-quota-banner';
         this.quotaBanner.style.display = 'none';
+        this.quotaBanner.setAttribute('role', 'status');
 
         this.trackModelForUsage(this.chatSession.model);
         this.toDispose.push(this.chatService.onSessionEvent(event => {
@@ -122,7 +124,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
                 widget.show();
             }
         }
-        this.renderQuotaBanner();
+        this.refreshUsage();
     }
 
     private showGateScreen(type: 'login' | 'upgrade'): void {
@@ -224,6 +226,10 @@ export class CooklangChatViewWidget extends ChatViewWidget {
      * deltas must not each trigger a usage query.
      */
     private watchResponseCompletion(response: ChatResponseModel): void {
+        if (response.isComplete || response.isCanceled || response.isError) {
+            this.refreshUsage();
+            return;
+        }
         const listener = response.onDidChange(() => {
             if (response.isComplete || response.isCanceled || response.isError) {
                 listener.dispose();
@@ -234,7 +240,11 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     }
 
     private refreshUsage(): void {
+        const seq = ++this.usageRequestSeq;
         this.cookbotUsageService.getUsage().then(usageStats => {
+            if (seq !== this.usageRequestSeq || this.isDisposed) {
+                return;
+            }
             this.quotaBannerState = computeQuotaBannerState(usageStats);
             this.renderQuotaBanner();
         }).catch(error => {
@@ -256,7 +266,8 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
         const message = document.createElement('span');
         message.className = 'ai-chat-quota-banner-message';
-        const resetsOn = state.resetsOn ? new Date(state.resetsOn).toLocaleDateString() : undefined;
+        const parsedReset = state.resetsOn ? new Date(state.resetsOn) : undefined;
+        const resetsOn = parsedReset && !isNaN(parsedReset.getTime()) ? parsedReset.toLocaleDateString() : undefined;
         if (state.level === 'exhausted') {
             message.textContent = resetsOn
                 ? nls.localize('theia/ai-chat/quota/exhaustedWithDate', 'Your Cookbot AI credits are used up until {0}.', resetsOn)
@@ -267,21 +278,30 @@ export class CooklangChatViewWidget extends ChatViewWidget {
                 : nls.localize('theia/ai-chat/quota/warning', 'You\'ve used {0}% of your Cookbot AI credits this cycle.', state.percentUsed);
         }
 
-        const account = document.createElement('a');
-        account.className = 'ai-chat-quota-banner-link';
-        account.textContent = nls.localize('theia/ai-chat/quota/openAccount', 'Open Account');
-        account.addEventListener('click', () => {
+        const account = this.createQuotaBannerAction(nls.localize('theia/ai-chat/quota/openAccount', 'Open Account'), () => {
             this.commandService.executeCommand(AccountCommands.OPEN_VIEW.id);
         });
-
-        const upgrade = document.createElement('a');
-        upgrade.className = 'ai-chat-quota-banner-link';
-        upgrade.textContent = nls.localizeByDefault('Upgrade');
-        upgrade.addEventListener('click', () => {
+        const upgrade = this.createQuotaBannerAction(nls.localizeByDefault('Upgrade'), () => {
             this.startUpgradeFlow();
         });
 
         this.quotaBanner.append(message, account, upgrade);
         this.quotaBanner.style.display = 'flex';
+    }
+
+    private createQuotaBannerAction(label: string, run: () => void): HTMLAnchorElement {
+        const link = document.createElement('a');
+        link.className = 'ai-chat-quota-banner-link';
+        link.textContent = label;
+        link.setAttribute('role', 'link');
+        link.tabIndex = 0;
+        link.addEventListener('click', () => run());
+        link.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                run();
+            }
+        });
+        return link;
     }
 }
