@@ -123,6 +123,45 @@ describe('CookbotError', () => {
         });
     });
 
+    // Only unexpected failures are worth reporting to Sentry. Everything the
+    // server states as a normal outcome, and everything caused by a flaky
+    // network, is noise that would bury the real bugs.
+    describe('isExpected', () => {
+
+        it('treats an exhausted quota as expected', () => {
+            expect(CookbotError.isExpected(grpcError(8, 'RESOURCE_EXHAUSTED', CookbotError.ServerReason.QUOTA_EXHAUSTED))).to.be.true;
+        });
+
+        it('treats a plan without AI as expected', () => {
+            expect(CookbotError.isExpected(grpcError(7, 'PERMISSION_DENIED', CookbotError.ServerReason.AI_FEATURE_NOT_AVAILABLE))).to.be.true;
+        });
+
+        it('treats a dropped connection as expected', () => {
+            expect(CookbotError.isExpected(grpcError(14, 'UNAVAILABLE', 'read ECONNRESET'))).to.be.true;
+        });
+
+        it('treats an expired session as expected', () => {
+            expect(CookbotError.isExpected(grpcError(16, 'UNAUTHENTICATED', 'expired session'))).to.be.true;
+        });
+
+        it('treats a context window overflow as expected', () => {
+            expect(CookbotError.isExpected(new Error('prompt is too long: 210000 tokens > 200000 maximum'))).to.be.true;
+        });
+
+        it('treats an oversized message as expected', () => {
+            expect(CookbotError.isExpected(grpcError(8, 'RESOURCE_EXHAUSTED', 'Received message larger than max (5242880 vs. 4194304)'))).to.be.true;
+        });
+
+        // These are the ones worth waking someone up for.
+        it('treats a server-side internal error as unexpected', () => {
+            expect(CookbotError.isExpected(grpcError(13, 'INTERNAL', 'snapshot failed: db timeout'))).to.be.false;
+        });
+
+        it('treats a plain programming error as unexpected', () => {
+            expect(CookbotError.isExpected(new TypeError("Cannot read properties of undefined (reading 'map')"))).to.be.false;
+        });
+    });
+
     describe('classification', () => {
 
         it('treats only UNAVAILABLE as retryable transport failure', () => {

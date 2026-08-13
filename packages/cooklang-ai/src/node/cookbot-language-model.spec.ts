@@ -88,12 +88,21 @@ class FakeGrpcClient {
     }
 }
 
-function createModel(grpcClient: FakeGrpcClient): CookbotLanguageModel {
+class FakeErrorReporter {
+    reported: unknown[] = [];
+    reportUnexpected(error: unknown): void {
+        this.reported.push(error);
+    }
+}
+
+function createModel(grpcClient: FakeGrpcClient, errorReporter?: FakeErrorReporter): CookbotLanguageModel {
     const model = new CookbotLanguageModel();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (model as any).grpcClient = grpcClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (model as any).workspaceServer = { getMostRecentlyUsedWorkspace: async () => undefined };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (model as any).errorReporter = errorReporter;
     return model;
 }
 
@@ -330,6 +339,75 @@ describe('CookbotLanguageModel quota exhaustion', () => {
         expect(grpcClient.sendMessageCalls).to.equal(1);
         expect(grpcClient.reconnectCalls).to.equal(0);
         expect(grpcClient.initializeCalls).to.equal(1);
+    });
+});
+
+// Sentry only captures unhandled errors on its own. Everything here is caught
+// and turned into a chat message, so it has to be handed over explicitly - but
+// only the failures that indicate a defect, or the signal drowns in noise.
+describe('CookbotLanguageModel error reporting', () => {
+
+    async function collectWithReporter(streams: Array<() => AsyncIterable<CookbotChatChunk>>): Promise<FakeErrorReporter> {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = streams;
+        const reporter = new FakeErrorReporter();
+        await collect(createModel(grpcClient, reporter)).catch(() => undefined);
+        return reporter;
+    }
+
+    it('reports an unexpected server failure', async () => {
+        const reporter = await collectWithReporter([
+            () => failingStream(Object.assign(new Error('13 INTERNAL: snapshot failed'), { code: 13 }))
+        ]);
+        expect(reporter.reported).to.have.lengthOf(1);
+    });
+
+    it('reports a plain programming error', async () => {
+        const reporter = await collectWithReporter([
+            () => failingStream(new TypeError("Cannot read properties of undefined (reading 'map')"))
+        ]);
+        expect(reporter.reported).to.have.lengthOf(1);
+    });
+
+    it('does not report an exhausted quota', async () => {
+        const reporter = await collectWithReporter([() => failingStream(quotaExhaustedError())]);
+        expect(reporter.reported).to.be.empty;
+    });
+
+    it('does not report a dropped connection, even after the retry fails', async () => {
+        const reporter = await collectWithReporter([
+            () => failingStream(connectionResetError()),
+            () => failingStream(connectionResetError())
+        ]);
+        expect(reporter.reported).to.be.empty;
+    });
+
+    it('does not report an expired session', async () => {
+        const reporter = await collectWithReporter([
+            () => failingStream(sessionExpiredError()),
+            () => failingStream(sessionExpiredError())
+        ]);
+        expect(reporter.reported).to.be.empty;
+    });
+
+    it('does not report a conversation that outgrew the context window', async () => {
+        const reporter = await collectWithReporter([
+            () => failingStream(new Error('prompt is too long: 210000 tokens > 200000 maximum'))
+        ]);
+        expect(reporter.reported).to.be.empty;
+    });
+
+    it('works when no reporter is bound', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => failingStream(new Error('13 INTERNAL: boom'))];
+        const model = createModel(grpcClient);
+        let thrown: Error | undefined;
+        try {
+            await collect(model);
+        } catch (error) {
+            thrown = error as Error;
+        }
+        expect(thrown).to.not.be.undefined;
     });
 });
 

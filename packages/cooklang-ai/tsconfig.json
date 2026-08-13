@@ -5,14 +5,33 @@
     "rootDir": "src",
     "outDir": "lib"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../ai-chat" },
-    { "path": "../ai-core" },
-    { "path": "../cooklang-account" },
-    { "path": "../core" },
-    { "path": "../filesystem" },
-    { "path": "../monaco" },
-    { "path": "../workspace" }
+    {
+      "path": "../ai-chat"
+    },
+    {
+      "path": "../ai-core"
+    },
+    {
+      "path": "../cooklang-account"
+    },
+    {
+      "path": "../cooklang-telemetry"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../filesystem"
+    },
+    {
+      "path": "../monaco"
+    },
+    {
+      "path": "../workspace"
+    }
   ]
 }
