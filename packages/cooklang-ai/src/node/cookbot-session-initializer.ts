@@ -37,11 +37,19 @@ export class CookbotSessionInitializer {
     async ensureInitialized(): Promise<void> {
         if (!this.initPromise) {
             // Drop a failed initialization so the next request can retry it,
-            // instead of awaiting the same rejected promise forever.
-            this.initPromise = this.doInitialize().catch(error => {
-                this.initPromise = undefined;
+            // instead of awaiting the same rejected promise forever. Capture
+            // the promise locally and only clear the field if it is still the
+            // current one - a `reset()` plus a newer in-flight init may have
+            // replaced it by the time this stale promise settles, and
+            // clobbering that newer promise would let a third caller start a
+            // redundant, concurrent initialization.
+            const promise: Promise<void> = this.doInitialize().catch(error => {
+                if (this.initPromise === promise) {
+                    this.initPromise = undefined;
+                }
                 throw error;
             });
+            this.initPromise = promise;
         }
         await this.initPromise;
     }

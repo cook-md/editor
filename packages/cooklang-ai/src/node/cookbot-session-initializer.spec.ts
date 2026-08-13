@@ -17,9 +17,16 @@ import { CookbotSessionInitializer } from './cookbot-session-initializer';
 class FakeGrpcClient {
     initializeCalls = 0;
     failNext = false;
+    /** When set, `initialize` awaits this before resolving/rejecting, letting a test control when a call settles. */
+    nextInitializeBlocksOn: Promise<void> | undefined;
 
     async initialize(): Promise<unknown> {
         this.initializeCalls++;
+        if (this.nextInitializeBlocksOn) {
+            const blocker = this.nextInitializeBlocksOn;
+            this.nextInitializeBlocksOn = undefined;
+            await blocker;
+        }
         if (this.failNext) {
             this.failNext = false;
             throw new Error('init failed');
@@ -74,6 +81,30 @@ describe('CookbotSessionInitializer', () => {
         initializer.reset();
         await initializer.ensureInitialized();
 
+        expect(grpcClient.initializeCalls).to.equal(2);
+    });
+
+    it('a stale failed initialization does not clobber a newer in-flight one', async () => {
+        const grpcClient = new FakeGrpcClient();
+        let rejectFirst!: (error: Error) => void;
+        grpcClient.nextInitializeBlocksOn = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+        const initializer = createInitializer(grpcClient);
+
+        const first = initializer.ensureInitialized();
+        initializer.reset();
+        const second = initializer.ensureInitialized();
+
+        rejectFirst(new Error('stale failure'));
+        let thrown: Error | undefined;
+        try {
+            await first;
+        } catch (error) {
+            thrown = error as Error;
+        }
+        expect(thrown?.message).to.equal('stale failure');
+
+        await second;
+        await initializer.ensureInitialized();
         expect(grpcClient.initializeCalls).to.equal(2);
     });
 });
