@@ -17,10 +17,12 @@ import { ContainerModule } from '@theia/core/shared/inversify';
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { DEV_OVERRIDE_ENV_VAR, buildOptions, shouldInitialize } from '../common/telemetry-options';
 import { TelemetryConsentServer, telemetryConsentPath } from '../common/telemetry-consent-server';
+import { TelemetryDiagnostics, telemetryDiagnosticsPath } from '../common/telemetry-diagnostics';
 import { ErrorReporter } from '../common/error-reporter';
 import { readErrorReportingConsent } from './telemetry-consent-file';
 import { TelemetryConsentServerImpl } from './telemetry-consent-server-impl';
 import { SentryErrorReporter } from './sentry-error-reporter';
+import { TelemetryDiagnosticsImpl } from './telemetry-diagnostics-impl';
 
 // Initialized at module load, before any container binding runs, so that an
 // error thrown during backend startup is still captured. The forked backend is
@@ -61,5 +63,11 @@ export default new ContainerModule(bind => {
     bind(TelemetryConsentServer).toService(TelemetryConsentServerImpl);
     bind(ConnectionHandler).toDynamicValue(context =>
         new RpcConnectionHandler(telemetryConsentPath, () => context.container.get(TelemetryConsentServer))
+    ).inSingletonScope();
+
+    bind(TelemetryDiagnosticsImpl).toSelf().inSingletonScope();
+    bind(TelemetryDiagnostics).toService(TelemetryDiagnosticsImpl);
+    bind(ConnectionHandler).toDynamicValue(context =>
+        new RpcConnectionHandler(telemetryDiagnosticsPath, () => context.container.get(TelemetryDiagnostics))
     ).inSingletonScope();
 });
