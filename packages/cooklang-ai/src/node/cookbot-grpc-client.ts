@@ -32,6 +32,7 @@ import {
     CookbotFetchResult,
     CookbotConvertResult,
 } from '../common/cookbot-server-tools-protocol';
+import { CookbotUsageStats } from '../common/cookbot-usage-protocol';
 import { CookbotError } from '../common/cookbot-error';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 
@@ -150,6 +151,32 @@ export class CookbotGrpcClient {
 
     getSessionId(): string | undefined {
         return this.sessionId;
+    }
+
+    async getUsage(): Promise<CookbotUsageStats> {
+        return this.withReconnectRetry('GetUsage', () => this.doGetUsage());
+    }
+
+    protected async doGetUsage(): Promise<CookbotUsageStats> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.GetUsage({
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve({
+                    inputTokensUsed: response.inputTokensUsed ?? 0,
+                    outputTokensUsed: response.outputTokensUsed ?? 0,
+                    tokenLimit: response.tokenLimit ?? 0,
+                    billingPeriodStart: response.billingPeriodStart || undefined,
+                    billingPeriodEnd: response.billingPeriodEnd || undefined,
+                    subscriptionTier: response.subscriptionTier || undefined,
+                });
+            });
+        });
     }
 
     sendMessage(
