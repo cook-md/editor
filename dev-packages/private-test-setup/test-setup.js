@@ -26,7 +26,8 @@ const nodeMajor = Number(process.versions.node.split('.')[0]);
 if (nodeMajor < MINIMUM_NODE_MAJOR) {
     throw new Error(
         `Theia tests require Node.js >= ${MINIMUM_NODE_MAJOR}, but this is Node ${process.versions.node}. `
-        + 'Run `nvm use` (see .nvmrc) and try again.'
+        + 'Switch to a supported version and try again - `.nvmrc` records the expected major. '
+        + 'Any installation method works (nvm, fnm, nix, brew); the repo does not standardise on one.'
     );
 }
 
