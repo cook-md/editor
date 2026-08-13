@@ -11,6 +11,7 @@
     { "path": "../ai-chat-ui" },
     { "path": "../ai-core" },
     { "path": "../cooklang-account" },
+    { "path": "../cooklang-ai" },
     { "path": "../core" },
     { "path": "../monaco" }
   ]
