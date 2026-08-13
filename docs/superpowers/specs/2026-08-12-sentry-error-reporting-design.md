@@ -5,11 +5,18 @@
 
 ## Goal
 
-Report unhandled errors from the packaged Cook Editor to Sentry, so that a user
-report is diagnosable without the reporter having to reproduce the failure or a
-maintainer having to read server source.
+Report errors from the packaged Cook Editor to Sentry, so that a user report is
+diagnosable without the reporter having to reproduce the failure or a maintainer
+having to read server source.
 
 Reporting is **on by default** with a preference to disable it (opt-out).
+
+> **Amended during implementation (2026-08-13).** The original goal said
+> *unhandled* errors. That would not have met the goal: Sentry's default
+> integrations are `onUncaughtException` and `onUnhandledRejection` only, and the
+> failures users actually report are caught and rendered as a chat message, so
+> nothing would have reported them. Explicit reporting of caught-but-unexpected
+> failures was added; see "Reporting caught failures" below.
 
 ## Background
 
@@ -33,7 +40,8 @@ Reporting is **on by default** with a preference to disable it (opt-out).
 
 Deliberately excluded (YAGNI):
 
-- Performance tracing, session replay, profiling.
+- Performance tracing, session replay, profiling. (`@sentry/replay` arrives as a
+  transitive dependency of `@sentry/browser`, but is never enabled.)
 - Sending account identity (`Sentry.setUser`). See "User identity" below.
 - Live toggling of the preference without a restart.
 - Replacing the missing backend file log — issue #88 also proposes persisting logs,
@@ -134,6 +142,30 @@ tested directly against representative event shapes.
 correlating an editor error with the server-side Sentry project, which is genuinely
 useful — but it turns anonymous crash data into per-user records, which is a
 different privacy commitment than "we collect errors". Revisit as its own decision.
+
+## Reporting caught failures
+
+Sentry captures unhandled exceptions and unhandled rejections on its own. Every
+Cookbot failure is caught, converted by `CookbotError.toUserFacing` and rendered
+in the chat, so none of them would reach Sentry without being handed over.
+
+Two pieces, deliberately separated:
+
+- **Mechanism** — `ErrorReporter` (`cooklang-telemetry/src/common/error-reporter.ts`)
+  with a Sentry-backed implementation. It carries no policy, and no-ops when no
+  client exists (opted out, or an unpackaged build).
+- **Policy** — `CookbotError.isExpected` in `cooklang-ai`, which owns the
+  knowledge of what these errors mean. A spent quota, a plan without AI, a
+  dropped connection, an expired session, a context-window overflow and an
+  oversized message are normal outcomes. Reporting them would bury the failures
+  that indicate a defect.
+
+`CookbotLanguageModel` injects the reporter with `@optional()`, so it keeps
+working when the telemetry extension is absent.
+
+This does not extend to reporting *every* handled error in the application. Only
+the Cookbot request path is wired up, because that is the path user reports come
+from. Widening it is a separate decision.
 
 ## Configuration
 
