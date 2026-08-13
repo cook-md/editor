@@ -200,6 +200,35 @@ export namespace CookbotError {
         return error instanceof Error ? error : new Error(messageOf(error) || 'Unknown Cookbot error');
     }
 
+    /**
+     * Whether this failure is a normal outcome rather than a defect.
+     *
+     * Used to decide what is worth reporting to error tracking: a spent quota,
+     * a plan without AI, a dropped connection, an expired session and a
+     * conversation that outgrew the context window are all things the system is
+     * designed to produce. Reporting them would bury the failures that actually
+     * indicate a bug.
+     */
+    export function isExpected(error: unknown): boolean {
+        if (isConversationTooLong(error) || isMessageTooLarge(error)) {
+            return true;
+        }
+        if (hasReason(error, ServerReason.QUOTA_EXHAUSTED)
+            || hasReason(error, ServerReason.AI_FEATURE_NOT_AVAILABLE)
+            || hasReason(error, ServerReason.QUOTA_CHECK_FAILED)) {
+            return true;
+        }
+        switch (statusCode(error)) {
+            case CookbotGrpcStatus.Unavailable:
+            case CookbotGrpcStatus.Unauthenticated:
+            case CookbotGrpcStatus.ResourceExhausted:
+            case CookbotGrpcStatus.PermissionDenied:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /** Shown when a response stream completes without producing any content. */
     export function emptyResponse(): Error {
         return new Error(nls.localize(

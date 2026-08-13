@@ -11,7 +11,7 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-import { injectable, inject } from '@theia/core/shared/inversify';
+import { injectable, inject, optional } from '@theia/core/shared/inversify';
 import {
     LanguageModel,
     LanguageModelResponse,
@@ -40,6 +40,7 @@ import {
     CookbotToolDefinition,
 } from '../common/cookbot-protocol';
 import { CookbotError } from '../common/cookbot-error';
+import { ErrorReporter } from '@theia/cooklang-telemetry/lib/common/error-reporter';
 
 interface ToolCallback {
     readonly name: string;
@@ -65,6 +66,11 @@ export class CookbotLanguageModel implements LanguageModel {
 
     @inject(WorkspaceServer)
     protected readonly workspaceServer: WorkspaceServer;
+
+    // Optional: error reporting is a separate extension, and the language model
+    // must keep working when it is absent.
+    @inject(ErrorReporter) @optional()
+    protected readonly errorReporter?: ErrorReporter;
 
     private initPromise: Promise<void> | undefined;
 
@@ -184,6 +190,7 @@ export class CookbotLanguageModel implements LanguageModel {
                             continue attempt;
                         }
                         console.error('[CookbotLM] Request failed:', error);
+                        that.reportIfUnexpected(error);
                         throw CookbotError.toUserFacing(error);
                     }
                 }
@@ -271,6 +278,24 @@ export class CookbotLanguageModel implements LanguageModel {
         };
 
         return { stream: asyncIterator };
+    }
+
+    /**
+     * Hand a caught failure to error tracking, unless it is a normal outcome.
+     *
+     * These errors are turned into a chat message rather than rethrown, so
+     * nothing reports them automatically - Sentry only sees unhandled
+     * exceptions. Expected outcomes are skipped so real defects stay visible.
+     */
+    protected reportIfUnexpected(error: unknown): void {
+        if (!this.errorReporter || CookbotError.isExpected(error)) {
+            return;
+        }
+        const code = CookbotError.statusCode(error);
+        this.errorReporter.reportUnexpected(error, {
+            component: 'cookbot-language-model',
+            ...(code === undefined ? {} : { grpcCode: String(code) })
+        });
     }
 
     /**
