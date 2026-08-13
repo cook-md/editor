@@ -240,6 +240,10 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     }
 
     private refreshUsage(): void {
+        if (this.authState.status !== 'logged-in' || !this.hasAiFeature) {
+            this.quotaBanner.style.display = 'none';
+            return;
+        }
         const seq = ++this.usageRequestSeq;
         this.cookbotUsageService.getUsage().then(usageStats => {
             if (seq !== this.usageRequestSeq || this.isDisposed) {
