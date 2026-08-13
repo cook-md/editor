@@ -1672,6 +1672,32 @@ div:last-child>.theia-ChatNode {
     margin-top: 8px;
 }
 
+/* Chat quota banner — warns when Cookbot AI credits near/at the cycle limit */
+.ai-chat-quota-banner {
+    display: none;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 12px 4px 12px;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    background-color: var(--theia-inputValidation-warningBackground);
+    border: 1px solid var(--theia-inputValidation-warningBorder);
+}
+
+.ai-chat-quota-banner.exhausted {
+    background-color: var(--theia-inputValidation-errorBackground);
+    border-color: var(--theia-inputValidation-errorBorder);
+}
+
+.ai-chat-quota-banner-link {
+    cursor: pointer;
+    text-decoration: underline;
+    color: var(--theia-textLink-foreground);
+    white-space: nowrap;
+}
+
 .theia-ChatInputOptions .option.toggled {
   border: var(--theia-border-width) var(--theia-inputOption-activeBorder) solid;
   background-color: var(--theia-inputOption-activeBackground);

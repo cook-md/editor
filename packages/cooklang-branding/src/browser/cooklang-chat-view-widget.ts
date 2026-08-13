@@ -19,6 +19,12 @@ import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
+import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Message } from '@theia/core/lib/browser';
+import { ChatModel, ChatResponseModel, isActiveSessionChangedEvent } from '@theia/ai-chat/lib/common';
+import { CookbotUsageService } from '@theia/cooklang-ai/lib/common';
+import { AccountCommands } from '@theia/cooklang-account/lib/browser/account-contribution';
+import { computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
 
 const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
@@ -42,6 +48,13 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     private gateOverlay: HTMLDivElement;
     private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
+    @inject(CookbotUsageService)
+    protected readonly cookbotUsageService: CookbotUsageService;
+
+    private quotaBanner: HTMLDivElement;
+    private quotaBannerState: CookbotQuotaBannerState | undefined;
+    private readonly usageTracking = new DisposableCollection();
+
     @postConstruct()
     protected override init(): void {
         super.init();
@@ -50,6 +63,20 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.gateOverlay.className = 'ai-chat-gate-overlay';
         this.gateOverlay.style.display = 'none';
         this.node.prepend(this.gateOverlay);
+
+        this.quotaBanner = document.createElement('div');
+        this.quotaBanner.className = 'ai-chat-quota-banner';
+        this.quotaBanner.style.display = 'none';
+
+        this.trackModelForUsage(this.chatSession.model);
+        this.toDispose.push(this.chatService.onSessionEvent(event => {
+            // Runs after the base class's own listener, so chatSession is
+            // already switched to the new active session here.
+            if (isActiveSessionChangedEvent(event)) {
+                this.trackModelForUsage(this.chatSession.model);
+            }
+        }));
+        this.toDispose.push(this.usageTracking);
 
         this.authState = this.authContribution.authState;
         this.checkAiFeature();
@@ -95,6 +122,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
                 widget.show();
             }
         }
+        this.renderQuotaBanner();
     }
 
     private showGateScreen(type: 'login' | 'upgrade'): void {
@@ -107,6 +135,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
         this.gateOverlay.style.display = 'flex';
         this.gateOverlay.replaceChildren();
+        this.quotaBanner.style.display = 'none';
 
         const icon = document.createElement('div');
         icon.className = 'ai-chat-gate-icon';
@@ -164,5 +193,95 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             // Timeout, state mismatch, or superseded flow — gate will stay as-is.
             console.warn('Upgrade flow did not complete:', err);
         }
+    }
+
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        // The banner sits between the chat tree and the input inside the
+        // widget's flex column, outside the PanelLayout's own widgets.
+        if (!this.quotaBanner.isConnected) {
+            this.node.insertBefore(this.quotaBanner, this.inputWidget.node);
+        }
+        this.refreshUsage();
+    }
+
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        this.refreshUsage();
+    }
+
+    private trackModelForUsage(model: ChatModel): void {
+        this.usageTracking.dispose();
+        this.usageTracking.push(model.onDidChange(event => {
+            if (event.kind === 'addResponse') {
+                this.watchResponseCompletion(event.response);
+            }
+        }));
+    }
+
+    /**
+     * Refresh once per exchange, when the response settles — streaming
+     * deltas must not each trigger a usage query.
+     */
+    private watchResponseCompletion(response: ChatResponseModel): void {
+        const listener = response.onDidChange(() => {
+            if (response.isComplete || response.isCanceled || response.isError) {
+                listener.dispose();
+                this.refreshUsage();
+            }
+        });
+        this.usageTracking.push(listener);
+    }
+
+    private refreshUsage(): void {
+        this.cookbotUsageService.getUsage().then(usageStats => {
+            this.quotaBannerState = computeQuotaBannerState(usageStats);
+            this.renderQuotaBanner();
+        }).catch(error => {
+            // The backend already collapses expected failures to undefined;
+            // anything surfacing here is RPC noise not worth a banner change.
+            console.info('[Chat] Could not refresh Cookbot usage:', error);
+        });
+    }
+
+    private renderQuotaBanner(): void {
+        const state = this.quotaBannerState;
+        const gated = this.authState.status !== 'logged-in' || !this.hasAiFeature;
+        if (!state || gated) {
+            this.quotaBanner.style.display = 'none';
+            return;
+        }
+        this.quotaBanner.replaceChildren();
+        this.quotaBanner.classList.toggle('exhausted', state.level === 'exhausted');
+
+        const message = document.createElement('span');
+        message.className = 'ai-chat-quota-banner-message';
+        const resetsOn = state.resetsOn ? new Date(state.resetsOn).toLocaleDateString() : undefined;
+        if (state.level === 'exhausted') {
+            message.textContent = resetsOn
+                ? nls.localize('theia/ai-chat/quota/exhaustedWithDate', 'Your Cookbot AI credits are used up until {0}.', resetsOn)
+                : nls.localize('theia/ai-chat/quota/exhausted', 'Your Cookbot AI credits for this billing cycle are used up.');
+        } else {
+            message.textContent = resetsOn
+                ? nls.localize('theia/ai-chat/quota/warningWithDate', 'You\'ve used {0}% of your Cookbot AI credits this cycle — resets {1}.', state.percentUsed, resetsOn)
+                : nls.localize('theia/ai-chat/quota/warning', 'You\'ve used {0}% of your Cookbot AI credits this cycle.', state.percentUsed);
+        }
+
+        const account = document.createElement('a');
+        account.className = 'ai-chat-quota-banner-link';
+        account.textContent = nls.localize('theia/ai-chat/quota/openAccount', 'Open Account');
+        account.addEventListener('click', () => {
+            this.commandService.executeCommand(AccountCommands.OPEN_VIEW.id);
+        });
+
+        const upgrade = document.createElement('a');
+        upgrade.className = 'ai-chat-quota-banner-link';
+        upgrade.textContent = nls.localizeByDefault('Upgrade');
+        upgrade.addEventListener('click', () => {
+            this.startUpgradeFlow();
+        });
+
+        this.quotaBanner.append(message, account, upgrade);
+        this.quotaBanner.style.display = 'flex';
     }
 }
