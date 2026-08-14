@@ -7,6 +7,7 @@
     "@theia/ai-chat-ui": "1.70.0",
     "@theia/ai-core": "1.70.0",
     "@theia/cooklang-account": "1.70.0",
+    "@theia/cooklang-ai": "1.70.0",
     "@theia/core": "1.70.0",
     "@theia/monaco": "1.70.0",
     "tslib": "^2.6.2"
@@ -31,6 +32,7 @@
     "clean": "theiaext clean",
     "compile": "theiaext compile",
     "lint": "theiaext lint",
+    "test": "theiaext test",
     "watch": "theiaext watch"
   },
   "devDependencies": {

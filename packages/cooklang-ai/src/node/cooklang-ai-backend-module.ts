@@ -17,10 +17,13 @@ import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/
 import { LanguageModelProvider } from '@theia/ai-core/lib/common';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { CookbotServerToolsPath } from '../common/cookbot-server-tools-protocol';
+import { CookbotUsagePath } from '../common/cookbot-usage-protocol';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotLanguageModel } from './cookbot-language-model';
+import { CookbotSessionInitializer } from './cookbot-session-initializer';
 import { CookbotLanguageModelProvider } from './cookbot-language-model-provider';
 import { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';
+import { CookbotUsageServiceImpl } from './cookbot-usage-service';
 
 /**
  * Connection-scoped bindings for the Cookbot language model.
@@ -29,6 +32,7 @@ import { CookbotServerToolsServiceImpl } from './cookbot-server-tools-service';
  */
 const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
     bind(CookbotGrpcClient).toSelf().inSingletonScope();
+    bind(CookbotSessionInitializer).toSelf().inSingletonScope();
     bind(CookbotLanguageModel).toSelf().inSingletonScope();
     bind(CookbotLanguageModelProvider).toSelf().inSingletonScope();
 
@@ -38,6 +42,15 @@ const cookbotConnectionModule = ConnectionContainerModule.create(({ bind }) => {
         new RpcConnectionHandler(
             CookbotServerToolsPath,
             () => ctx.container.get(CookbotServerToolsServiceImpl)
+        )
+    ).inSingletonScope();
+
+    // Usage service — exposed to browser via RPC for the chat quota banner
+    bind(CookbotUsageServiceImpl).toSelf().inSingletonScope();
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new RpcConnectionHandler(
+            CookbotUsagePath,
+            () => ctx.container.get(CookbotUsageServiceImpl)
         )
     ).inSingletonScope();
 

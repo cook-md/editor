@@ -15,6 +15,7 @@ import { expect } from 'chai';
 import { LanguageModelStreamResponse, LanguageModelStreamResponsePart, UserRequest } from '@theia/ai-core/lib/common';
 import { CookbotChatChunk, CookbotInitResult } from '../common/cookbot-protocol';
 import { CookbotLanguageModel } from './cookbot-language-model';
+import { CookbotSessionInitializer } from './cookbot-session-initializer';
 
 // ── Test fakes ──────────────────────────────────────────────────────────
 
@@ -96,11 +97,16 @@ class FakeErrorReporter {
 }
 
 function createModel(grpcClient: FakeGrpcClient, errorReporter?: FakeErrorReporter): CookbotLanguageModel {
+    const initializer = new CookbotSessionInitializer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (initializer as any).grpcClient = grpcClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (initializer as any).workspaceServer = { getMostRecentlyUsedWorkspace: async () => undefined };
     const model = new CookbotLanguageModel();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (model as any).grpcClient = grpcClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (model as any).workspaceServer = { getMostRecentlyUsedWorkspace: async () => undefined };
+    (model as any).sessionInitializer = initializer;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (model as any).errorReporter = errorReporter;
     return model;

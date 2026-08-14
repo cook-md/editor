@@ -29,3 +29,8 @@ export {
     CookbotFetchResult,
     CookbotConvertResult,
 } from './cookbot-server-tools-protocol';
+export {
+    CookbotUsagePath,
+    CookbotUsageService,
+    CookbotUsageStats,
+} from './cookbot-usage-protocol';
