@@ -188,9 +188,11 @@ returns the server JSON (`{ recipes, hint }`) verbatim; failures →
   "path": "string, optional — workspace-relative target; default is the catalog's suggested path" }
 ```
 
-Flow: `getCatalogRecipe(id)` → `path ?? suggestedPath` →
-`WorkspaceFunctionScope.resolveRelativePath` (rejects paths outside the
-workspace) → `ctx.request.session.changeSet.addElements(fileChangeFactory({
+Flow: `WorkspaceFunctionScope.getWorkspaceRoot()` (first, so "no workspace"
+fails before the network call) → `getCatalogRecipe(id)` → `path ??
+suggestedPath` → resolved against the workspace root and normalised, then
+checked with `WorkspaceFunctionScope.ensureWithinWorkspace` (rejects paths
+outside the workspace) → `ctx.request.session.changeSet.addElements(fileChangeFactory({
 uri, type: exists ? 'modify' : 'add', state: 'pending', targetState: content,
 requestId, chatSessionId }))` + `setTitle` via `FileChangeSetTitleProvider` —
 identical to `SuggestFileContent`. Returns

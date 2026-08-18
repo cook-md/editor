@@ -214,10 +214,12 @@ export class CookbotAddCatalogRecipeTool implements ToolProvider {
         const explicitPath = typeof args.path === 'string' && args.path.trim() ? args.path.trim() : undefined;
 
         try {
+            // Resolve the workspace first: with no workspace open there is nowhere to stage
+            // the file, so fail before spending a network round-trip on the catalog fetch.
+            const workspaceRoot = await this.workspaceFunctionScope.getWorkspaceRoot();
             const recipe = await this.serverTools.getCatalogRecipe(id);
             const path = explicitPath ?? recipe.suggestedPath;
-            const workspaceRoot = await this.workspaceFunctionScope.getWorkspaceRoot();
-            const uri = (await this.workspaceFunctionScope.resolveRelativePath(path)).normalizePath();
+            const uri = workspaceRoot.resolve(path).normalizePath();
             this.workspaceFunctionScope.ensureWithinWorkspace(uri, workspaceRoot);
             const type: 'add' | 'modify' = (await this.fileService.exists(uri)) ? 'modify' : 'add';
             ctx.request.session.changeSet.addElements(this.fileChangeFactory({

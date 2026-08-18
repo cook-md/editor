@@ -44,12 +44,14 @@ class FakeServerTools {
     searchResponse: unknown = { recipes: [], hint: undefined };
     searchError: Error | undefined;
     recipes = new Map<string, CookbotCatalogRecipe>();
+    fetchedIds: string[] = [];
     async searchRecipeCatalog(criteria: object): Promise<unknown> {
         this.searchCalls.push(criteria);
         if (this.searchError) { throw this.searchError; }
         return this.searchResponse;
     }
     async getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe> {
+        this.fetchedIds.push(id);
         const recipe = this.recipes.get(id);
         if (!recipe) { throw new Error('5 NOT_FOUND: recipe not found'); }
         return recipe;
@@ -145,8 +147,11 @@ describe('CookbotAddCatalogRecipeTool', () => {
 
     class FakeScope {
         root = new URI('file:///ws');
-        async getWorkspaceRoot(): Promise<URI> { return this.root; }
-        async resolveRelativePath(path: string): Promise<URI> { return this.root.resolve(path); }
+        rootError: Error | undefined;
+        async getWorkspaceRoot(): Promise<URI> {
+            if (this.rootError) { throw this.rootError; }
+            return this.root;
+        }
         ensureWithinWorkspace(targetUri: URI, workspaceRootUri: URI): void {
             if (!targetUri.toString().startsWith(workspaceRootUri.toString())) {
                 throw new Error('Access outside of the workspace is not allowed');
@@ -258,17 +263,25 @@ describe('CookbotAddCatalogRecipeTool', () => {
         expect(titles).to.deep.equal([]);
     });
 
+    it('returns { error } without calling the server when no workspace is open', async () => {
+        const { tool, server, scope } = createTool();
+        scope.rootError = new Error('No workspace has been opened yet');
+        const { ctx, staged, titles } = createContext();
+        const result = JSON.parse(await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id }), ctx as ToolInvocationContext) as string);
+        expect(result.error).to.match(/No workspace has been opened yet/);
+        expect(server.fetchedIds).to.deep.equal([]);
+        expect(staged).to.deep.equal([]);
+        expect(titles).to.deep.equal([]);
+    });
+
     it('returns { error } when id is missing without calling the server', async () => {
         const { tool, server } = createTool();
         const { ctx, staged } = createContext();
-        const fetched: string[] = [];
-        const original = server.getCatalogRecipe.bind(server);
-        server.getCatalogRecipe = async id => { fetched.push(id); return original(id); };
         for (const args of ['{}', JSON.stringify({ id: '   ' }), JSON.stringify({ id: 42 })]) {
             const result = JSON.parse(await tool.getTool().handler(args, ctx as ToolInvocationContext) as string);
             expect(result.error, args).to.match(/id/);
         }
-        expect(fetched).to.deep.equal([]);
+        expect(server.fetchedIds).to.deep.equal([]);
         expect(staged).to.deep.equal([]);
     });
 
