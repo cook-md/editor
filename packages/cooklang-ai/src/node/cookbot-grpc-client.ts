@@ -31,6 +31,7 @@ import {
     CookbotSearchResult,
     CookbotFetchResult,
     CookbotConvertResult,
+    CookbotCatalogRecipe,
 } from '../common/cookbot-server-tools-protocol';
 import { CookbotUsageStats } from '../common/cookbot-usage-protocol';
 import { CookbotError } from '../common/cookbot-error';
@@ -317,6 +318,53 @@ export class CookbotGrpcClient {
                 resolve({
                     cooklangContent: response.cooklangContent,
                     recipeName: response.recipeName,
+                });
+            });
+        });
+    }
+
+    async searchRecipeCatalog(criteriaJson: string): Promise<string> {
+        return this.withReconnectRetry('SearchRecipeCatalog', () => this.doSearchRecipeCatalog(criteriaJson));
+    }
+
+    protected async doSearchRecipeCatalog(criteriaJson: string): Promise<string> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.SearchRecipeCatalog({
+                sessionId: this.sessionId || '',
+                criteriaJson,
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve(response.resultsJson ?? '');
+            });
+        });
+    }
+
+    async getCatalogRecipe(recipeId: string): Promise<CookbotCatalogRecipe> {
+        return this.withReconnectRetry('GetCatalogRecipe', () => this.doGetCatalogRecipe(recipeId));
+    }
+
+    protected async doGetCatalogRecipe(recipeId: string): Promise<CookbotCatalogRecipe> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.GetCatalogRecipe({
+                sessionId: this.sessionId || '',
+                recipeId,
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                resolve({
+                    id: response.id,
+                    title: response.title,
+                    mealType: response.mealType,
+                    course: response.course,
+                    content: response.content,
+                    suggestedPath: response.suggestedPath,
                 });
             });
         });

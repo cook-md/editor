@@ -18,6 +18,7 @@ import {
     CookbotSearchResult,
     CookbotFetchResult,
     CookbotConvertResult,
+    CookbotCatalogRecipe,
 } from '../common/cookbot-server-tools-protocol';
 
 /**
@@ -44,5 +45,18 @@ export class CookbotServerToolsServiceImpl implements CookbotServerToolsService 
 
     async convertTextToCooklang(name: string, text: string): Promise<CookbotConvertResult> {
         return this.grpcClient.convertTextToCooklang(name, text);
+    }
+
+    async searchRecipeCatalog(criteria: object): Promise<unknown> {
+        const resultsJson = await this.grpcClient.searchRecipeCatalog(JSON.stringify(criteria ?? {}));
+        try {
+            return JSON.parse(resultsJson);
+        } catch {
+            throw new Error('Catalog search returned an unreadable response.');
+        }
+    }
+
+    async getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe> {
+        return this.grpcClient.getCatalogRecipe(id);
     }
 }
