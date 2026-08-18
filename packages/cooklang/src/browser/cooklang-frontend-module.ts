@@ -40,6 +40,7 @@ import { ReportContribution } from './report-contribution';
 import { ReportExportContribution } from './report-export-contribution';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
+import { ReportTemplateFinder } from './report-template-finder';
 import { ReportWidgetPresenter } from './report-widget-presenter';
 import { MermaidRenderer } from './mermaid-renderer';
 import { bindToolProvider } from '@theia/ai-core/lib/common';
@@ -99,6 +100,7 @@ export default new ContainerModule(bind => {
 
     // Report config + presenter (shared by the command and the AI render tool)
     bind(ReportConfigService).toSelf().inSingletonScope();
+    bind(ReportTemplateFinder).toSelf().inSingletonScope();
     bind(ReportWidgetPresenter).toSelf().inSingletonScope();
     bind(ReportPresenter).toService(ReportWidgetPresenter);
 
