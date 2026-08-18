@@ -145,8 +145,9 @@ found → `{ error: "Recipe not found: <path>" }` before anything is added.
 
 - `proto/cookbot.proto`: byte-for-byte copy of the cookbot server proto (adds
   `SearchRecipeCatalog`, `GetCatalogRecipe`).
-- `node/cookbot-grpc-client.ts`: `searchRecipeCatalog(sessionId, criteriaJson):
-  Promise<string>` and `getCatalogRecipe(sessionId, id): Promise<CookbotCatalogRecipe>`.
+- `node/cookbot-grpc-client.ts`: `searchRecipeCatalog(criteriaJson):
+  Promise<string>` and `getCatalogRecipe(id): Promise<CookbotCatalogRecipe>`
+  (both read `this.sessionId`, like the sibling methods).
 - `common/cookbot-server-tools-protocol.ts`: `CookbotServerToolsService` gains
   `searchRecipeCatalog(criteria: object): Promise<unknown>` (parsed JSON) and
   `getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe>` where
@@ -154,7 +155,7 @@ found → `{ error: "Recipe not found: <path>" }` before anything is added.
   `node/cookbot-server-tools-service.ts` forwards to the gRPC client. gRPC
   status → thrown `Error` with the status message (as the existing four do).
 
-### 3.2 `searchRecipeCatalog` (in `cookbot-server-tools.ts`)
+### 3.2 `searchRecipeCatalog` (new file `catalog-recipe-tools.ts`, cooklang-ai)
 
 Parameters (JSON Schema, enums inlined so the model sees the vocabulary):
 
@@ -180,7 +181,7 @@ No required fields. Handler forwards the parsed args as the criteria object and
 returns the server JSON (`{ recipes, hint }`) verbatim; failures →
 `{ error }`.
 
-### 3.3 `addCatalogRecipe` (new file `catalog-recipe-tools.ts`, cooklang-ai)
+### 3.3 `addCatalogRecipe` (same file, `catalog-recipe-tools.ts`)
 
 ```json
 { "id": "string, required — id from searchRecipeCatalog",
