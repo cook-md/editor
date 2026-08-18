@@ -115,6 +115,13 @@ describe('SearchRecipesTool', () => {
         expect(result.recipes?.[0].path).to.equal('/elsewhere/Pancakes.cook');
     });
 
+    it('keeps # and ? in relative paths instead of parsing them as fragment/query', async () => {
+        const { tool, ls } = createTool();
+        ls.entries = [{ ...pancakes, path: '/ws/Sweet/Cake #2?.cook' }];
+        const result = await invoke(tool, { query: 'x' });
+        expect(result.recipes?.[0].path).to.equal('Sweet/Cake #2?.cook');
+    });
+
     it('filters by tag case-insensitively', async () => {
         const { tool, ls } = createTool();
         ls.entries = [salmon, pancakes];

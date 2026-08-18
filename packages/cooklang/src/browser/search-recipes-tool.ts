@@ -130,10 +130,13 @@ export class SearchRecipesTool implements ToolProvider {
         return Math.min(Math.floor(n), MAX_LIMIT);
     }
 
-    /** Workspace-relative path when the file is under the root, else the absolute path. */
+    /**
+     * Workspace-relative path when the file is under the root, else the absolute path.
+     * `withPath` sets the path verbatim (keeping the root's scheme/authority) —
+     * `new URI(fsPath)` would *parse* it and truncate names containing `#` or `?`.
+     */
     protected relativePath(root: URI, fsPath: string): string {
-        const uri = new URI(fsPath).withScheme(root.scheme);
-        return root.relative(uri)?.toString() ?? fsPath;
+        return root.relative(root.withPath(fsPath))?.toString() ?? fsPath;
     }
 
     protected fail(message: string): string {
