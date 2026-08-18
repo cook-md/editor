@@ -12,8 +12,13 @@
 // *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
-import { ToolProvider, ToolRequest, ToolRequestParameterProperty } from '@theia/ai-core/lib/common';
+import { ToolProvider, ToolRequest, ToolRequestParameterProperty, ToolInvocationContext } from '@theia/ai-core/lib/common';
+import { ChatToolContext } from '@theia/ai-chat/lib/common/chat-tool-request-service';
+import { ChangeSetFileElementFactory } from '@theia/ai-chat/lib/browser/change-set-file-element';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
+import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
+import { FileChangeSetTitleProvider } from './file-tools/file-changeset-functions';
 
 // ── Vocabulary ──────────────────────────────────────────────────────────
 // Mirrors the kickstart wizard / cook.md `KickstartMatcherService` (and the
@@ -121,6 +126,116 @@ export class CookbotSearchRecipeCatalogTool implements ToolProvider {
             return JSON.stringify(result);
         } catch (e) {
             return fail(`Catalog search failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+}
+
+/**
+ * AI tool: fetch one catalog recipe and stage it into the workspace through the
+ * chat changeset (same review/apply UX as suggestFileContent). The recipe body
+ * never round-trips through the model. Mutating (stages a change), so it is
+ * not auto-allowed.
+ */
+@injectable()
+export class CookbotAddCatalogRecipeTool implements ToolProvider {
+    static ID = 'addCatalogRecipe';
+
+    @inject(CookbotServerToolsService)
+    protected readonly serverTools: CookbotServerToolsService;
+
+    @inject(WorkspaceFunctionScope)
+    protected readonly workspaceFunctionScope: WorkspaceFunctionScope;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
+    @inject(ChangeSetFileElementFactory)
+    protected readonly fileChangeFactory: ChangeSetFileElementFactory;
+
+    @inject(FileChangeSetTitleProvider)
+    protected readonly fileChangeSetTitleProvider: FileChangeSetTitleProvider;
+
+    getTool(): ToolRequest {
+        return {
+            id: CookbotAddCatalogRecipeTool.ID,
+            name: CookbotAddCatalogRecipeTool.ID,
+            displayName: 'Add Catalog Recipe',
+            description: 'Propose adding a recipe from the cook.md catalog to the user\'s workspace: fetches the .cook file by the id returned '
+                + 'by searchRecipeCatalog and stages it for review (the user accepts or rejects it, like suggestFileContent). '
+                + 'By default the file goes to the catalog\'s suggested path (e.g. "Dinner/<Title>.cook", "Sides & Drinks/<Title>.cook"); '
+                + 'pass `path` only when the user asked for a specific location. Returns { proposedPath, title, message } — say the recipe is '
+                + 'proposed/ready for review, never that it was saved.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', description: 'Catalog recipe id from searchRecipeCatalog.' },
+                    path: { type: 'string', description: 'Optional workspace-relative target path ending in .cook. Defaults to the catalog\'s suggested path.' },
+                },
+                required: ['id'],
+            },
+            handler: async (argString: string, ctx?: ToolInvocationContext) => this.execute(argString, ctx),
+            getArgumentsShortLabel: (args: string) => {
+                try {
+                    const parsed: unknown = JSON.parse(args);
+                    if (!parsed || typeof parsed !== 'object') {
+                        return undefined;
+                    }
+                    const { path, id } = parsed as { path?: unknown; id?: unknown };
+                    const label = (typeof path === 'string' && path.trim()) ? path : (typeof id === 'string' && id.trim()) ? id : undefined;
+                    return label ? { label, hasMore: true } : undefined;
+                } catch {
+                    return undefined;
+                }
+            },
+        };
+    }
+
+    protected async execute(argString: string, ctx?: ToolInvocationContext): Promise<string> {
+        if (!ChatToolContext.is(ctx)) {
+            return fail('This tool requires a chat context. It can only be used within a chat session.');
+        }
+        if (ctx.cancellationToken?.isCancellationRequested) {
+            return fail('Operation cancelled by user');
+        }
+        let args: { id?: unknown; path?: unknown };
+        try {
+            const parsed: unknown = argString && argString.trim() ? JSON.parse(argString) : {};
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return fail('Invalid arguments: expected a JSON object.');
+            }
+            args = parsed;
+        } catch {
+            return fail('Invalid arguments: expected a JSON object.');
+        }
+        const id = typeof args.id === 'string' ? args.id.trim() : '';
+        if (!id) {
+            return fail('id is required (use the id from searchRecipeCatalog).');
+        }
+        const explicitPath = typeof args.path === 'string' && args.path.trim() ? args.path.trim() : undefined;
+
+        try {
+            const recipe = await this.serverTools.getCatalogRecipe(id);
+            const path = explicitPath ?? recipe.suggestedPath;
+            const workspaceRoot = await this.workspaceFunctionScope.getWorkspaceRoot();
+            const uri = (await this.workspaceFunctionScope.resolveRelativePath(path)).normalizePath();
+            this.workspaceFunctionScope.ensureWithinWorkspace(uri, workspaceRoot);
+            const type: 'add' | 'modify' = (await this.fileService.exists(uri)) ? 'modify' : 'add';
+            ctx.request.session.changeSet.addElements(this.fileChangeFactory({
+                uri,
+                type,
+                state: 'pending',
+                targetState: recipe.content,
+                requestId: ctx.request.id,
+                chatSessionId: ctx.request.session.id,
+            }));
+            ctx.request.session.changeSet.setTitle(this.fileChangeSetTitleProvider.getChangeSetTitle(ctx));
+            return JSON.stringify({
+                proposedPath: path,
+                title: recipe.title,
+                message: `Proposed adding "${recipe.title}" at ${path} — the user will review and apply the change.`,
+            });
+        } catch (e) {
+            return fail(`Could not add catalog recipe: ${e instanceof Error ? e.message : String(e)}`);
         }
     }
 }
