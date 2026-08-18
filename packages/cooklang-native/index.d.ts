@@ -65,11 +65,13 @@ export declare function compactChecked(entriesJson: string, currentIngredients: 
 /**
  * Search recipes under `base_dir` the way `cook search` does
  * (`cooklang_find::search`: filename + content term scoring over `.cook` and
- * `.menu`). A blank query lists every recipe via `cooklang_find::build_tree`.
+ * `.menu`). A blank query lists every recipe, sorted by path.
+ *
+ * Filesystem work runs on a blocking thread so the JS event loop is not stalled.
  *
  * Returns JSON: `[{ path, name, title, tags, isMenu, servings }]`, best match first.
  */
-export declare function searchRecipes(baseDir: string, query: string): string
+export declare function searchRecipes(baseDir: string, query: string): Promise<string>
 /**
  * Parse a `config/pantry.conf` (TOML) and return its sections and items.
  *

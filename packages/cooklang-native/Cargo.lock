@@ -460,6 +460,7 @@ dependencies = [
  "cooklang-reports-nutrition",
  "cooklang-sync-client",
  "cookmd-nutrition-client",
+ "glob",
  "napi",
  "napi-build",
  "napi-derive",
