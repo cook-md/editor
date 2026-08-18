@@ -18,6 +18,7 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { FileOperationError, FileOperationResult } from '@theia/filesystem/lib/common/files';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 
@@ -26,11 +27,12 @@ export const PANTRY_CONF_PATH = 'config/pantry.conf';
 
 const MAX_CHECK_NAMES = 100;
 
-const NO_PANTRY_MESSAGE = `No ${PANTRY_CONF_PATH} in this workspace.`;
+const NO_PANTRY_MESSAGE = `No ${PANTRY_CONF_PATH} in this workspace`;
 
 /**
  * Shared plumbing: locate the workspace root and read the pantry file.
- * `undefined` text means "no pantry file"; a missing workspace throws.
+ * `undefined` text means "no pantry file"; a missing workspace or any read
+ * error other than file-not-found throws.
  */
 abstract class PantryToolBase {
 
@@ -50,8 +52,11 @@ abstract class PantryToolBase {
         }
         try {
             return (await this.fileService.read(root.resolve(PANTRY_CONF_PATH))).value;
-        } catch {
-            return undefined;
+        } catch (e) {
+            if (e instanceof FileOperationError && e.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
+                return undefined;
+            }
+            throw e;
         }
     }
 
@@ -109,7 +114,7 @@ export class GetPantryTool extends PantryToolBase implements ToolProvider {
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             return this.fail(`Could not parse ${PANTRY_CONF_PATH}: unexpected result shape.`);
         }
-        return JSON.stringify({ path: PANTRY_CONF_PATH, ...parsed });
+        return JSON.stringify({ ...parsed, path: PANTRY_CONF_PATH });
     }
 }
 

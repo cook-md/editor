@@ -30,18 +30,26 @@ try {
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
+import { FileOperationError, FileOperationResult } from '@theia/filesystem/lib/common/files';
 import { GetPantryTool, CheckPantryTool, PANTRY_CONF_PATH } from './pantry-tools';
 
 after(() => disableJSDOM());
 
 class FakeFileService {
     files = new Map<string, string>();
+    /** When set, every read throws this instead of consulting `files`. */
+    readError: Error | undefined;
     async read(uri: URI): Promise<{ value: string }> {
+        if (this.readError) { throw this.readError; }
         const value = this.files.get(uri.toString());
-        if (value === undefined) { throw new Error(`ENOENT ${uri}`); }
+        if (value === undefined) {
+            throw new FileOperationError(`File not found ${uri}`, FileOperationResult.FILE_NOT_FOUND);
+        }
         return { value };
     }
 }
+
+const PERMISSION_DENIED = new FileOperationError('Permission denied', FileOperationResult.FILE_PERMISSION_DENIED);
 
 class FakeLanguageService {
     parsed = {
@@ -114,7 +122,7 @@ describe('GetPantryTool', () => {
         fs.files.set(PANTRY_URI, PANTRY_TEXT);
         const result = await invoke(tool, {});
         expect(ls.parseCalls).to.deep.equal([PANTRY_TEXT]);
-        expect(result).to.deep.equal({ path: PANTRY_CONF_PATH, ...ls.parsed });
+        expect(result).to.deep.equal({ ...ls.parsed, path: PANTRY_CONF_PATH });
     });
 
     it('accepts an empty argument string', async () => {
@@ -128,8 +136,17 @@ describe('GetPantryTool', () => {
         const { tool, ls } = wire(new GetPantryTool());
         const result = await invoke(tool, {});
         expect(result.pantry).to.equal(null);
-        expect(result.message).to.match(/config\/pantry\.conf/);
+        expect(result.message).to.equal('No config/pantry.conf in this workspace');
         expect(result.error).to.equal(undefined);
+        expect(ls.parseCalls).to.deep.equal([]);
+    });
+
+    it('reports a read error other than file-not-found as an error', async () => {
+        const { tool, fs, ls } = wire(new GetPantryTool());
+        fs.readError = PERMISSION_DENIED;
+        const result = await invoke(tool, {});
+        expect(result.error).to.match(/Permission denied/);
+        expect(result.pantry).to.equal(undefined);
         expect(ls.parseCalls).to.deep.equal([]);
     });
 
@@ -193,8 +210,17 @@ describe('CheckPantryTool', () => {
         const result = await invoke(tool, { ingredients: ['milk'] });
         expect(ls.checkCalls).to.deep.equal([]);
         expect(result.results).to.deep.equal([{ name: 'milk', inStock: false, section: null, quantity: null, isLow: false }]);
-        expect(result.message).to.match(/config\/pantry\.conf/);
+        expect(result.message).to.equal('No config/pantry.conf in this workspace');
         expect(result.error).to.equal(undefined);
+    });
+
+    it('reports a read error other than file-not-found as an error', async () => {
+        const { tool, fs, ls } = wire(new CheckPantryTool());
+        fs.readError = PERMISSION_DENIED;
+        const result = await invoke(tool, { ingredients: ['milk'] });
+        expect(result.error).to.match(/Permission denied/);
+        expect(result.results).to.equal(undefined);
+        expect(ls.checkCalls).to.deep.equal([]);
     });
 
     it('rejects an empty or non-array ingredients argument', async () => {
