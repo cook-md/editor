@@ -67,6 +67,28 @@ export interface CooklangLanguageService {
     findRecipe(baseDir: string, name: string): Promise<string | undefined>;
 
     /**
+     * Search recipes under `baseDir` like `cook search` (cooklang-find: filename
+     * + content term scoring over `.cook` and `.menu`). A blank query lists every
+     * recipe. Same disk-access caveat as `findRecipe` (OS path, Electron-only).
+     *
+     * Returns JSON: `[{ path, name, title, tags, isMenu, servings }]`, best first.
+     */
+    searchRecipes(baseDir: string, query: string): Promise<string>;
+
+    /**
+     * Parse a `pantry.conf` (TOML). Returns JSON
+     * `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }], lowStock: [...] }`.
+     * Rejects on an unparseable file.
+     */
+    parsePantry(text: string): Promise<string>;
+
+    /**
+     * Check which `names` are in the pantry (case-insensitive). Returns JSON
+     * `[{ name, inStock, section, quantity, isLow }]` in input order.
+     */
+    checkPantry(text: string, names: string[]): Promise<string>;
+
+    /**
      * Render a Jinja2 report template against a recipe (cookcli-compatible,
      * via the cooklang-reports crate).
      *
