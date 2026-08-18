@@ -63,6 +63,28 @@ export declare function checkedSet(entriesJson: string): Array<string>
 export declare function findRecipe(baseDir: string, name: string): string | null
 export declare function compactChecked(entriesJson: string, currentIngredients: Array<string>): string
 /**
+ * Search recipes under `base_dir` the way `cook search` does
+ * (`cooklang_find::search`: filename + content term scoring over `.cook` and
+ * `.menu`). A blank query lists every recipe via `cooklang_find::build_tree`.
+ *
+ * Returns JSON: `[{ path, name, title, tags, isMenu, servings }]`, best match first.
+ */
+export declare function searchRecipes(baseDir: string, query: string): string
+/**
+ * Parse a `config/pantry.conf` (TOML) and return its sections and items.
+ *
+ * Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }],
+ *                  lowStock: [{ name, section, quantity, low }] }`.
+ */
+export declare function parsePantry(text: string): string
+/**
+ * Check which of `names` are in the pantry (case-insensitive, via
+ * `PantryConf::find_ingredient`).
+ *
+ * Returns JSON: `[{ name, inStock, section, quantity, isLow }]` in input order.
+ */
+export declare function checkPantry(text: string, names: Array<string>): string
+/**
  * Render a Jinja2 report template against a recipe via cooklang-reports
  * (the same engine cookcli's `cook report` uses).
  *
