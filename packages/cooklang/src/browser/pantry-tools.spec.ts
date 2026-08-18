@@ -141,6 +141,15 @@ describe('GetPantryTool', () => {
         expect(result.error).to.match(/TOML/);
     });
 
+    it('errors when the native result is not an object', async () => {
+        const { tool, fs, ls } = wire(new GetPantryTool());
+        fs.files.set(PANTRY_URI, PANTRY_TEXT);
+        for (const raw of ['null', '[]', '"pantry"']) {
+            ls.parsePantry = async () => raw;
+            expect((await invoke(tool, {})).error, raw).to.match(/unexpected result shape/);
+        }
+    });
+
     it('errors without a workspace', async () => {
         const { tool, ws, ls } = wire(new GetPantryTool());
         ws.roots = [];
@@ -227,6 +236,13 @@ describe('CheckPantryTool', () => {
         const result = await invoke(tool, { ingredients: ['milk'] });
         expect(result.error).to.match(/workspace/i);
         expect(ls.checkCalls).to.deep.equal([]);
+    });
+
+    it('errors when the native result is not an array', async () => {
+        const { tool, fs, ls } = wire(new CheckPantryTool());
+        fs.files.set(PANTRY_URI, PANTRY_TEXT);
+        ls.checkPantry = async () => JSON.stringify({ oops: true });
+        expect((await invoke(tool, { ingredients: ['milk'] })).error).to.match(/unexpected result shape/);
     });
 
     it('returns an error when the pantry file cannot be parsed', async () => {

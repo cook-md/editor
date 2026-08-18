@@ -100,12 +100,16 @@ export class GetPantryTool extends PantryToolBase implements ToolProvider {
         if (text === undefined) {
             return JSON.stringify({ pantry: null, message: NO_PANTRY_MESSAGE });
         }
+        let parsed: unknown;
         try {
-            const parsed = JSON.parse(await this.languageService.parsePantry(text));
-            return JSON.stringify({ path: PANTRY_CONF_PATH, ...parsed });
+            parsed = JSON.parse(await this.languageService.parsePantry(text));
         } catch (e) {
             return this.fail(`Could not parse ${PANTRY_CONF_PATH}: ${this.errorMessage(e)}`);
         }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return this.fail(`Could not parse ${PANTRY_CONF_PATH}: unexpected result shape.`);
+        }
+        return JSON.stringify({ path: PANTRY_CONF_PATH, ...parsed });
     }
 }
 
@@ -173,11 +177,15 @@ export class CheckPantryTool extends PantryToolBase implements ToolProvider {
                 message: NO_PANTRY_MESSAGE,
             });
         }
+        let results: unknown;
         try {
-            const results = JSON.parse(await this.languageService.checkPantry(text, names));
-            return JSON.stringify({ results });
+            results = JSON.parse(await this.languageService.checkPantry(text, names));
         } catch (e) {
             return this.fail(`Could not parse ${PANTRY_CONF_PATH}: ${this.errorMessage(e)}`);
         }
+        if (!Array.isArray(results)) {
+            return this.fail(`Could not parse ${PANTRY_CONF_PATH}: unexpected result shape.`);
+        }
+        return JSON.stringify({ results });
     }
 }
