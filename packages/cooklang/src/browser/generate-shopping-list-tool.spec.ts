@@ -47,7 +47,13 @@ const LIVE_RESULT: ShoppingListResult = {
 
 interface PathScale { path: string; scale: number }
 
+/** Shared ordering log so specs can assert adds happen before the view opens. */
+class EventLog {
+    events: string[] = [];
+}
+
 class FakeShoppingListService {
+    constructor(protected readonly log: EventLog) { }
     root: URI | undefined = new URI('file:///ws');
     computeCalls: PathScale[][] = [];
     /** When set, `computeResult` throws this. */
@@ -63,9 +69,11 @@ class FakeShoppingListService {
     }
     async addRecipe(path: string, scale: number, refs?: PathScale[]): Promise<void> {
         this.addRecipeCalls.push({ path, scale, refs });
+        this.log.events.push(`addRecipe:${path}`);
     }
     async addMenu(path: string, scale: number, recipes: PathScale[]): Promise<void> {
         this.addMenuCalls.push({ path, scale, recipes });
+        this.log.events.push(`addMenu:${path}`);
     }
     getResult(): ShoppingListResult | undefined { return this.current; }
 }
@@ -108,8 +116,12 @@ class FakeResolver {
 }
 
 class FakeContribution {
+    constructor(protected readonly log: EventLog) { }
     opened: Array<{ activate?: boolean }> = [];
-    async openView(options: { activate?: boolean }): Promise<void> { this.opened.push(options); }
+    async openView(options: { activate?: boolean }): Promise<void> {
+        this.opened.push(options);
+        this.log.events.push('openView');
+    }
 }
 
 function createTool(): {
@@ -118,12 +130,14 @@ function createTool(): {
     fs: FakeFileService;
     resolver: FakeResolver;
     view: FakeContribution;
+    log: EventLog;
 } {
     const tool = new GenerateShoppingListTool();
-    const svc = new FakeShoppingListService();
+    const log = new EventLog();
+    const svc = new FakeShoppingListService(log);
     const fs = new FakeFileService();
     const resolver = new FakeResolver();
-    const view = new FakeContribution();
+    const view = new FakeContribution(log);
     const config = new FakeConfigService(() => svc.root);
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (tool as any).shoppingListService = svc;
@@ -132,7 +146,7 @@ function createTool(): {
     (tool as any).shoppingListContribution = view;
     (tool as any).reportConfigService = config;
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { tool, svc, fs, resolver, view };
+    return { tool, svc, fs, resolver, view, log };
 }
 
 /** Invokes the registered tool handler with a JSON argument string (or raw string). */
@@ -216,6 +230,32 @@ describe('GenerateShoppingListTool', () => {
         expect(svc.computeCalls).to.deep.equal([]);
     });
 
+    it('rejects a non-boolean addToList', async () => {
+        const { tool, svc, fs } = createTool();
+        fs.files.set('file:///ws/Soup.cook', 'y');
+        expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: 'yes' })).error).to.equal('`addToList` must be a boolean.');
+        expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: 1 })).error).to.equal('`addToList` must be a boolean.');
+        expect(svc.computeCalls).to.deep.equal([]);
+        expect(svc.addRecipeCalls).to.deep.equal([]);
+    });
+
+    it('rejects recipe and menu paths outside the workspace before touching anything', async () => {
+        const { tool, svc, fs, view } = createTool();
+        fs.files.set('file:///elsewhere/Cake.cook', 'cake');
+        fs.files.set('file:///elsewhere/Week.menu', 'menu');
+        fs.files.set('file:///ws/Soup.cook', 'y');
+        expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }, { path: 'file:///elsewhere/Cake.cook' }], addToList: true })).error)
+            .to.equal('Path is outside the workspace: file:///elsewhere/Cake.cook');
+        expect((await invoke(tool, { recipes: [{ path: '../Outside.cook' }] })).error)
+            .to.equal('Path is outside the workspace: ../Outside.cook');
+        expect((await invoke(tool, { menu: '/elsewhere/Week.menu', addToList: true })).error)
+            .to.equal('Path is outside the workspace: /elsewhere/Week.menu');
+        expect(svc.computeCalls).to.deep.equal([]);
+        expect(svc.addRecipeCalls).to.deep.equal([]);
+        expect(svc.addMenuCalls).to.deep.equal([]);
+        expect(view.opened).to.deep.equal([]);
+    });
+
     it('rejects a recipe entry without a path or with a non-positive scale', async () => {
         const { tool, svc, fs } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
@@ -273,12 +313,30 @@ describe('GenerateShoppingListTool', () => {
         expect(svc.computeCalls).to.deep.equal([]);
     });
 
+    it('addToList adds several recipes in request order and opens the view only after the last add', async () => {
+        const { tool, svc, fs, view, log } = createTool();
+        fs.files.set('file:///ws/Pie.cook', 'pie');
+        fs.files.set('file:///ws/Soup.cook', 'soup');
+        fs.files.set('file:///ws/Dinner/Carbonara.cook', 'carbonara');
+        const result = await invoke(tool, {
+            recipes: [{ path: 'Pie.cook', scale: 2 }, { path: 'Soup.cook' }, { path: 'Dinner/Carbonara.cook', scale: 3 }],
+            addToList: true,
+        });
+        expect(svc.addRecipeCalls.map(c => c.path)).to.deep.equal(['Pie.cook', 'Soup.cook', 'Dinner/Carbonara.cook']);
+        expect(log.events).to.deep.equal(['addRecipe:Pie.cook', 'addRecipe:Soup.cook', 'addRecipe:Dinner/Carbonara.cook', 'openView']);
+        expect(view.opened).to.deep.equal([{ activate: true }]);
+        expect(result.recipes).to.deep.equal([
+            { path: 'Pie.cook', scale: 2 }, { path: 'Soup.cook', scale: 1 }, { path: 'Dinner/Carbonara.cook', scale: 3 },
+        ]);
+    });
+
     it('addToList with a menu calls addMenu, opens the view and returns the live list', async () => {
-        const { tool, svc, fs, resolver, view } = createTool();
+        const { tool, svc, fs, resolver, view, log } = createTool();
         fs.files.set('file:///ws/Plans/Week.menu', 'menu');
         resolver.refs.set('menu', [{ path: 'Pancakes', scale: 2 }]);
         const result = await invoke(tool, { menu: 'Plans/Week.menu', addToList: true });
         expect(svc.addMenuCalls).to.deep.equal([{ path: 'Plans/Week.menu', scale: 1, recipes: [{ path: 'Pancakes', scale: 2 }] }]);
+        expect(log.events).to.deep.equal(['addMenu:Plans/Week.menu', 'openView']);
         expect(view.opened).to.deep.equal([{ activate: true }]);
         expect(result).to.deep.equal({ ...LIVE_RESULT, added: true, recipes: [{ path: 'Pancakes', scale: 2 }] });
         expect(svc.computeCalls).to.deep.equal([]);

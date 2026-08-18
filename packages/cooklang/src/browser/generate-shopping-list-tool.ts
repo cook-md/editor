@@ -82,6 +82,7 @@ export class GenerateShoppingListTool implements ToolProvider {
                 + 'included — exactly like the Shopping List view / `cook shopping-list`. Pass exactly one of `recipes` or `menu`. '
                 + 'By default it only returns the computed list ({ categories: [{ name, items: [{ name, quantities }] }], other, pantryItems, recipes }). '
                 + 'With addToList:true it also adds the recipes to the user\'s live shopping list, opens the Shopping List view and returns the whole current list. '
+                + 'Use addToList only when the user asks to add/put items on their shopping list; for "what do I need for X" stay headless. '
                 + 'Paths are workspace-relative (use searchRecipes to find them).',
             parameters: {
                 type: 'object',
@@ -128,6 +129,9 @@ export class GenerateShoppingListTool implements ToolProvider {
         }
         if (args.menu !== undefined && typeof args.menu !== 'string') {
             return this.fail('`menu` must be a workspace-relative path string.');
+        }
+        if (args.addToList !== undefined && typeof args.addToList !== 'boolean') {
+            return this.fail('`addToList` must be a boolean.');
         }
         const hasRecipes = Array.isArray(args.recipes) && args.recipes.length > 0;
         const menu = typeof args.menu === 'string' ? args.menu.trim() : '';
@@ -220,19 +224,23 @@ export class GenerateShoppingListTool implements ToolProvider {
     }
 
     /**
-     * Reads a workspace-relative (or absolute / `file://`) path. Returns the
-     * content together with the workspace-relative path (falling back to the
-     * argument when the file lies outside the workspace), or `undefined` when
-     * the file does not exist. Other read errors propagate.
+     * Reads a workspace-relative (or absolute / `file://`) path that must lie
+     * inside the workspace. Returns the content together with the
+     * workspace-relative path, or `undefined` when the file does not exist.
+     * A path outside the workspace or any other read error throws.
      */
     protected async readWorkspaceFile(root: URI, path: string): Promise<WorkspaceFile | undefined> {
         const uri = this.reportConfigService.resolveWorkspaceUri(path);
         if (!uri) {
             throw new Error('No workspace is open.');
         }
+        const relative = root.isEqualOrParent(uri) ? root.relative(uri)?.toString() : undefined;
+        if (relative === undefined) {
+            throw new Error(`Path is outside the workspace: ${path}`);
+        }
         try {
             const content = (await this.fileService.read(uri)).value;
-            return { path: root.relative(uri)?.toString() ?? path, content };
+            return { path: relative, content };
         } catch (e) {
             if (e instanceof FileOperationError && e.fileOperationResult === FileOperationResult.FILE_NOT_FOUND) {
                 return undefined;
