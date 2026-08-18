@@ -162,16 +162,16 @@ Parameters (JSON Schema, enums inlined so the model sees the vocabulary):
 | name | type | values |
 |---|---|---|
 | `dietary` | string[] | vegetarian, vegan, pescatarian, flexitarian, keto, paleo, gluten-free, dairy-free, halal, kosher, low-fodmap |
-| `exclude_allergens` | string[] | tree-nuts, peanuts, shellfish, fish, eggs, soy, sesame, gluten |
+| `exclude_allergens` | string[] | tree-nuts, peanuts, shellfish, fish, eggs, soy, sesame (no `gluten` — Rails drops it; use `dietary: gluten-free`) |
 | `dislikes` | string[] | free strings from the wizard list (documented, not enum-enforced) |
-| `cuisines` | string[] | american, italian, french, spanish, greek, british, german, chinese, japanese, thai, indian, korean, vietnamese, mexican, middle-eastern, caribbean, african, mediterranean, fusion |
+| `cuisines` | string[] | american, italian, french, spanish, greek, british, german, eastern_european, chinese, japanese, thai, indian, korean, vietnamese, mexican, middle-eastern, caribbean, african, mediterranean, fusion |
 | `equipment` | string[] | instant-pot, slow-cooker, air-fryer, rice-cooker, stand-mixer, food-processor, blender, grill, sous-vide, bread-maker, pasta-maker, smoker, wok, cast-iron, dutch-oven |
 | `max_skill_level` | integer 1–4 | |
 | `meal_types` | string[] | breakfast, lunch, dinner, dessert, snack |
 | `course` | string | main (default), side, drink, sauce, accompaniment, any |
 | `cooking_methods` | string[] | one-pot, sheet-pan, no-cook, batch-cooking, slow-cooker, stir-fry, casseroles, soups-stews |
-| `dish_categories` | string[] | pasta_noodles, soup_stew, salad, pizza_flatbread, meat_main, seafood, rice_grain_bowl, taco_burrito, sandwich_burger, casserole_bake, bread, baked_sweet, eggs |
-| `nutritional_focus` | string[] | high-protein, whole-grains, anti-inflammatory, heart-healthy, gut-health, energy-boosting, pregnancy-safe, lower-sugar, lower-sodium, lower-glycemic, high-fiber |
+| `dish_categories` | string[] | pasta_noodles, soup_stew, salad, pizza_flatbread, meat_main, seafood, rice_grain_bowl, taco_burrito, sandwich_burger, casserole_bake, bread, baked_sweet, eggs, smoothie_drink, sauce_dip |
+| `nutritional_focus` | string[] | high-protein, low-carb, whole-grains, anti-inflammatory, heart-healthy, gut-health, energy-boosting, pregnancy-safe, lower-sugar, lower-sodium, lower-glycemic, high-fiber |
 | `max_cook_time_minutes` | integer | |
 | `query` | string | title/dish keywords |
 | `limit` | integer 1–20, default 5 | |
