@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { RecipeReferenceResolver, parseNumberAndUnit } from './recipe-reference-resolver';
 
 class FakeLanguageService {
     recipes = new Map<string, string>();
@@ -57,6 +57,12 @@ describe('RecipeReferenceResolver', () => {
         expect(refs).to.deep.equal([{ path: 'Cake', scale: 2 }]);
     });
 
+    it('accepts %serves as an alias for %servings', async () => {
+        const { resolver, ls } = createResolver();
+        ls.recipes.set('Cake', 'servings: 4');
+        expect(await resolver.resolve('@Cake{8%serves}', '/ws')).to.deep.equal([{ path: 'Cake', scale: 2 }]);
+    });
+
     it('resolves a yield unit only when the units match', async () => {
         const { resolver, ls } = createResolver();
         ls.recipes.set('Stock', 'yield: 500%ml');
@@ -75,5 +81,20 @@ describe('RecipeReferenceResolver', () => {
         const { resolver, ls } = createResolver();
         ls.parseMenu = async () => { throw new Error('boom'); };
         expect(await resolver.resolve('anything', '/ws')).to.deep.equal([]);
+    });
+});
+
+describe('parseNumberAndUnit', () => {
+
+    it('parses a space-separated unit', () => {
+        expect(parseNumberAndUnit('2 cups')).to.deep.equal({ amount: 2, unit: 'cups' });
+    });
+
+    it('parses a bare number without a unit', () => {
+        expect(parseNumberAndUnit('2')).to.deep.equal({ amount: 2, unit: undefined });
+    });
+
+    it('returns undefined for non-numeric input', () => {
+        expect(parseNumberAndUnit('a few')).to.equal(undefined);
     });
 });
