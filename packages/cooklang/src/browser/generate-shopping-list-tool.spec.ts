@@ -208,6 +208,14 @@ describe('GenerateShoppingListTool', () => {
         expect(svc.computeCalls).to.deep.equal([]);
     });
 
+    it('rejects recipes / menu of the wrong type instead of ignoring them', async () => {
+        const { tool, svc, fs } = createTool();
+        fs.files.set('file:///ws/Plans/Week.menu', 'menu');
+        expect((await invoke(tool, { recipes: 'Soup.cook', menu: 'Plans/Week.menu' })).error).to.match(/`recipes` must be an array/);
+        expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], menu: ['Plans/Week.menu'] })).error).to.match(/`menu` must be/);
+        expect(svc.computeCalls).to.deep.equal([]);
+    });
+
     it('rejects a recipe entry without a path or with a non-positive scale', async () => {
         const { tool, svc, fs } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');

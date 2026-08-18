@@ -123,6 +123,12 @@ export class GenerateShoppingListTool implements ToolProvider {
         } catch {
             return this.fail('Invalid arguments: expected a JSON object.');
         }
+        if (args.recipes !== undefined && !Array.isArray(args.recipes)) {
+            return this.fail('`recipes` must be an array of { path, scale } objects.');
+        }
+        if (args.menu !== undefined && typeof args.menu !== 'string') {
+            return this.fail('`menu` must be a workspace-relative path string.');
+        }
         const hasRecipes = Array.isArray(args.recipes) && args.recipes.length > 0;
         const menu = typeof args.menu === 'string' ? args.menu.trim() : '';
         const hasMenu = menu.length > 0;
