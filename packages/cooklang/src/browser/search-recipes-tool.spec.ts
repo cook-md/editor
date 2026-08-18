@@ -158,6 +158,37 @@ describe('SearchRecipesTool', () => {
         expect(result.error).to.match(/JSON/);
     });
 
+    it('errors on JSON arguments that are not an object', async () => {
+        const { tool, ls } = createTool();
+        for (const raw of ['null', '[]', '"query"', '42']) {
+            const result = JSON.parse(await tool.getTool().handler(raw) as string);
+            expect(result.error, raw).to.match(/JSON object/);
+        }
+        expect(ls.calls).to.deep.equal([]);
+    });
+
+    it('errors when the native result is not an array', async () => {
+        const { tool, ls } = createTool();
+        ls.searchRecipes = async () => JSON.stringify({ oops: true });
+        const result = await invoke(tool, { query: 'x' });
+        expect(result.error).to.match(/unexpected result shape/);
+    });
+
+    it('accepts a numeric-string limit', async () => {
+        const { tool, ls } = createTool();
+        ls.entries = Array.from({ length: 10 }, (_, i) => ({ ...pancakes, path: `/ws/r${i}.cook` }));
+        const result = await invoke(tool, { limit: '5' });
+        expect(result.recipes).to.have.length(5);
+        expect(result.total).to.equal(10);
+    });
+
+    it('trims whitespace around the tag filter', async () => {
+        const { tool, ls } = createTool();
+        ls.entries = [salmon, pancakes];
+        const result = await invoke(tool, { tag: '  Breakfast ' });
+        expect(result.recipes?.map(r => r.path)).to.deep.equal(['Pancakes.cook']);
+    });
+
     it('reports a search failure as an error instead of throwing', async () => {
         const { tool, ls } = createTool();
         ls.searchRecipes = async () => { throw new Error('boom'); };

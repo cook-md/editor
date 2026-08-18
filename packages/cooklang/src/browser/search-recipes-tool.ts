@@ -87,7 +87,11 @@ export class SearchRecipesTool implements ToolProvider {
     protected async execute(argString: string): Promise<string> {
         let args: SearchRecipesArgs;
         try {
-            args = JSON.parse(argString || '{}');
+            const parsed: unknown = JSON.parse(argString || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return this.fail('Invalid arguments: expected a JSON object.');
+            }
+            args = parsed as SearchRecipesArgs;
         } catch {
             return this.fail('Invalid arguments: expected a JSON object.');
         }
@@ -105,6 +109,9 @@ export class SearchRecipesTool implements ToolProvider {
             entries = JSON.parse(await this.languageService.searchRecipes(root.path.fsPath(), query));
         } catch (e) {
             return this.fail(`Search failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        if (!Array.isArray(entries)) {
+            return this.fail('Search failed: unexpected result shape.');
         }
 
         const filtered = tag
