@@ -45,6 +45,7 @@ import { ReportWidgetPresenter } from './report-widget-presenter';
 import { MermaidRenderer } from './mermaid-renderer';
 import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { RenderTemplateTool } from './render-template-tool';
+import { ListReportTemplatesTool } from './list-report-templates-tool';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -109,6 +110,7 @@ export default new ContainerModule(bind => {
 
     // AI render tool (picked up by the cookbot agent via ToolInvocationRegistry)
     bindToolProvider(RenderTemplateTool, bind);
+    bindToolProvider(ListReportTemplatesTool, bind);
 
     // Report command and context menu
     bind(ReportContribution).toSelf().inSingletonScope();
