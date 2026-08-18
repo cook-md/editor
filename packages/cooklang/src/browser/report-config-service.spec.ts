@@ -179,4 +179,10 @@ describe('ReportConfigService#resolveWorkspaceUri', () => {
         const { service } = createService(undefined);
         expect(service.resolveWorkspaceUri('Baking/Napoleon.cook')).to.equal(undefined);
     });
+
+    it('normalizes ./ and ../ segments in a relative path', () => {
+        const { service } = createService(new URI('file:///ws'));
+        expect(service.resolveWorkspaceUri('./config/reports/x.jinja')?.toString()).to.equal('file:///ws/config/reports/x.jinja');
+        expect(service.resolveWorkspaceUri('config/../config/reports/x.jinja')?.toString()).to.equal('file:///ws/config/reports/x.jinja');
+    });
 });

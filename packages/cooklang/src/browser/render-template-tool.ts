@@ -100,7 +100,7 @@ export class RenderTemplateTool implements ToolProvider {
                         type: 'string',
                         description: 'A saved template to render: a workspace-relative path to a .jinja/.j2/.jinja2 file '
                             + '(e.g. "config/reports/cost.jinja"; absolute path or file:// URI also works), or a built-in id '
-                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the file\'s saved content on disk. '
+                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the file\'s saved content on disk (unsaved editor edits are not included). '
                             + 'Mutually exclusive with templateContent.',
                     },
                     recipeUri: {

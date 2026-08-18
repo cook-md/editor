@@ -104,10 +104,10 @@ export class ReportConfigService {
      */
     resolveWorkspaceUri(pathOrUri: string): URI | undefined {
         if (this.hasScheme(pathOrUri) || pathOrUri.startsWith('/')) {
-            return new URI(pathOrUri);
+            return new URI(pathOrUri).normalizePath();
         }
         const root = this.workspaceService.tryGetRoots()[0];
-        return root ? root.resource.resolve(pathOrUri) : undefined;
+        return root ? root.resource.resolve(pathOrUri).normalizePath() : undefined;
     }
 
     /** True when the string starts with a URI scheme like `file:`. */

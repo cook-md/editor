@@ -40,9 +40,9 @@ class FakeConfigService {
     getActiveCooklangUri(): URI | undefined { return this.activeUri; }
     resolveWorkspaceUri(arg: string): URI | undefined {
         if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg) || arg.startsWith('/')) {
-            return new URI(arg);
+            return new URI(arg).normalizePath();
         }
-        return this.workspaceRoot ? this.workspaceRoot.resolve(arg) : undefined;
+        return this.workspaceRoot ? this.workspaceRoot.resolve(arg).normalizePath() : undefined;
     }
     async buildConfigJson(scale: number = 1): Promise<string> {
         this.lastScale = scale;
@@ -283,6 +283,25 @@ describe('RenderTemplateTool', () => {
             expect(shown.templateUri).to.equal('file:///ws/config/reports/nutrition.html.jinja');
             expect(shown.inlineTemplateContent).to.equal(undefined);
             expect(shown.outputFormat).to.equal(undefined);
+        });
+
+        it('uses the normalized uri in the workspace tab id so ./ paths share the QuickPick tab', async () => {
+            const { tool, config, files, presenter } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/config/reports/cost.jinja', 'TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            await invoke(tool, { templateUri: './config/reports/cost.jinja', recipeUri: 'cake.cook', show: true });
+            expect(presenter.shown[0].templateId).to.equal('workspace:file:///ws/config/reports/cost.jinja');
+            expect(presenter.shown[0].templateUri).to.equal('file:///ws/config/reports/cost.jinja');
+        });
+
+        it('accepts a bare absolute path as templateUri', async () => {
+            const { tool, language, files } = createTool();
+            files.files.set('file:///abs/cost.jinja', 'ABS TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: '/abs/cost.jinja', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.output).to.equal('RENDERED');
+            expect(language.calls[0].template).to.equal('ABS TPL');
         });
 
         it('passes an explicit outputFormat through for a templateUri tab', async () => {

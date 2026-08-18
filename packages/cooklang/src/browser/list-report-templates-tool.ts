@@ -38,7 +38,8 @@ export class ListReportTemplatesTool implements ToolProvider {
                 + 'workspace (by convention under config/reports/) plus the editor\'s built-in templates. Call this BEFORE '
                 + 'authoring a new report template — if an existing one fits the request, render it with renderTemplate '
                 + 'using templateUri (a workspace template\'s `path` or `uri`, or a built-in `id`) instead of writing a new one. '
-                + 'Returns { templates: [{ path, uri, name, directory, outputFormat }], builtIn: [{ id, label }] }; '
+                + 'Returns { templates: [{ path, uri, name, directory (absent at the workspace root), outputFormat }], builtIn: [{ id, label }] }; '
+                + 'in multi-root workspaces pass `uri` rather than `path`. '
                 + '`outputFormat` (markdown | html | text) is inferred from the file name\'s inner extension.',
             parameters: {
                 type: 'object',
