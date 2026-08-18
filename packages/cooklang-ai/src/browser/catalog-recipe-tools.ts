@@ -32,8 +32,8 @@ const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'dessert', 'snack'];
 const COURSES = ['main', 'side', 'drink', 'sauce', 'accompaniment', 'any'];
 const COOKING_METHODS = ['one-pot', 'sheet-pan', 'no-cook', 'batch-cooking', 'slow-cooker', 'stir-fry', 'casseroles', 'soups-stews'];
 const DISH_CATEGORIES = ['pasta_noodles', 'soup_stew', 'salad', 'pizza_flatbread', 'meat_main', 'seafood', 'rice_grain_bowl', 'taco_burrito',
-    'sandwich_burger', 'casserole_bake', 'bread', 'baked_sweet', 'eggs'];
-const NUTRITIONAL_FOCUS = ['high-protein', 'whole-grains', 'anti-inflammatory', 'heart-healthy', 'gut-health', 'energy-boosting', 'pregnancy-safe',
+    'sandwich_burger', 'casserole_bake', 'bread', 'baked_sweet', 'eggs', 'smoothie_drink', 'sauce_dip'];
+const NUTRITIONAL_FOCUS = ['high-protein', 'low-carb', 'whole-grains', 'anti-inflammatory', 'heart-healthy', 'gut-health', 'energy-boosting', 'pregnancy-safe',
     'lower-sugar', 'lower-sodium', 'lower-glycemic', 'high-fiber'];
 
 function stringArray(description: string, values?: string[]): ToolRequestParameterProperty {
@@ -80,7 +80,12 @@ export class CookbotSearchRecipeCatalogTool implements ToolProvider {
                     dislikes: stringArray('Ingredients to avoid, e.g. "cilantro", "olives", "mushrooms", "blue-cheese", "raw-onion".'),
                     cuisines: stringArray('Preferred cuisines (ranking preference, not a hard filter).', CUISINES),
                     equipment: stringArray('Appliances the user owns; recipes needing other appliances are excluded.', EQUIPMENT),
-                    max_skill_level: { type: 'integer', minimum: 1, maximum: 4, description: '1 beginner … 4 expert.' },
+                    max_skill_level: {
+                        type: 'integer',
+                        minimum: 1,
+                        maximum: 4,
+                        description: '1 beginner, 2 intermediate, 3–4 advanced (ranking preference, not a hard cap).',
+                    },
                     meal_types: stringArray('Meal slots to search; empty = all.', MEAL_TYPES),
                     course: {
                         type: 'string',
@@ -88,9 +93,9 @@ export class CookbotSearchRecipeCatalogTool implements ToolProvider {
                         description: 'main (default) = proper meals; side/drink/sauce or accompaniment = sides & drinks; any = everything.',
                     },
                     cooking_methods: stringArray('Cooking style preferences.', COOKING_METHODS),
-                    dish_categories: stringArray('Dish shapes to include.', DISH_CATEGORIES),
+                    dish_categories: stringArray('Dish shapes to favour (ranking, not a filter).', DISH_CATEGORIES),
                     nutritional_focus: stringArray('Nutrition goals (pregnancy-safe is a hard filter, the rest are ranking bonuses).', NUTRITIONAL_FOCUS),
-                    max_cook_time_minutes: { type: 'integer', description: 'Upper bound on total cook time in minutes.' },
+                    max_cook_time_minutes: { type: 'integer', minimum: 1, description: 'Upper bound on total cook time in minutes.' },
                     query: { type: 'string', description: 'Keyword(s) matched against title and dish type, e.g. "salmon", "carbonara".' },
                     limit: { type: 'integer', minimum: 1, maximum: 20, description: 'How many recipes to return. Default 5; keep chat answers to 3–5.' },
                     exclude_ids: stringArray('Ids already shown to the user (for "show me more").'),

@@ -71,11 +71,16 @@ describe('CookbotSearchRecipeCatalogTool', () => {
         // Matches the recipe-discovery skill and UserPreference::CUISINE_OPTIONS (underscore form is what Rails keeps).
         expect(props.cuisines.items.enum).to.include('eastern_european');
         expect(props.cuisines.items.enum).to.include('middle-eastern');
+        // Also in the recipe-discovery skill and honoured by Rails.
+        expect(props.dish_categories.items.enum).to.include('smoothie_drink');
+        expect(props.dish_categories.items.enum).to.include('sauce_dip');
+        expect(props.nutritional_focus.items.enum).to.include('low-carb');
         // Free-form lists have no enum.
         expect(props.dislikes.items.enum).to.equal(undefined);
         expect(props.exclude_ids.items.enum).to.equal(undefined);
         expect(props.limit).to.include({ type: 'integer', minimum: 1, maximum: 20 });
         expect(props.max_skill_level).to.include({ type: 'integer', minimum: 1, maximum: 4 });
+        expect(props.max_cook_time_minutes).to.include({ type: 'integer', minimum: 1 });
     });
 
     it('forwards the parsed arguments as criteria and returns the server JSON verbatim', async () => {
