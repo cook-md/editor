@@ -38,11 +38,11 @@ class FakeConfigService {
     workspaceRoot: URI | undefined;
     lastScale: number | undefined;
     getActiveCooklangUri(): URI | undefined { return this.activeUri; }
-    resolveRecipeUri(arg: string): URI | undefined {
+    resolveWorkspaceUri(arg: string): URI | undefined {
         if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg) || arg.startsWith('/')) {
-            return new URI(arg);
+            return new URI(arg).normalizePath();
         }
-        return this.workspaceRoot ? this.workspaceRoot.resolve(arg) : undefined;
+        return this.workspaceRoot ? this.workspaceRoot.resolve(arg).normalizePath() : undefined;
     }
     async buildConfigJson(scale: number = 1): Promise<string> {
         this.lastScale = scale;
@@ -104,19 +104,27 @@ async function invoke(tool: RenderTemplateTool, args: object): Promise<{ output?
 
 describe('RenderTemplateTool', () => {
 
-    it('exposes the tool under the id renderTemplate with templateContent required', () => {
+    it('exposes the tool under the id renderTemplate with templateContent and templateUri both optional', () => {
         const { tool } = createTool();
         const def = tool.getTool();
         expect(def.id).to.equal('renderTemplate');
         expect(def.name).to.equal('renderTemplate');
-        expect(def.parameters.required).to.deep.equal(['templateContent']);
+        expect(def.parameters.required ?? []).to.deep.equal([]);
+        expect(Object.keys(def.parameters.properties)).to.include.members(['templateContent', 'templateUri']);
     });
 
-    it('errors when templateContent is missing', async () => {
+    it('errors when neither templateContent nor templateUri is given', async () => {
         const { tool, config } = createTool();
         config.activeUri = new URI('file:///ws/recipe.cook');
         const result = await invoke(tool, {});
-        expect(result.error).to.match(/templateContent is required/);
+        expect(result.error).to.match(/exactly one of templateContent or templateUri/);
+    });
+
+    it('errors when both templateContent and templateUri are given', async () => {
+        const { tool, config } = createTool();
+        config.activeUri = new URI('file:///ws/recipe.cook');
+        const result = await invoke(tool, { templateContent: 'x', templateUri: 'config/reports/cost.jinja' });
+        expect(result.error).to.match(/exactly one of templateContent or templateUri/);
     });
 
     it('errors when no recipeUri is given and no recipe is active', async () => {
@@ -209,5 +217,121 @@ describe('RenderTemplateTool', () => {
         files.files.set('file:///ws/cake.cook', 'r');
         const result = await invoke(tool, { templateContent: 't', recipeUri: 'file:///ws/cake.cook' });
         expect(result.error).to.match(/Render failed: addon crashed/);
+    });
+
+    describe('templateUri', () => {
+
+        it('renders a workspace-relative template file against the recipe', async () => {
+            const { tool, config, language, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/config/reports/cost.jinja', 'COST TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: 'config/reports/cost.jinja', recipeUri: 'cake.cook' });
+            expect(result.output).to.equal('RENDERED');
+            expect(language.calls[0].template).to.equal('COST TPL');
+            expect(language.calls[0].recipe).to.equal('recipe');
+        });
+
+        it('renders a built-in template by id', async () => {
+            const { tool, language, files } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: 'builtin:ingredients', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.output).to.equal('RENDERED');
+            expect(language.calls[0].template).to.contain('for ingredient in ingredients');
+        });
+
+        it('errors on an unknown built-in id and lists the known ones', async () => {
+            const { tool, files } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: 'builtin:nope', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.error).to.match(/Unknown built-in template 'builtin:nope'/);
+            expect(result.error).to.contain('builtin:ingredients');
+        });
+
+        it('errors when a relative templateUri is given but no workspace is open', async () => {
+            const { tool, files } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: 'config/reports/cost.jinja', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.error).to.match(/Could not resolve templateUri/);
+        });
+
+        it('errors when templateUri is not a template file', async () => {
+            const { tool, files } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            files.files.set('file:///ws/notes.txt', 'x');
+            const result = await invoke(tool, { templateUri: 'file:///ws/notes.txt', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.error).to.match(/templateUri must be a \.jinja\/\.j2\/\.jinja2 file/);
+        });
+
+        it('errors when the template file cannot be read', async () => {
+            const { tool, files } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: 'file:///ws/missing.jinja', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.error).to.match(/Could not read template/);
+        });
+
+        it('opens the workspace-bound report tab (no inline content, format inferred) when show is true', async () => {
+            const { tool, files, presenter } = createTool();
+            files.files.set('file:///ws/config/reports/nutrition.html.jinja', 'TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            await invoke(tool, { templateUri: 'file:///ws/config/reports/nutrition.html.jinja', recipeUri: 'file:///ws/cake.cook', show: true });
+            expect(presenter.shown).to.have.length(1);
+            const shown = presenter.shown[0];
+            expect(shown.uri).to.equal('file:///ws/cake.cook');
+            expect(shown.templateId).to.equal('workspace:file:///ws/config/reports/nutrition.html.jinja');
+            expect(shown.templateLabel).to.equal('nutrition.html.jinja');
+            expect(shown.templateUri).to.equal('file:///ws/config/reports/nutrition.html.jinja');
+            expect(shown.inlineTemplateContent).to.equal(undefined);
+            expect(shown.outputFormat).to.equal(undefined);
+        });
+
+        it('uses the normalized uri in the workspace tab id so ./ paths share the QuickPick tab', async () => {
+            const { tool, config, files, presenter } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/config/reports/cost.jinja', 'TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            await invoke(tool, { templateUri: './config/reports/cost.jinja', recipeUri: 'cake.cook', show: true });
+            expect(presenter.shown[0].templateId).to.equal('workspace:file:///ws/config/reports/cost.jinja');
+            expect(presenter.shown[0].templateUri).to.equal('file:///ws/config/reports/cost.jinja');
+        });
+
+        it('accepts a bare absolute path as templateUri', async () => {
+            const { tool, language, files } = createTool();
+            files.files.set('file:///abs/cost.jinja', 'ABS TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            const result = await invoke(tool, { templateUri: '/abs/cost.jinja', recipeUri: 'file:///ws/cake.cook' });
+            expect(result.output).to.equal('RENDERED');
+            expect(language.calls[0].template).to.equal('ABS TPL');
+        });
+
+        it('passes an explicit outputFormat through for a templateUri tab', async () => {
+            const { tool, files, presenter } = createTool();
+            files.files.set('file:///ws/cost.jinja', 'TPL');
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            await invoke(tool, { templateUri: 'file:///ws/cost.jinja', recipeUri: 'file:///ws/cake.cook', show: true, outputFormat: 'text' });
+            expect(presenter.shown[0].outputFormat).to.equal('text');
+        });
+
+        it('opens a built-in tab under the built-in id when show is true', async () => {
+            const { tool, files, presenter } = createTool();
+            files.files.set('file:///ws/cake.cook', 'recipe');
+            await invoke(tool, { templateUri: 'builtin:shopping-list', recipeUri: 'file:///ws/cake.cook', show: true });
+            const shown = presenter.shown[0];
+            expect(shown.templateId).to.equal('builtin:shopping-list');
+            expect(shown.templateLabel).to.equal('Shopping List (built-in)');
+            expect(shown.templateUri).to.equal(undefined);
+            expect(shown.inlineTemplateContent).to.equal(undefined);
+        });
+
+        it('still opens the inline tab with markdown default for templateContent', async () => {
+            const { tool, files, presenter } = createTool();
+            files.files.set('file:///ws/cake.cook', 'r');
+            await invoke(tool, { templateContent: 'TPL', recipeUri: 'file:///ws/cake.cook', show: true });
+            const shown = presenter.shown[0];
+            expect(shown.templateId).to.equal('inline:renderTemplate');
+            expect(shown.templateLabel).to.equal('AI Template');
+            expect(shown.inlineTemplateContent).to.equal('TPL');
+            expect(shown.outputFormat).to.equal('markdown');
+        });
     });
 });

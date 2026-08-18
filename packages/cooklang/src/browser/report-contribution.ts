@@ -17,13 +17,11 @@ import { MenuModelRegistry, MenuContribution } from '@theia/core/lib/common/menu
 import { QuickPickService, QuickPickItem, QuickPickSeparator } from '@theia/core/lib/common/quick-pick-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { EDITOR_CONTEXT_MENU } from '@theia/editor/lib/browser';
-import { FileSearchService } from '@theia/file-search/lib/common/file-search-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
-import URI from '@theia/core/lib/common/uri';
 import { ReportTemplates, BuiltInReportTemplate } from '../common';
 import { ReportWidgetOptions } from './report-widget-types';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
+import { ReportTemplateFinder } from './report-template-finder';
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -56,11 +54,8 @@ export class ReportContribution implements CommandContribution, MenuContribution
     @inject(QuickPickService)
     protected readonly quickPickService: QuickPickService;
 
-    @inject(FileSearchService)
-    protected readonly fileSearchService: FileSearchService;
-
-    @inject(WorkspaceService)
-    protected readonly workspaceService: WorkspaceService;
+    @inject(ReportTemplateFinder)
+    protected readonly templateFinder: ReportTemplateFinder;
 
     @inject(ReportConfigService)
     protected readonly reportConfigService: ReportConfigService;
@@ -147,41 +142,14 @@ export class ReportContribution implements CommandContribution, MenuContribution
             : template.label;
     }
 
-    /**
-     * Finds template files (*.jinja|j2|jinja2) anywhere in the workspace via
-     * the ripgrep-backed file search (respects .gitignore).
-     */
+    /** Workspace templates as QuickPick entries; the finder does the searching. */
     protected async findWorkspaceTemplates(): Promise<ReportTemplatePick[]> {
-        const roots = this.workspaceService.tryGetRoots();
-        if (roots.length === 0) {
-            return [];
-        }
-        let matches: string[];
-        try {
-            matches = await this.fileSearchService.find('', {
-                rootUris: roots.map(root => root.resource.toString()),
-                includePatterns: ReportTemplates.FILE_EXTENSIONS.map(ext => `**/*${ext}`),
-                useGitIgnore: true,
-                fuzzyMatch: false,
-                limit: 200,
-            });
-        } catch (error) {
-            console.warn('[cooklang] Report template search failed:', error);
-            return [];
-        }
-        return matches
-            .filter(match => ReportTemplates.isTemplateFile(match))
-            .map(match => {
-                const uri = new URI(match);
-                const root = roots.find(candidate => candidate.resource.isEqualOrParent(uri));
-                const parentDir = root ? root.resource.relative(uri.parent)?.toString() : undefined;
-                return {
-                    id: `workspace:${uri.toString()}`,
-                    label: uri.path.base,
-                    uri: uri.toString(),
-                    description: parentDir || undefined,
-                };
-            })
-            .sort((a, b) => a.label.localeCompare(b.label));
+        const templates = await this.templateFinder.findWorkspaceTemplates();
+        return templates.map(template => ({
+            id: template.id,
+            label: template.label,
+            uri: template.uri,
+            description: template.directory,
+        }));
     }
 }
