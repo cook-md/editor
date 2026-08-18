@@ -22,6 +22,7 @@ import { CookbotChatAgent } from './cookbot-chat-agent';
 import {
     CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool,
 } from './cookbot-server-tools';
+import { CookbotSearchRecipeCatalogTool, CookbotAddCatalogRecipeTool } from './catalog-recipe-tools';
 import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
 import { WorkspacePreferencesSchema } from './file-tools/workspace-preferences';
 import { GetWorkspaceDirectoryStructure } from './file-tools/get-workspace-directory-structure';
@@ -86,4 +87,8 @@ export default new ContainerModule(bind => {
     bindToolProvider(CookbotFetchUrlTool, bind);
     bindToolProvider(CookbotConvertUrlTool, bind);
     bindToolProvider(CookbotConvertTextTool, bind);
+
+    // cook.md catalog tools (issue cook-md#293)
+    bindToolProvider(CookbotSearchRecipeCatalogTool, bind);
+    bindToolProvider(CookbotAddCatalogRecipeTool, bind);
 });
