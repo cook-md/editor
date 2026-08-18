@@ -32,6 +32,7 @@ import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-pr
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
+import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListContribution } from './shopping-list-contribution';
 import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
 import { MenuPreviewContribution } from './menu-preview-contribution';
@@ -126,6 +127,7 @@ export default new ContainerModule(bind => {
     bindCooklangPreferences(bind);
 
     // Shopping list
+    bind(RecipeReferenceResolver).toSelf().inSingletonScope();
     bind(ShoppingListService).toSelf().inSingletonScope();
 
     bind(ShoppingListWidget).toSelf();
