@@ -110,7 +110,7 @@ export class RenderTemplateTool implements ToolProvider {
         }
         let recipeUri: URI | undefined;
         if (args.recipeUri) {
-            recipeUri = this.reportConfigService.resolveRecipeUri(args.recipeUri);
+            recipeUri = this.reportConfigService.resolveWorkspaceUri(args.recipeUri);
             if (!recipeUri) {
                 return this.fail(`Could not resolve recipeUri '${args.recipeUri}': it is a relative path but no workspace is open. `
                     + 'Pass a workspace-relative path, an absolute path, or a file:// URI.');

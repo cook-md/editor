@@ -155,28 +155,28 @@ describe('ReportConfigService#buildConfigJson', () => {
     });
 });
 
-describe('ReportConfigService#resolveRecipeUri', () => {
+describe('ReportConfigService#resolveWorkspaceUri', () => {
 
     it('resolves a workspace-relative path against the workspace root', () => {
         const { service } = createService(new URI('file:///ws'));
-        const uri = service.resolveRecipeUri('Baking/Napoleon.cook');
+        const uri = service.resolveWorkspaceUri('Baking/Napoleon.cook');
         expect(uri?.toString()).to.equal('file:///ws/Baking/Napoleon.cook');
     });
 
     it('passes through a full file:// URI unchanged', () => {
         const { service } = createService(new URI('file:///ws'));
-        const uri = service.resolveRecipeUri('file:///elsewhere/cake.cook');
+        const uri = service.resolveWorkspaceUri('file:///elsewhere/cake.cook');
         expect(uri?.toString()).to.equal('file:///elsewhere/cake.cook');
     });
 
     it('treats an absolute filesystem path as a file URI', () => {
         const { service } = createService(new URI('file:///ws'));
-        const uri = service.resolveRecipeUri('/Users/me/recipes/cake.cook');
+        const uri = service.resolveWorkspaceUri('/Users/me/recipes/cake.cook');
         expect(uri?.toString()).to.equal('file:///Users/me/recipes/cake.cook');
     });
 
     it('returns undefined for a relative path when no workspace is open', () => {
         const { service } = createService(undefined);
-        expect(service.resolveRecipeUri('Baking/Napoleon.cook')).to.equal(undefined);
+        expect(service.resolveWorkspaceUri('Baking/Napoleon.cook')).to.equal(undefined);
     });
 });

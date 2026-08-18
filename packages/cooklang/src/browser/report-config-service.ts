@@ -95,18 +95,19 @@ export class ReportConfigService {
     }
 
     /**
-     * Resolves a recipe URI supplied as a tool argument. Accepts a full URI
-     * string (e.g. `file:///…`), an absolute filesystem path, or — preferred —
-     * a path relative to the workspace root (e.g. `Baking/Napoleon.cook`).
-     * Relative paths are resolved against the first workspace root; returns
-     * `undefined` only when a relative path is given but no workspace is open.
+     * Resolves a file reference supplied as a tool argument (recipe or
+     * template). Accepts a full URI string (e.g. `file:///…`), an absolute
+     * filesystem path, or — preferred — a path relative to the workspace root
+     * (e.g. `Baking/Napoleon.cook`, `config/reports/cost.jinja`). Relative
+     * paths are resolved against the first workspace root; returns `undefined`
+     * only when a relative path is given but no workspace is open.
      */
-    resolveRecipeUri(recipeUriArg: string): URI | undefined {
-        if (this.hasScheme(recipeUriArg) || recipeUriArg.startsWith('/')) {
-            return new URI(recipeUriArg);
+    resolveWorkspaceUri(pathOrUri: string): URI | undefined {
+        if (this.hasScheme(pathOrUri) || pathOrUri.startsWith('/')) {
+            return new URI(pathOrUri);
         }
         const root = this.workspaceService.tryGetRoots()[0];
-        return root ? root.resource.resolve(recipeUriArg) : undefined;
+        return root ? root.resource.resolve(pathOrUri) : undefined;
     }
 
     /** True when the string starts with a URI scheme like `file:`. */

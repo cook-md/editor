@@ -38,7 +38,7 @@ class FakeConfigService {
     workspaceRoot: URI | undefined;
     lastScale: number | undefined;
     getActiveCooklangUri(): URI | undefined { return this.activeUri; }
-    resolveRecipeUri(arg: string): URI | undefined {
+    resolveWorkspaceUri(arg: string): URI | undefined {
         if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg) || arg.startsWith('/')) {
             return new URI(arg);
         }
