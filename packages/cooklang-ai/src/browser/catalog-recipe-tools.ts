@@ -1,0 +1,121 @@
+// *****************************************************************************
+// Copyright (C) 2024-2026 cook.md and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU Affero General Public License version 3 as
+// published by the Free Software Foundation, with the linking exception
+// documented in NOTICE.md.
+//
+// See LICENSE-AGPL for the full license text.
+// *****************************************************************************
+
+import { injectable, inject } from '@theia/core/shared/inversify';
+import { ToolProvider, ToolRequest, ToolRequestParameterProperty } from '@theia/ai-core/lib/common';
+import { CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
+
+// ── Vocabulary ──────────────────────────────────────────────────────────
+// Mirrors the kickstart wizard / cook.md `KickstartMatcherService` (and the
+// cookbot `recipe-discovery` skill). Values the server does not know are
+// silently dropped there, so keep these lists in step with Rails.
+
+const DIETARY = ['vegetarian', 'vegan', 'pescatarian', 'flexitarian', 'keto', 'paleo', 'gluten-free', 'dairy-free', 'halal', 'kosher', 'low-fodmap'];
+// No `gluten`: Rails' allergen vocabulary has no gluten entry (it would be dropped) — gluten/wheat is `dietary: gluten-free`.
+const ALLERGENS = ['tree-nuts', 'peanuts', 'shellfish', 'fish', 'eggs', 'soy', 'sesame'];
+// `eastern_european` keeps the underscore: that is the form UserPreference::CUISINE_OPTIONS accepts (no hyphen mapping exists).
+const CUISINES = ['american', 'italian', 'french', 'spanish', 'greek', 'british', 'german', 'eastern_european', 'chinese', 'japanese', 'thai', 'indian',
+    'korean', 'vietnamese', 'mexican', 'middle-eastern', 'caribbean', 'african', 'mediterranean', 'fusion'];
+const EQUIPMENT = ['instant-pot', 'slow-cooker', 'air-fryer', 'rice-cooker', 'stand-mixer', 'food-processor', 'blender', 'grill', 'sous-vide',
+    'bread-maker', 'pasta-maker', 'smoker', 'wok', 'cast-iron', 'dutch-oven'];
+const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'dessert', 'snack'];
+const COURSES = ['main', 'side', 'drink', 'sauce', 'accompaniment', 'any'];
+const COOKING_METHODS = ['one-pot', 'sheet-pan', 'no-cook', 'batch-cooking', 'slow-cooker', 'stir-fry', 'casseroles', 'soups-stews'];
+const DISH_CATEGORIES = ['pasta_noodles', 'soup_stew', 'salad', 'pizza_flatbread', 'meat_main', 'seafood', 'rice_grain_bowl', 'taco_burrito',
+    'sandwich_burger', 'casserole_bake', 'bread', 'baked_sweet', 'eggs'];
+const NUTRITIONAL_FOCUS = ['high-protein', 'whole-grains', 'anti-inflammatory', 'heart-healthy', 'gut-health', 'energy-boosting', 'pregnancy-safe',
+    'lower-sugar', 'lower-sodium', 'lower-glycemic', 'high-fiber'];
+
+function stringArray(description: string, values?: string[]): ToolRequestParameterProperty {
+    return {
+        type: 'array',
+        items: values ? { type: 'string', enum: values } : { type: 'string' },
+        description,
+    };
+}
+
+function fail(message: string): string {
+    return JSON.stringify({ error: message });
+}
+
+/**
+ * AI tool: search the cook.md curated recipe catalog with structured criteria
+ * (the kickstart wizard's vocabulary) plus an optional keyword. Read-only,
+ * auto-executes; the server JSON (`{ recipes, hint }`) is returned verbatim.
+ */
+@injectable()
+export class CookbotSearchRecipeCatalogTool implements ToolProvider {
+    static ID = 'searchRecipeCatalog';
+
+    @inject(CookbotServerToolsService)
+    protected readonly serverTools: CookbotServerToolsService;
+
+    getTool(): ToolRequest {
+        return {
+            id: CookbotSearchRecipeCatalogTool.ID,
+            name: CookbotSearchRecipeCatalogTool.ID,
+            displayName: 'Search Recipe Catalog',
+            description: 'Search cook.md\'s curated recipe catalog (~16k tested recipes) with structured criteria: diet, allergens to exclude, '
+                + 'cuisines, meal types, course (main vs side/drink/sauce), max cook time, skill level, equipment, dish categories, plus an '
+                + 'optional keyword. Use it for "find me…" requests about recipes the user does not have yet; use searchRecipes for the '
+                + 'user\'s own workspace and searchWeb only when neither fits. Load the recipe-discovery skill first. '
+                + 'Returns { recipes: [{ id, title, meal_type, course, cuisine, cook_time_minutes, skill_level, dietary, tags, source_url, score }], hint } '
+                + '— `hint` is set only when nothing matched and names the filters to relax. To show more, repeat with the shown ids in exclude_ids. '
+                + 'To add one to the workspace, call addCatalogRecipe with its id.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    dietary: stringArray('Dietary requirements every result must satisfy (gluten/wheat avoidance goes here as gluten-free).', DIETARY),
+                    exclude_allergens: stringArray('Allergens no result may contain.', ALLERGENS),
+                    dislikes: stringArray('Ingredients to avoid, e.g. "cilantro", "olives", "mushrooms", "blue-cheese", "raw-onion".'),
+                    cuisines: stringArray('Preferred cuisines (ranking preference, not a hard filter).', CUISINES),
+                    equipment: stringArray('Appliances the user owns; recipes needing other appliances are excluded.', EQUIPMENT),
+                    max_skill_level: { type: 'integer', minimum: 1, maximum: 4, description: '1 beginner … 4 expert.' },
+                    meal_types: stringArray('Meal slots to search; empty = all.', MEAL_TYPES),
+                    course: {
+                        type: 'string',
+                        enum: COURSES,
+                        description: 'main (default) = proper meals; side/drink/sauce or accompaniment = sides & drinks; any = everything.',
+                    },
+                    cooking_methods: stringArray('Cooking style preferences.', COOKING_METHODS),
+                    dish_categories: stringArray('Dish shapes to include.', DISH_CATEGORIES),
+                    nutritional_focus: stringArray('Nutrition goals (pregnancy-safe is a hard filter, the rest are ranking bonuses).', NUTRITIONAL_FOCUS),
+                    max_cook_time_minutes: { type: 'integer', description: 'Upper bound on total cook time in minutes.' },
+                    query: { type: 'string', description: 'Keyword(s) matched against title and dish type, e.g. "salmon", "carbonara".' },
+                    limit: { type: 'integer', minimum: 1, maximum: 20, description: 'How many recipes to return. Default 5; keep chat answers to 3–5.' },
+                    exclude_ids: stringArray('Ids already shown to the user (for "show me more").'),
+                },
+            },
+            handler: async (argString: string) => this.execute(argString),
+        };
+    }
+
+    protected async execute(argString: string): Promise<string> {
+        let criteria: object;
+        try {
+            const parsed: unknown = argString && argString.trim() ? JSON.parse(argString) : {};
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return fail('Invalid arguments: expected a JSON object.');
+            }
+            criteria = parsed;
+        } catch {
+            return fail('Invalid arguments: expected a JSON object.');
+        }
+        try {
+            const result = await this.serverTools.searchRecipeCatalog(criteria);
+            return JSON.stringify(result);
+        } catch (e) {
+            return fail(`Catalog search failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    }
+}
