@@ -13,6 +13,21 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.38](https://github.com/cook-md/editor/compare/v0.1.0-alpha.37...v0.1.0-alpha.38) (2026-08-18)
+
+
+### Features
+
+* **chat:** warn before the AI quota runs out instead of stopping dead at 100% ([#101](https://github.com/cook-md/editor/issues/101)) ([478e213](https://github.com/cook-md/editor/commit/478e2135e11e444a094810ac8a3981e84d82f487))
+* **cooklang:** renderTemplate templateUri + listReportTemplates tool ([#102](https://github.com/cook-md/editor/issues/102)) ([a114f12](https://github.com/cook-md/editor/commit/a114f1281962108fea3c7219d6d85c5c2b3e916e))
+* Sentry error reporting across all three processes ([#90](https://github.com/cook-md/editor/issues/90)) ([e70efa7](https://github.com/cook-md/editor/commit/e70efa713ddcb58516031b683883b7b5a937b2fd))
+* **telemetry:** add commands to send a test error to Sentry ([#92](https://github.com/cook-md/editor/issues/92)) ([0bf2c1d](https://github.com/cook-md/editor/commit/0bf2c1db15ccae0506f3a8eedc2582648e83c94f))
+
+
+### Bug Fixes
+
+* do not tell developers to run nvm when the repo has no nvm ([#100](https://github.com/cook-md/editor/issues/100)) ([468fe58](https://github.com/cook-md/editor/commit/468fe5869eea5a5ade55ccd242040e7461de6a2a))
+
 ## [0.1.0-alpha.37](https://github.com/cook-md/editor/compare/v0.1.0-alpha.36...v0.1.0-alpha.37) (2026-08-11)
 
 
