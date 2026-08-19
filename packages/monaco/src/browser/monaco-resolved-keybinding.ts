@@ -77,7 +77,11 @@ export class MonacoResolvedKeybinding extends ResolvedKeybinding {
     }
 
     getDispatchChords(): (string | null)[] {
-        return this.keySequence.map(keyCode => USLayoutResolvedKeybinding.getDispatchStr(this.toKeybinding(keyCode)));
+        return this.keySequence.map(keyCode => {
+            const chord = this.toKeybinding(keyCode);
+            // eslint-disable-next-line no-null/no-null
+            return chord ? USLayoutResolvedKeybinding.getDispatchStr(chord) : null;
+        });
     }
 
     getSingleModifierDispatchChords(): (SingleModifierChord | null)[] {
@@ -103,13 +107,21 @@ export class MonacoResolvedKeybinding extends ResolvedKeybinding {
         return null; // eslint-disable-line no-null/no-null
     }
 
-    private toKeybinding(keyCode: KeyCode): KeyCodeChord {
+    /**
+     * `undefined` for a modifier-only chord: `KeyCode.createKeyCode` deliberately leaves `key`
+     * unset for those (see `KeyCode` in `@theia/core`), so there is no key code to map. Callers
+     * must not assume a chord is always produced, cf. `getSingleModifierDispatchPart` above.
+     */
+    private toKeybinding(keyCode: KeyCode): KeyCodeChord | undefined {
+        if (keyCode.key?.keyCode === undefined) {
+            return undefined;
+        }
         return new KeyCodeChord(
             keyCode.ctrl,
             keyCode.shift,
             keyCode.alt,
             keyCode.meta,
-            KEY_CODE_MAP[keyCode.key!.keyCode]
+            KEY_CODE_MAP[keyCode.key.keyCode]
         );
     }
 

@@ -645,7 +645,16 @@ export class KeybindingRegistry {
         }
 
         const eventDispatch = this.corePreferences['keyboard.dispatch'];
-        const keyCode = KeyCode.createKeyCode(event, eventDispatch);
+        let keyCode: KeyCode;
+        try {
+            keyCode = KeyCode.createKeyCode(event, eventDispatch);
+        } catch (e) {
+            /* Some keyboard layouts and IMEs produce events we cannot map to a key (no usable
+               `code`, `keyCode` or `keyIdentifier`). No keybinding can match such an event, so
+               drop it instead of throwing out of the `keydown` listener. */
+            console.debug('Ignoring a keyboard event with an undeterminable key.', e);
+            return;
+        }
         /* Keycode is only a modifier, next keycode will be modifier + key.
            Ignore this one.  */
         if (keyCode.isModifierOnly()) {

@@ -387,10 +387,15 @@ export class ElectronMainApplication {
 
         const showWindowAndCloseSplashScreen = () => {
             cancelTokenSource.cancel();
-            if (!mainWindow.isVisible()) {
+            // The timers outlive the windows: if the user quits while the splash screen is up,
+            // both windows are already destroyed by the time `maxDuration` elapses and any call
+            // into them throws `Object has been destroyed`.
+            if (!mainWindow.isDestroyed() && !mainWindow.isVisible()) {
                 mainWindow.show();
             }
-            splashScreenWindow.close();
+            if (!splashScreenWindow.isDestroyed()) {
+                splashScreenWindow.close();
+            }
         };
         TheiaRendererAPI.onApplicationStateChanged(mainWindow.webContents, state => {
             if (state === 'ready') {
