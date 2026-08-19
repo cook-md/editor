@@ -20,6 +20,10 @@ service CookbotService {
   rpc FetchUrl(FetchUrlRequest) returns (FetchUrlResponse);
   rpc ConvertUrlToCooklang(ConvertUrlRequest) returns (ConvertResponse);
   rpc ConvertTextToCooklang(ConvertTextRequest) returns (ConvertResponse);
+
+  // Curated recipe catalog (Rails kickstart matcher, forwarded with the session JWT)
+  rpc SearchRecipeCatalog(SearchRecipeCatalogRequest) returns (SearchRecipeCatalogResponse);
+  rpc GetCatalogRecipe(GetCatalogRecipeRequest) returns (CatalogRecipe);
 }
 
 // ============================================================================
@@ -222,4 +226,29 @@ message ConvertTextRequest {
 message ConvertResponse {
   string cooklang_content = 1;
   string recipe_name = 2;
+}
+
+// Recipe catalog (cook.md kickstart catalog, forwarded to Rails)
+
+message SearchRecipeCatalogRequest {
+  string session_id = 1;
+  string criteria_json = 2;   // JSON object; schema owned by Rails/editor (see spec)
+}
+
+message SearchRecipeCatalogResponse {
+  string results_json = 1;    // Rails response body verbatim: {"recipes":[...],"hint":null|"..."}
+}
+
+message GetCatalogRecipeRequest {
+  string session_id = 1;
+  string recipe_id = 2;
+}
+
+message CatalogRecipe {
+  string id = 1;
+  string title = 2;
+  string meal_type = 3;
+  string course = 4;
+  string content = 5;         // .cook file body incl. YAML frontmatter
+  string suggested_path = 6;  // e.g. "Dinner/Spaghetti Carbonara.cook"
 }

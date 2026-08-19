@@ -195,15 +195,38 @@ export class ShoppingListService implements Disposable {
             return;
         }
 
-        const root = this.getWorkspaceRootUri();
-        if (!root) {
+        if (!this.getWorkspaceRootUri()) {
             return;
         }
 
-        const flat = this.flattenForGeneration();
+        let result: ShoppingListResult | undefined;
+        try {
+            result = await this.computeResult(this.flattenForGeneration());
+        } catch (e) {
+            if (seq !== this.regenerationSeq) { return; }
+            console.error('[shopping-list] Failed to generate shopping list:', e);
+            result = undefined;
+        }
+        if (seq !== this.regenerationSeq) { return; }
+        this.result = result;
+        this.onDidChangeEmitter.fire();
+    }
+
+    /**
+     * Headless aggregation: resolve each `{ path, scale }` through cooklang-find,
+     * read `config/aisle.conf` + `config/pantry.conf`, and run the native
+     * `generateShoppingList`. Does not touch the persisted list or `result`.
+     * Missing recipes are skipped with a warning (as before). Throws when no
+     * workspace is open or the native call fails.
+     */
+    async computeResult(items: ReadonlyArray<{ path: string; scale: number }>): Promise<ShoppingListResult> {
+        const root = this.getWorkspaceRootUri();
+        if (!root) {
+            throw new Error('No workspace is open');
+        }
         const baseDir = root.path.fsPath();
         const recipeInputs: Array<{ content: string; scale: number }> = [];
-        for (const { path, scale } of flat) {
+        for (const { path, scale } of items) {
             try {
                 // Use cooklang-find via RPC: auto-resolves `.cook`/`.menu` extensions
                 // when paths from menu references are stored without one.
@@ -217,27 +240,16 @@ export class ShoppingListService implements Disposable {
                 console.warn(`[shopping-list] Failed to read recipe ${path}:`, e);
             }
         }
-        if (seq !== this.regenerationSeq) { return; }
 
         const aisleConf = await this.readConfigFile(root, 'config/aisle.conf');
         const pantryConf = await this.readConfigFile(root, 'config/pantry.conf');
-        if (seq !== this.regenerationSeq) { return; }
 
-        try {
-            const json = await this.languageService.generateShoppingList(
-                JSON.stringify(recipeInputs),
-                aisleConf,
-                pantryConf,
-            );
-            if (seq !== this.regenerationSeq) { return; }
-            this.result = JSON.parse(json);
-        } catch (e) {
-            if (seq !== this.regenerationSeq) { return; }
-            console.error('[shopping-list] Failed to generate shopping list:', e);
-            this.result = undefined;
-        }
-        if (seq !== this.regenerationSeq) { return; }
-        this.onDidChangeEmitter.fire();
+        const json = await this.languageService.generateShoppingList(
+            JSON.stringify(recipeInputs),
+            aisleConf,
+            pantryConf,
+        );
+        return JSON.parse(json);
     }
 
     async addRecipe(

@@ -27,8 +27,8 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
+import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
-import { CooklangLanguageService } from '../common/cooklang-language-service';
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -72,8 +72,8 @@ export class ShoppingListContribution
     @inject(FileService)
     protected readonly fileService: FileService;
 
-    @inject(CooklangLanguageService)
-    protected readonly languageService: CooklangLanguageService;
+    @inject(RecipeReferenceResolver)
+    protected readonly referenceResolver: RecipeReferenceResolver;
 
     constructor() {
         super({
@@ -207,7 +207,7 @@ export class ShoppingListContribution
         let includedRefs: Array<{ path: string; scale: number }> | undefined;
         try {
             const content = await this.fileService.read(targetUri);
-            includedRefs = await this.collectResolvedRefs(
+            includedRefs = await this.referenceResolver.resolve(
                 content.value,
                 workspaceRoot.path.fsPath(),
             );
@@ -267,7 +267,7 @@ export class ShoppingListContribution
         const baseDir = this.shoppingListService.getWorkspaceRootUri()?.path.fsPath();
         if (!baseDir) { return; }
 
-        const recipes = await this.collectResolvedRefs(menuContent, baseDir);
+        const recipes = await this.referenceResolver.resolve(menuContent, baseDir);
         if (recipes.length === 0) {
             console.warn('[shopping-list] Menu contained no recipe references:', relativePath);
             return;
@@ -276,133 +276,4 @@ export class ShoppingListContribution
         await this.shoppingListService.addMenu(relativePath, this.resolveScale(args), recipes);
         await this.openView({ activate: true });
     }
-
-    /**
-     * Parse `content` for `@recipe` sub-references and resolve each to a
-     * concrete multiplier, since the `.shopping-list` format only stores
-     * a numeric multiplier.
-     *
-     * Per spec/conventions.md:
-     *   {2}            → plain multiplier
-     *   {4%servings}   → target / recipe.servings
-     *   {150%ml}       → target / recipe.yield (when units match)
-     *
-     * Unresolvable units fall back to treating the raw number as a
-     * multiplier — same as when no metadata is present on the target.
-     */
-    protected async collectResolvedRefs(
-        content: string,
-        baseDir: string,
-    ): Promise<Array<{ path: string; scale: number }>> {
-        let parsed: {
-            sections?: Array<{
-                lines?: Array<Array<{ type?: string; name?: string; scale?: number; unit?: string }>>;
-            }>;
-        };
-        try {
-            parsed = JSON.parse(await this.languageService.parseMenu(content, 1));
-        } catch (e) {
-            console.error('[shopping-list] Failed to parse content for refs:', e);
-            return [];
-        }
-
-        const refs: Array<{ path: string; scale: number; unit?: string }> = [];
-        for (const section of parsed.sections ?? []) {
-            for (const line of section.lines ?? []) {
-                for (const item of line) {
-                    if (item.type !== 'recipeReference') { continue; }
-                    if (!item.name) { continue; }
-                    refs.push({
-                        path: item.name.replace(/^\.\//, ''),
-                        scale: typeof item.scale === 'number' && item.scale > 0 ? item.scale : 1,
-                        unit: item.unit,
-                    });
-                }
-            }
-        }
-
-        const out: Array<{ path: string; scale: number }> = [];
-        for (const r of refs) {
-            let scale = r.scale;
-            if (r.unit && r.scale > 0) {
-                const resolved = await this.resolveReferenceScale(baseDir, r.path, r.scale, r.unit);
-                if (resolved !== undefined) {
-                    scale = resolved;
-                }
-            }
-            out.push({ path: r.path, scale });
-        }
-        return out;
-    }
-
-    /**
-     * Compute the multiplier that, when applied to the referenced recipe,
-     * yields the requested target.
-     *
-     * - `%servings` / `%serves` → reads the recipe's `servings` metadata.
-     * - any other unit          → reads the recipe's `yield` metadata and
-     *                             only resolves when the units match.
-     *
-     * Returns `undefined` when the recipe can't be found, the relevant
-     * metadata is missing/unparseable, or the unit doesn't match — callers
-     * fall back to treating the raw number as a plain multiplier.
-     */
-    protected async resolveReferenceScale(
-        baseDir: string,
-        recipePath: string,
-        target: number,
-        unit: string,
-    ): Promise<number | undefined> {
-        let content: string | undefined;
-        try {
-            content = await this.languageService.findRecipe(baseDir, recipePath);
-        } catch (e) {
-            console.warn(`[shopping-list] findRecipe failed for ${recipePath}:`, e);
-            return undefined;
-        }
-        if (!content) { return undefined; }
-
-        let metadata: { servings?: string; yield?: string } | undefined;
-        try {
-            const menu = JSON.parse(await this.languageService.parseMenu(content, 1));
-            metadata = menu?.metadata;
-        } catch (e) {
-            console.warn(`[shopping-list] parseMenu failed for ${recipePath}:`, e);
-            return undefined;
-        }
-        if (!metadata) { return undefined; }
-
-        const normalisedUnit = unit.toLowerCase();
-        const isServings = normalisedUnit === 'servings' || normalisedUnit === 'serves';
-        const raw = isServings ? metadata.servings : metadata.yield;
-        if (!raw) { return undefined; }
-
-        const parsed = parseNumberAndUnit(raw);
-        if (!parsed || parsed.amount <= 0) { return undefined; }
-
-        // For yield, the reference unit must match the recipe's yield unit.
-        // For servings, the `%servings`/`%serves` label is the unit — any
-        // trailing text in the metadata value (`"15 cups worth"`) is ignored.
-        if (!isServings) {
-            if (!parsed.unit || parsed.unit.toLowerCase() !== normalisedUnit) {
-                return undefined;
-            }
-        }
-
-        return target / parsed.amount;
-    }
-}
-
-/**
- * Extract a leading positive number and optional unit from a metadata string.
- * Handles cooklang quantity syntax (`500%ml`), space-separated (`2 cups`), and
- * bare numbers (`2`).
- */
-function parseNumberAndUnit(value: string): { amount: number; unit?: string } | undefined {
-    const match = value.match(/^\s*(\d+(?:\.\d+)?)\s*%?\s*([^\s]*)/);
-    if (!match) { return undefined; }
-    const amount = parseFloat(match[1]);
-    if (!Number.isFinite(amount)) { return undefined; }
-    const unit = match[2] ? match[2] : undefined;
-    return { amount, unit };
 }

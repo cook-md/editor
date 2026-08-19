@@ -900,6 +900,200 @@ pub fn napi_compact_checked(
         .map_err(|e| napi::Error::from_reason(e.to_string()))
 }
 
+// ── Workspace tools (cookbot) ────────────────────────────────────────────────
+
+/// One entry in the `search_recipes` result.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecipeSearchEntry {
+    path: String,
+    name: Option<String>,
+    title: Option<String>,
+    tags: Vec<String>,
+    is_menu: bool,
+    servings: Option<i64>,
+}
+
+impl RecipeSearchEntry {
+    fn from_entry(entry: &cooklang_find::RecipeEntry) -> Option<Self> {
+        let path = entry.path()?;
+        Some(Self {
+            path: path.to_string(),
+            name: path.file_stem().map(str::to_string),
+            title: entry.metadata().title().map(str::to_string),
+            tags: entry.tags(),
+            is_menu: entry.is_menu(),
+            servings: entry.metadata().servings(),
+        })
+    }
+}
+
+/// Every `.cook` / `.menu` file under `base`, sorted by path. Files whose
+/// content can't be read (e.g. iCloud placeholders) are skipped, mirroring
+/// `cooklang_find::build_tree`. Unlike `build_tree` this never keys by recipe
+/// title, so same-titled recipes in one folder are all reported.
+fn list_all_recipes(base: &Utf8PathBuf) -> Result<Vec<RecipeSearchEntry>, String> {
+    if !base.is_dir() {
+        return Err(format!("not a directory: {base}"));
+    }
+    let mut entries = Vec::new();
+    for pattern in ["**/*.cook", "**/*.menu"] {
+        let paths = glob::glob(base.join(pattern).as_str()).map_err(|e| e.to_string())?;
+        for path in paths.flatten() {
+            let Ok(path) = Utf8PathBuf::from_path_buf(path) else {
+                continue;
+            };
+            let Ok(entry) = cooklang_find::RecipeEntry::from_path(path) else {
+                continue;
+            };
+            if let Some(entry) = RecipeSearchEntry::from_entry(&entry) {
+                entries.push(entry);
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(entries)
+}
+
+fn search_recipes_blocking(
+    base_dir: String,
+    query: String,
+) -> Result<Vec<RecipeSearchEntry>, String> {
+    let base = Utf8PathBuf::from(base_dir);
+    let query = query.trim();
+    if query.is_empty() {
+        return list_all_recipes(&base);
+    }
+    let found = cooklang_find::search(&base, query).map_err(|e| e.to_string())?;
+    Ok(found
+        .iter()
+        .filter_map(RecipeSearchEntry::from_entry)
+        .collect())
+}
+
+/// Search recipes under `base_dir` the way `cook search` does
+/// (`cooklang_find::search`: filename + content term scoring over `.cook` and
+/// `.menu`). A blank query lists every recipe, sorted by path.
+///
+/// Filesystem work runs on a blocking thread so the JS event loop is not stalled.
+///
+/// Returns JSON: `[{ path, name, title, tags, isMenu, servings }]`, best match first.
+#[napi(js_name = "searchRecipes")]
+pub async fn search_recipes(base_dir: String, query: String) -> napi::Result<String> {
+    let entries = tokio::task::spawn_blocking(move || search_recipes_blocking(base_dir, query))
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("searchRecipes: {e}")))?
+        .map_err(|e| napi::Error::from_reason(format!("searchRecipes: {e}")))?;
+    serde_json::to_string(&entries).map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PantryItemJson {
+    name: String,
+    quantity: Option<String>,
+    bought: Option<String>,
+    expire: Option<String>,
+    low: Option<String>,
+    is_low: bool,
+}
+
+impl PantryItemJson {
+    fn from_item(item: &cooklang::pantry::PantryItem) -> Self {
+        Self {
+            name: item.name().to_string(),
+            quantity: item.quantity().map(str::to_string),
+            bought: item.bought().map(str::to_string),
+            expire: item.expire().map(str::to_string),
+            low: item.low().map(str::to_string),
+            is_low: item.is_low(),
+        }
+    }
+}
+
+fn parse_pantry_conf(text: &str, caller: &str) -> napi::Result<cooklang::pantry::PantryConf> {
+    let result = cooklang::pantry::parse_lenient(text);
+    let errors: Vec<String> = result
+        .report()
+        .errors()
+        .map(|e| e.message.to_string())
+        .collect();
+    match result.into_output() {
+        Some(conf) => Ok(conf),
+        None => Err(napi::Error::from_reason(format!(
+            "{caller}: {}",
+            if errors.is_empty() {
+                "invalid pantry file".to_string()
+            } else {
+                errors.join("; ")
+            }
+        ))),
+    }
+}
+
+/// Parse a `config/pantry.conf` (TOML) and return its sections and items.
+///
+/// Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }],
+///                  lowStock: [{ name, section, quantity, low }] }`.
+#[napi(js_name = "parsePantry")]
+pub fn parse_pantry(text: String) -> napi::Result<String> {
+    let conf = parse_pantry_conf(&text, "parsePantry")?;
+    let mut low_stock = Vec::new();
+    let sections: Vec<serde_json::Value> = conf
+        .sections
+        .iter()
+        .map(|(section, items)| {
+            let items_json: Vec<PantryItemJson> = items
+                .iter()
+                .map(|item| {
+                    let json = PantryItemJson::from_item(item);
+                    if json.is_low {
+                        low_stock.push(serde_json::json!({
+                            "name": json.name,
+                            "section": section,
+                            "quantity": json.quantity,
+                            "low": json.low,
+                        }));
+                    }
+                    json
+                })
+                .collect();
+            serde_json::json!({ "name": section, "items": items_json })
+        })
+        .collect();
+    serde_json::to_string(&serde_json::json!({ "sections": sections, "lowStock": low_stock }))
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+/// Check which of `names` are in the pantry (case-insensitive, via
+/// `PantryConf::find_ingredient`).
+///
+/// Returns JSON: `[{ name, inStock, section, quantity, isLow }]` in input order.
+#[napi(js_name = "checkPantry")]
+pub fn check_pantry(text: String, names: Vec<String>) -> napi::Result<String> {
+    let conf = parse_pantry_conf(&text, "checkPantry")?;
+    let results: Vec<serde_json::Value> = names
+        .iter()
+        .map(|name| match conf.find_ingredient(name) {
+            Some((section, item)) => serde_json::json!({
+                "name": name,
+                "inStock": true,
+                "section": section,
+                "quantity": item.quantity(),
+                "isLow": item.is_low(),
+            }),
+            None => serde_json::json!({
+                "name": name,
+                "inStock": false,
+                "section": null,
+                "quantity": null,
+                "isLow": false,
+            }),
+        })
+        .collect();
+    serde_json::to_string(&results).map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
 /// Configuration accepted by `render_report`, mirroring cooklang_reports::Config.
 /// All path fields are OS filesystem paths (the Theia backend converts URIs
 /// before calling into the addon).
@@ -1060,5 +1254,210 @@ mod nutrition_wiring_tests {
         let out = super::render_report(RECIPE.into(), NUTRITION_TEMPLATE.into(), cfg.into());
         assert!(out.contains("\"error\""), "expected an error payload, got: {out}");
         assert!(!out.contains("unknown"), "function should be registered: {out}");
+    }
+}
+
+#[cfg(test)]
+mod workspace_tools_tests {
+    use super::*;
+
+    /// Temporary workspace directory, removed on drop (also when a test panics).
+    struct TempWs(std::path::PathBuf);
+
+    impl TempWs {
+        fn write(&self, rel: &str, content: &str) {
+            let path = self.0.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        }
+
+        fn base_dir(&self) -> String {
+            self.0.to_string_lossy().to_string()
+        }
+    }
+
+    impl Drop for TempWs {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).ok();
+        }
+    }
+
+    fn temp_workspace() -> TempWs {
+        // pid + counter + time: tests run in parallel and the macOS clock is
+        // coarse enough for two of them to observe the same nanosecond.
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "cooklang-native-ws-{}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ws = TempWs(dir);
+        ws.write(
+            "Dinner/Salmon Bowl.cook",
+            "---\ntitle: Salmon Rice Bowl\ntags: [fish, quick]\nservings: 2\n---\nBake @salmon{200%g} and serve on @rice{1%cup}.\n",
+        );
+        ws.write(
+            "Pancakes.cook",
+            "---\ntags: breakfast, sweet\n---\nMix @flour{200%g} and @milk{300%ml}.\n",
+        );
+        ws.write("Week.menu", "= Monday\n@./Pancakes{2}\n");
+        ws
+    }
+
+    fn search(ws: &TempWs, query: &str) -> Vec<serde_json::Value> {
+        let json = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(search_recipes(ws.base_dir(), query.to_string()))
+            .unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[test]
+    fn search_recipes_ranks_query_matches_and_reports_metadata() {
+        let ws = temp_workspace();
+        let entries = search(&ws, "salmon");
+        assert!(!entries.is_empty());
+        let first = &entries[0];
+        assert!(first["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("Dinner/Salmon Bowl.cook"));
+        assert_eq!(first["name"], "Salmon Bowl");
+        assert_eq!(first["title"], "Salmon Rice Bowl");
+        assert_eq!(first["tags"], serde_json::json!(["fish", "quick"]));
+        assert_eq!(first["isMenu"], false);
+        assert_eq!(first["servings"], 2);
+        assert!(entries
+            .iter()
+            .all(|e| !e["path"].as_str().unwrap().ends_with("Pancakes.cook")));
+    }
+
+    #[test]
+    fn search_recipes_blank_query_lists_everything() {
+        let ws = temp_workspace();
+        let entries = search(&ws, "   ");
+        let paths: Vec<&str> = entries
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths.len(), 3, "{paths:?}");
+        assert!(paths.iter().any(|p| p.ends_with("Pancakes.cook")));
+        assert!(paths.iter().any(|p| p.ends_with("Week.menu")));
+        let menu = entries
+            .iter()
+            .find(|e| e["path"].as_str().unwrap().ends_with("Week.menu"))
+            .unwrap();
+        assert_eq!(menu["isMenu"], true);
+        assert_eq!(menu["title"], serde_json::Value::Null);
+        assert_eq!(menu["name"], "Week");
+    }
+
+    #[test]
+    fn search_recipes_blank_query_keeps_same_titled_recipes() {
+        let ws = temp_workspace();
+        ws.write(
+            "Dinner/Bowl A.cook",
+            "---\ntitle: Bowl\n---\nAdd @rice{1%cup}.\n",
+        );
+        ws.write(
+            "Dinner/Bowl B.cook",
+            "---\ntitle: Bowl\n---\nAdd @quinoa{1%cup}.\n",
+        );
+        let entries = search(&ws, "");
+        let paths: Vec<&str> = entries
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths.len(), 5, "{paths:?}");
+        assert!(paths.iter().any(|p| p.ends_with("Dinner/Bowl A.cook")));
+        assert!(paths.iter().any(|p| p.ends_with("Dinner/Bowl B.cook")));
+        let mut sorted = paths.clone();
+        sorted.sort();
+        assert_eq!(paths, sorted, "listing must be path-sorted");
+    }
+
+    #[test]
+    fn search_recipes_rejects_missing_directory() {
+        let ws = temp_workspace();
+        let missing = format!("{}/nope", ws.base_dir());
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(search_recipes(missing, String::new()))
+            .unwrap_err();
+        assert!(err.reason.starts_with("searchRecipes:"), "{}", err.reason);
+    }
+
+    const PANTRY: &str = r#"
+[fridge]
+milk = { expire = "10.05.2026", quantity = "1%L" }
+eggs = "6"
+
+[pantry]
+flour = { quantity = "300%g", low = "500%g" }
+salt = {}
+"#;
+
+    #[test]
+    fn parse_pantry_reports_sections_items_and_low_stock() {
+        let json = parse_pantry(PANTRY.to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let sections = v["sections"].as_array().unwrap();
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0]["name"], "fridge");
+        let milk = &sections[0]["items"][0];
+        assert_eq!(milk["name"], "milk");
+        assert_eq!(milk["quantity"], "1%L");
+        assert_eq!(milk["expire"], "10.05.2026");
+        assert_eq!(milk["bought"], serde_json::Value::Null);
+        assert_eq!(milk["isLow"], false);
+        let flour = &sections[1]["items"][0];
+        assert_eq!(flour["low"], "500%g");
+        assert_eq!(flour["isLow"], true);
+        assert_eq!(
+            v["lowStock"],
+            serde_json::json!([{ "name": "flour", "section": "pantry", "quantity": "300%g", "low": "500%g" }])
+        );
+    }
+
+    #[test]
+    fn parse_pantry_rejects_invalid_toml() {
+        let err = parse_pantry("[fridge\nmilk = ".to_string()).unwrap_err();
+        assert!(err.reason.starts_with("parsePantry:"), "{}", err.reason);
+    }
+
+    #[test]
+    fn check_pantry_error_names_its_caller() {
+        let err =
+            check_pantry("[fridge\nmilk = ".to_string(), vec!["milk".to_string()]).unwrap_err();
+        assert!(err.reason.starts_with("checkPantry:"), "{}", err.reason);
+    }
+
+    #[test]
+    fn check_pantry_is_case_insensitive_and_reports_misses() {
+        let json = check_pantry(
+            PANTRY.to_string(),
+            vec![
+                "Eggs".to_string(),
+                "butter".to_string(),
+                "flour".to_string(),
+            ],
+        )
+        .unwrap();
+        let v: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            v[0],
+            serde_json::json!({ "name": "Eggs", "inStock": true, "section": "fridge", "quantity": "6", "isLow": false })
+        );
+        assert_eq!(
+            v[1],
+            serde_json::json!({ "name": "butter", "inStock": false, "section": null, "quantity": null, "isLow": false })
+        );
+        assert_eq!(v[2]["inStock"], true);
+        assert_eq!(v[2]["isLow"], true);
     }
 }

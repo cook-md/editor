@@ -19,6 +19,14 @@ export interface CookbotServerToolsService {
     fetchUrl(url: string): Promise<CookbotFetchResult>;
     convertUrlToCooklang(url: string): Promise<CookbotConvertResult>;
     convertTextToCooklang(name: string, text: string): Promise<CookbotConvertResult>;
+    /**
+     * Search the cook.md curated recipe catalog. `criteria` is forwarded as JSON
+     * (see CookbotSearchRecipeCatalogTool for the schema); resolves with the
+     * server's parsed `{ recipes, hint }` body.
+     */
+    searchRecipeCatalog(criteria: object): Promise<unknown>;
+    /** Fetch one catalog recipe (content + suggested workspace path) by id. */
+    getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe>;
 }
 
 export interface CookbotSearchResult {
@@ -35,4 +43,13 @@ export interface CookbotFetchResult {
 export interface CookbotConvertResult {
     cooklangContent: string;
     recipeName: string;
+}
+
+export interface CookbotCatalogRecipe {
+    id: string;
+    title: string;
+    mealType: string;
+    course: string;
+    content: string;
+    suggestedPath: string;
 }

@@ -32,6 +32,7 @@ import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-pr
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
+import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListContribution } from './shopping-list-contribution';
 import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
 import { MenuPreviewContribution } from './menu-preview-contribution';
@@ -46,6 +47,9 @@ import { MermaidRenderer } from './mermaid-renderer';
 import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { RenderTemplateTool } from './render-template-tool';
 import { ListReportTemplatesTool } from './list-report-templates-tool';
+import { SearchRecipesTool } from './search-recipes-tool';
+import { GetPantryTool, CheckPantryTool } from './pantry-tools';
+import { GenerateShoppingListTool } from './generate-shopping-list-tool';
 import { bindCooklangPreferences } from '../common';
 
 export default new ContainerModule(bind => {
@@ -112,6 +116,12 @@ export default new ContainerModule(bind => {
     bindToolProvider(RenderTemplateTool, bind);
     bindToolProvider(ListReportTemplatesTool, bind);
 
+    // Workspace tools for cookbot (issue #82): recipe search, pantry, shopping list
+    bindToolProvider(SearchRecipesTool, bind);
+    bindToolProvider(GetPantryTool, bind);
+    bindToolProvider(CheckPantryTool, bind);
+    bindToolProvider(GenerateShoppingListTool, bind);
+
     // Report command and context menu
     bind(ReportContribution).toSelf().inSingletonScope();
     bind(CommandContribution).toService(ReportContribution);
@@ -126,6 +136,7 @@ export default new ContainerModule(bind => {
     bindCooklangPreferences(bind);
 
     // Shopping list
+    bind(RecipeReferenceResolver).toSelf().inSingletonScope();
     bind(ShoppingListService).toSelf().inSingletonScope();
 
     bind(ShoppingListWidget).toSelf();
