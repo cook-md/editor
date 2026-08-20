@@ -576,6 +576,9 @@ describe('keybindings', () => {
     });
 
     it('should ignore a keyboard event whose key cannot be determined', () => {
+        // Ensure JSDOM is enabled for this test since it uses KeyboardEvent and document
+        const disable = enableJSDOM();
+
         // Some layouts/IMEs deliver events with no usable `code`, `keyCode` or `keyIdentifier`.
         // `KeyCode.createKeyCode` throws on those, and `run` is invoked straight from a `keydown`
         // listener, so anything it throws escapes as an unhandled error.
@@ -586,6 +589,8 @@ describe('keybindings', () => {
 
         expect(() => KeyCode.createKeyCode(mockEvent)).to.throw();
         expect(() => keybindingRegistry.run(mockEvent)).to.not.throw();
+
+        disable();
     });
 });
 
