@@ -77,7 +77,12 @@ export class ToolbarStorageProvider implements Disposable {
 
     @postConstruct()
     protected init(): void {
-        this.doInit();
+        // Not awaited on purpose (`@postConstruct` must stay synchronous), so the rejection has to
+        // be handled here: without a toolbar config the toolbar falls back to its defaults, which
+        // is not worth surfacing as an unhandled rejection.
+        this.doInit().catch(e => {
+            console.error(`Failed to initialize the toolbar configuration from '${this.USER_TOOLBAR_URI}'.`, e);
+        });
     }
 
     protected async doInit(): Promise<void> {

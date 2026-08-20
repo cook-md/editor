@@ -212,14 +212,21 @@ export class DefaultResourceProvider {
      */
     async get(uri: URI): Promise<Resource> {
         const resolvers = this.resolversProvider.getContributions();
+        // Keep why each resolver declined: without it the rejection below says only that nothing
+        // handled the URI, which hides the actual failure (a provider that is not registered yet,
+        // a missing config directory, a permission error, ...) from logs and error reports.
+        const errors: unknown[] = [];
         for (const resolver of resolvers) {
             try {
                 return await resolver.resolve(uri);
             } catch (err) {
-                // no-op
+                errors.push(err);
             }
         }
-        return Promise.reject(new Error(`A resource provider for '${uri.toString()}' is not registered.`));
+        return Promise.reject(new Error(
+            `A resource provider for '${uri.toString()}' is not registered.`,
+            { cause: errors.length === 1 ? errors[0] : errors }
+        ));
     }
 
 }

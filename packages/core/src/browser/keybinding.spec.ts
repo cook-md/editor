@@ -574,6 +574,24 @@ describe('keybindings', () => {
 
         disable();
     });
+
+    it('should ignore a keyboard event whose key cannot be determined', () => {
+        // Ensure JSDOM is enabled for this test since it uses KeyboardEvent and document
+        const disable = enableJSDOM();
+
+        // Some layouts/IMEs deliver events with no usable `code`, `keyCode` or `keyIdentifier`.
+        // `KeyCode.createKeyCode` throws on those, and `run` is invoked straight from a `keydown`
+        // listener, so anything it throws escapes as an unhandled error.
+        const mockEvent = new KeyboardEvent('keydown', { key: 'Process' });
+        Object.defineProperty(mockEvent, 'code', { value: '' });
+        Object.defineProperty(mockEvent, 'keyCode', { value: 0 });
+        Object.defineProperty(mockEvent, 'target', { value: document.createElement('div') });
+
+        expect(() => KeyCode.createKeyCode(mockEvent)).to.throw();
+        expect(() => keybindingRegistry.run(mockEvent)).to.not.throw();
+
+        disable();
+    });
 });
 
 const TEST_COMMAND: Command = {
