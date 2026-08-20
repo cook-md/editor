@@ -9,6 +9,10 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # A green run takes ~10 minutes; a cold npm/cargo cache roughly triples that.
+    # Without this the job inherits GitHub's 6h default, so anything that stalls
+    # (see the apt step below) burns a runner for six hours before reporting.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,7 +59,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-host-nm-v3-
 
+      # Normally seconds, but `apt-get update` has stalled indefinitely here when a
+      # mirror goes unresponsive (azure.archive.ubuntu.com falling back to
+      # archive.ubuntu.com, which then hangs mid-fetch). Fail fast instead.
       - name: Install Linux native build deps
+        timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
 
       - name: Install dependencies
