@@ -153,7 +153,7 @@ export class AccountWidget extends ReactWidget {
                 </div>
 
                 <div className='theia-account-login-message'>
-                    {nls.localize('theia/cooklang-account/loginMessage', 'Log in to access sync, AI assistance, and other features.')}
+                    {nls.localize('theia/cooklang-account/loginMessage', 'Log in to your Cook.md account — sync and CookBot are included with your plan.')}
                 </div>
                 <button
                     className='theia-button main theia-account-login-button'
