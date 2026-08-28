@@ -35,12 +35,23 @@ class FakeGrpcClient {
     }
 }
 
-function createInitializer(grpcClient: FakeGrpcClient): CookbotSessionInitializer {
+/** Mutable stand-in for the workspace server: `current` is what is "open". */
+class FakeWorkspaceServer {
+    current: string | undefined;
+    async getMostRecentlyUsedWorkspace(): Promise<string | undefined> {
+        return this.current;
+    }
+}
+
+function createInitializer(
+    grpcClient: FakeGrpcClient,
+    workspaceServer: FakeWorkspaceServer = new FakeWorkspaceServer()
+): CookbotSessionInitializer {
     const initializer = new CookbotSessionInitializer();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (initializer as any).grpcClient = grpcClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (initializer as any).workspaceServer = { getMostRecentlyUsedWorkspace: async () => undefined };
+    (initializer as any).workspaceServer = workspaceServer;
     return initializer;
 }
 
@@ -105,6 +116,64 @@ describe('CookbotSessionInitializer', () => {
 
         await second;
         await initializer.ensureInitialized();
+        expect(grpcClient.initializeCalls).to.equal(2);
+    });
+});
+
+describe('CookbotSessionInitializer recipe folder changes', () => {
+
+    it('re-initializes when a folder is opened after the session was created', async () => {
+        // The session that wedged onboarding: created with no folder, then kept
+        // reporting "no folder" long after the user opened one.
+        const grpcClient = new FakeGrpcClient();
+        const workspaceServer = new FakeWorkspaceServer();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        expect(grpcClient.initializeCalls).to.equal(1);
+
+        workspaceServer.current = 'file:///Users/greg/Cook';
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+    });
+
+    it('re-initializes when the user switches to a different folder', async () => {
+        const grpcClient = new FakeGrpcClient();
+        const workspaceServer = new FakeWorkspaceServer();
+        workspaceServer.current = 'file:///Users/greg/Cook';
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        workspaceServer.current = 'file:///Users/greg/OtherRecipes';
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+    });
+
+    it('does not re-initialize while the folder stays the same', async () => {
+        const grpcClient = new FakeGrpcClient();
+        const workspaceServer = new FakeWorkspaceServer();
+        workspaceServer.current = 'file:///Users/greg/Cook';
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        await initializer.ensureInitialized();
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(1);
+    });
+
+    it('re-initializes when the folder is closed', async () => {
+        const grpcClient = new FakeGrpcClient();
+        const workspaceServer = new FakeWorkspaceServer();
+        workspaceServer.current = 'file:///Users/greg/Cook';
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        workspaceServer.current = undefined;
+        await initializer.ensureInitialized();
+
         expect(grpcClient.initializeCalls).to.equal(2);
     });
 });

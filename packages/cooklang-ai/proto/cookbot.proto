@@ -24,6 +24,9 @@ service CookbotService {
   // Curated recipe catalog (Rails kickstart matcher, forwarded with the session JWT)
   rpc SearchRecipeCatalog(SearchRecipeCatalogRequest) returns (SearchRecipeCatalogResponse);
   rpc GetCatalogRecipe(GetCatalogRecipeRequest) returns (CatalogRecipe);
+
+  // Preferences the user already gave cook.md (kickstart quiz / account profile)
+  rpc GetUserPreferences(GetUserPreferencesRequest) returns (UserPreferencesResponse);
 }
 
 // ============================================================================
@@ -251,4 +254,16 @@ message CatalogRecipe {
   string course = 4;
   string content = 5;         // .cook file body incl. YAML frontmatter
   string suggested_path = 6;  // e.g. "Dinner/Spaghetti Carbonara.cook"
+}
+
+// Saved preferences (cook.md kickstart quiz and account profile)
+
+message GetUserPreferencesRequest {
+  string session_id = 1;
+}
+
+message UserPreferencesResponse {
+  bool has_preferences = 1;
+  repeated string sources = 2;    // "kickstart_quiz" and/or "profile"
+  string preferences_json = 3;    // Rails' merged `preferences` object verbatim
 }

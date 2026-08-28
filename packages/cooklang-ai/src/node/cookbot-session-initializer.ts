@@ -34,7 +34,29 @@ export class CookbotSessionInitializer {
 
     private initPromise: Promise<void> | undefined;
 
+    /**
+     * The recipe directory the current session was created against. Compared
+     * on every call so a session made before the user opened a folder does not
+     * keep serving an empty one for the rest of the process's life.
+     */
+    private initializedDir: string | undefined;
+
     async ensureInitialized(): Promise<void> {
+        // The session carries recipes_dir to the server, where it decides both
+        // the system prompt and whether the assistant believes it can write
+        // files. Opening (or closing) a folder therefore invalidates it - and
+        // that happens routinely, because the panel can be used before any
+        // folder is open.
+        if (this.initPromise) {
+            const currentDir = await this.resolveRecipesDir();
+            if (currentDir !== this.initializedDir) {
+                console.info(
+                    `[Cookbot] Recipe folder changed (${this.initializedDir || 'none'} -> ${currentDir || 'none'}), re-initializing the session`
+                );
+                this.initPromise = undefined;
+            }
+        }
+
         if (!this.initPromise) {
             // Drop a failed initialization so the next request can retry it,
             // instead of awaiting the same rejected promise forever. Capture
@@ -62,23 +84,36 @@ export class CookbotSessionInitializer {
         this.initPromise = undefined;
     }
 
-    private async doInitialize(): Promise<void> {
-        let recipesDir = '';
-        let customInstructions = '';
+    /**
+     * The workspace root as a filesystem path, or `''` when no folder is open.
+     *
+     * `''` is meaningful, not a fallback: the server reads it as "no folder"
+     * and tells the model it cannot write anything.
+     */
+    private async resolveRecipesDir(): Promise<string> {
         try {
             const workspaceUri = await this.workspaceServer.getMostRecentlyUsedWorkspace();
-            if (workspaceUri) {
-                recipesDir = FileUri.fsPath(workspaceUri);
-                const cookMdPath = path.join(recipesDir, 'COOK.md');
-                try {
-                    customInstructions = await fs.promises.readFile(cookMdPath, 'utf-8');
-                } catch {
-                    // COOK.md not present, that's fine
-                }
-            }
+            return workspaceUri ? FileUri.fsPath(workspaceUri) : '';
         } catch {
-            // Workspace may not be set yet
+            // Workspace may not be set yet.
+            return '';
         }
+    }
+
+    private async doInitialize(): Promise<void> {
+        const recipesDir = await this.resolveRecipesDir();
+        let customInstructions = '';
+        if (recipesDir) {
+            const cookMdPath = path.join(recipesDir, 'COOK.md');
+            try {
+                customInstructions = await fs.promises.readFile(cookMdPath, 'utf-8');
+            } catch {
+                // COOK.md not present, that's fine
+            }
+        }
+        // Recorded before the call so a failed init still re-checks the folder
+        // rather than comparing against a stale value.
+        this.initializedDir = recipesDir;
         await this.grpcClient.initialize(recipesDir, customInstructions);
     }
 }

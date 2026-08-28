@@ -199,3 +199,62 @@ describe('CookbotServerToolsServiceImpl catalog forwarding', () => {
         expect(recipe.suggestedPath).to.equal('p');
     });
 });
+
+describe('CookbotGrpcClient outgoing history trimming', () => {
+
+    const MAX_REQUEST_BYTES = (CookbotGrpcClient as any).MAX_REQUEST_BYTES as number;
+    const TRIMMED = (CookbotGrpcClient as any).TRIMMED_TOOL_RESULT_CHARS as number;
+
+    function trim(messages: any[]): any[] {
+        const { client } = createClient();
+        return (client as any).trimOversizedHistory(messages);
+    }
+
+    function toolResult(chars: number): any {
+        return { role: 'user', content: [{ type: 'tool_result', toolUseId: 't1', toolResultContent: 'x'.repeat(chars) }] };
+    }
+
+    it('leaves an ordinary conversation untouched', () => {
+        const messages = [
+            { role: 'user', content: [{ type: 'text', text: 'suggest a weekend meal' }] },
+            { role: 'assistant', content: [{ type: 'text', text: 'Chicken Pesto Pizza' }] },
+        ];
+        expect(trim(messages)).to.deep.equal(messages);
+    });
+
+    it('shortens a tool result that would exceed the request budget', () => {
+        // The shape that wedged the session: one fetched image, ~4.8 MB.
+        const messages = [toolResult(MAX_REQUEST_BYTES + 1_000_000)];
+        const result = trim(messages);
+
+        expect(result[0].content[0].toolResultContent.length).to.be.lessThan(TRIMMED + 500);
+        expect(result[0].content[0].toolResultContent).to.contain('truncated');
+    });
+
+    it('brings an oversized history back under the budget', () => {
+        const { client } = createClient();
+        const messages = [toolResult(MAX_REQUEST_BYTES), toolResult(MAX_REQUEST_BYTES)];
+
+        const result = (client as any).trimOversizedHistory(messages);
+
+        expect((client as any).historyByteLength(result)).to.be.at.most(MAX_REQUEST_BYTES);
+    });
+
+    it('does not mutate the caller\'s messages', () => {
+        const messages = [toolResult(MAX_REQUEST_BYTES + 1_000_000)];
+        const originalLength = messages[0].content[0].toolResultContent.length;
+
+        trim(messages);
+
+        expect(messages[0].content[0].toolResultContent.length).to.equal(originalLength);
+    });
+
+    it('never trims user or assistant text, only tool results', () => {
+        const speech = 'y'.repeat(MAX_REQUEST_BYTES + 1_000_000);
+        const messages = [{ role: 'user', content: [{ type: 'text', text: speech }] }];
+
+        const result = trim(messages);
+
+        expect(result[0].content[0].text).to.equal(speech);
+    });
+});
