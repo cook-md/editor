@@ -181,7 +181,7 @@ export class AccountWidget extends ReactWidget {
                     ? this.renderSubscriptionLoading()
                     : subscription.hasAccess
                         ? this.renderSubscriptionActive(subscription)
-                        : this.renderSubscriptionUpgrade()
+                        : this.renderSubscriptionUpgrade(subscription)
                 }
             </div>
         );
@@ -211,7 +211,7 @@ export class AccountWidget extends ReactWidget {
                     <span className='theia-account-row-label'>{nls.localize('theia/cooklang-account/manageSubscription', 'Manage Subscription')}</span>
                 </div>
                 {subscription.features.includes('ai') && this.renderAiCreditsSection(subscription)}
-                {this.renderSyncSection(statusLabel)}
+                {this.renderSyncSection(subscription, statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
@@ -221,7 +221,13 @@ export class AccountWidget extends ReactWidget {
         );
     }
 
-    protected renderSyncSection(statusLabel: string): React.ReactNode {
+    protected renderSyncSection(subscription: SubscriptionState, statusLabel: string): React.ReactNode {
+        if (!subscription.features.includes('sync')) {
+            return this.renderSyncLocked();
+        }
+        if (this.syncStatus.status === 'payment_required') {
+            return this.renderSyncNeedsPlan();
+        }
         return (
             <React.Fragment>
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
@@ -256,6 +262,67 @@ export class AccountWidget extends ReactWidget {
         );
     }
 
+    /**
+     * Rendered instead of the toggle when the current plan doesn't include
+     * the `sync` feature (mirrors the AI block's `features.includes('ai')`
+     * gate in {@link renderSubscriptionActive}). No price is named here —
+     * that lives on the pricing page the Upgrade button opens.
+     */
+    protected renderSyncLocked(): React.ReactNode {
+        return (
+            <React.Fragment>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
+                <div className='theia-account-upgrade-section'>
+                    <div className='theia-account-upgrade-message'>
+                        {nls.localize('theia/cooklang-account/syncLockedMessage', 'Sync runs on our servers — part of Cook Basic')}
+                    </div>
+                    <button
+                        className='theia-button main theia-account-upgrade-button'
+                        onClick={this.handleUpgrade}
+                    >
+                        {nls.localizeByDefault('Upgrade')}
+                    </button>
+                </div>
+            </React.Fragment>
+        );
+    }
+
+    /**
+     * Rendered instead of the toggle/status rows when the native sync client
+     * reports `payment_required` — the entitlement lapsed while sync was
+     * already on (an HTTP 402 from the sync server). Deliberately not the
+     * generic error row: this is a known, actionable state, not a failure.
+     *
+     * Two ways out, both wired to {@link restartSync}: Upgrade drives the
+     * in-app checkout flow (which restarts sync itself once the callback
+     * resolves — see {@link handleUpgrade}); "Retry sync" is for a user who
+     * paid in a plain browser tab with no callback round-trip to notice.
+     */
+    protected renderSyncNeedsPlan(): React.ReactNode {
+        return (
+            <React.Fragment>
+                <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/syncHeader', 'CookCloud Sync')}</div>
+                <div className='theia-account-upgrade-section'>
+                    <div className='theia-account-upgrade-message theia-account-sync-error'>
+                        {nls.localize('theia/cooklang-account/syncNeedsPlanMessage', 'Sync needs a plan')}
+                    </div>
+                    <button
+                        className='theia-button main theia-account-upgrade-button'
+                        onClick={this.handleUpgrade}
+                    >
+                        {nls.localizeByDefault('Upgrade')}
+                    </button>
+                    <button
+                        className='theia-button secondary theia-account-sync-retry-button'
+                        onClick={this.restartSync}
+                    >
+                        {nls.localize('theia/cooklang-account/syncRetryButton', 'Retry sync')}
+                    </button>
+                </div>
+            </React.Fragment>
+        );
+    }
+
     protected renderAiCreditsSection(subscription: SubscriptionState): React.ReactNode {
         const credits = subscription.aiCreditsRemaining;
         const creditsClass = credits <= 0
@@ -285,7 +352,7 @@ export class AccountWidget extends ReactWidget {
         );
     }
 
-    protected renderSubscriptionUpgrade(): React.ReactNode {
+    protected renderSubscriptionUpgrade(subscription: SubscriptionState): React.ReactNode {
         const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
         return (
             <React.Fragment>
@@ -301,7 +368,7 @@ export class AccountWidget extends ReactWidget {
                         {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
                     </button>
                 </div>
-                {this.renderSyncSection(statusLabel)}
+                {this.renderSyncSection(subscription, statusLabel)}
                 <div className='theia-account-divider' />
                 <div className='theia-account-row theia-account-row-interactive' onClick={this.handleLogout}>
                     <i className='codicon codicon-sign-out' />
@@ -377,12 +444,37 @@ export class AccountWidget extends ReactWidget {
         try {
             const result = await this.subscriptionFrontendService.awaitUpgradeCallback();
             if (result.status === 'ok') {
+                // Capture before refresh(): refreshing subscription features
+                // (which will now include 'sync') doesn't touch the native
+                // sync task — it already stopped itself on the 402 — so
+                // resolving payment_required needs an explicit restart.
+                const needsSyncRestart = this.syncEnabled && this.syncStatus.status === 'payment_required';
                 await this.subscriptionFrontendService.refresh();
+                if (needsSyncRestart) {
+                    await this.restartSync();
+                }
             }
         } catch (err) {
             // Timeout, state mismatch, or superseded flow — user can retry.
             console.warn('Upgrade flow did not complete:', err);
         }
+    };
+
+    /**
+     * Restarts the native sync task via the same `enableSync()` path the
+     * toggle uses (see {@link handleSyncToggle}). Used after an upgrade
+     * resolves a `payment_required` state, and by the "Retry sync" button in
+     * {@link renderSyncNeedsPlan}.
+     */
+    private restartSync = async (): Promise<void> => {
+        try {
+            await this.syncService.enableSync();
+            await this.refreshSyncStatus();
+            this.startSyncPolling();
+        } catch (err) {
+            console.error('Failed to restart sync:', err);
+        }
+        this.update();
     };
 
 }

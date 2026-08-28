@@ -15,7 +15,7 @@ export const SyncServicePath = '/services/cooked-sync';
 export const SyncService = Symbol('SyncService');
 
 export interface SyncStatus {
-    status: 'idle' | 'syncing' | 'indexing' | 'downloading' | 'uploading' | 'error' | 'stopped';
+    status: 'idle' | 'syncing' | 'indexing' | 'downloading' | 'uploading' | 'error' | 'stopped' | 'payment_required';
     lastSyncedAt: string | undefined;
     error: string | undefined;
 }

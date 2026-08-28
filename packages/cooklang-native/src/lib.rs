@@ -64,6 +64,90 @@ fn notify_js_callback(state: &SyncStatusState) {
     }
 }
 
+/// True when `message` is the stringified form of a sync failure caused by a
+/// lapsed/missing sync entitlement (the server's HTTP 402 response), as
+/// surfaced by `cooklang_sync_client::SyncError::PaymentRequired`.
+///
+/// This has to match on text because `SyncStatusListener::on_complete` only
+/// gives us a `String` (built with `format!("{:?}", err)` — see `start_sync`
+/// below and `cooklang_sync_client::run_async`). Every call site propagates
+/// `SyncError::PaymentRequired` unchanged (pinned rev
+/// 3464309f8799732f765fc1d99a01a310cbba3df7 fixed `syncer::download_loop`,
+/// which used to re-wrap it into `SyncError::Unknown(format!("Check download
+/// failed: {e}"))`, losing the variant on the very call that usually hits the
+/// server first), so `message` today is just the Debug'd variant name
+/// "PaymentRequired".
+///
+/// The direct forms are matched by *exact* (trimmed) equality, not
+/// substring — an unrelated error whose message merely contains
+/// "PaymentRequired" (e.g. an `IoError` on a file or folder path literally
+/// named that) must not paywall the sync UI. The wrapped-prefix check is
+/// kept as a narrow, `.contains`-based fallback for the one known shape a
+/// future regression could reintroduce: `Unknown(format!("Check download
+/// failed: {e}"))`, which embeds `PaymentRequired`'s `Display` text
+/// ("Sync requires a paid plan") after that fixed prefix.
+fn is_payment_required_error(message: &str) -> bool {
+    const WRAPPED_PREFIX: &str = "Check download failed: Sync requires a paid plan";
+    let trimmed = message.trim();
+    trimmed == "PaymentRequired" || trimmed == "Sync requires a paid plan" || message.contains(WRAPPED_PREFIX)
+}
+
+impl SyncStatusState {
+    /// Applies a `SyncStatusListener::on_status_changed` event, mirroring the
+    /// mapping `NapiSyncStatusListener` sends to JS. Split out from the trait
+    /// impl so it can be unit-tested without going through
+    /// `notify_js_callback` (whose `ThreadsafeFunction::call` needs the real
+    /// napi runtime and can't link in a plain `cargo test` binary).
+    fn apply_status_changed(&mut self, status: cooklang_sync_client::SyncStatus) {
+        match status {
+            cooklang_sync_client::SyncStatus::Idle => {
+                self.status = "idle".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Syncing => {
+                self.status = "syncing".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Indexing => {
+                self.status = "indexing".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Downloading => {
+                self.status = "downloading".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Uploading => {
+                self.status = "uploading".to_string();
+            }
+            cooklang_sync_client::SyncStatus::Error { message } => {
+                if is_payment_required_error(&message) {
+                    self.status = "payment_required".to_string();
+                    self.last_error = None;
+                } else {
+                    self.status = "error".to_string();
+                    self.last_error = Some(message);
+                }
+            }
+        }
+    }
+
+    /// Applies a `SyncStatusListener::on_complete` event. See
+    /// `apply_status_changed` for why this is a plain method rather than
+    /// living directly in the trait impl.
+    fn apply_complete(&mut self, success: bool, message: Option<String>) {
+        if success {
+            self.status = "idle".to_string();
+            self.last_error = None;
+            self.last_synced = Some(chrono::Utc::now().to_rfc3339());
+        } else {
+            let message = message.unwrap_or_else(|| "Sync failed".to_string());
+            if is_payment_required_error(&message) {
+                self.status = "payment_required".to_string();
+                self.last_error = None;
+            } else {
+                self.status = "error".to_string();
+                self.last_error = Some(message);
+            }
+        }
+    }
+}
+
 /// Listener that receives callbacks from `cooklang-sync-client` and updates
 /// the shared `SyncStatusState`, then notifies the JS callback.
 struct NapiSyncStatusListener {
@@ -73,40 +157,13 @@ struct NapiSyncStatusListener {
 impl cooklang_sync_client::SyncStatusListener for NapiSyncStatusListener {
     fn on_status_changed(&self, status: cooklang_sync_client::SyncStatus) {
         let mut state = self.state.lock().unwrap();
-        match status {
-            cooklang_sync_client::SyncStatus::Idle => {
-                state.status = "idle".to_string();
-            }
-            cooklang_sync_client::SyncStatus::Syncing => {
-                state.status = "syncing".to_string();
-            }
-            cooklang_sync_client::SyncStatus::Indexing => {
-                state.status = "indexing".to_string();
-            }
-            cooklang_sync_client::SyncStatus::Downloading => {
-                state.status = "downloading".to_string();
-            }
-            cooklang_sync_client::SyncStatus::Uploading => {
-                state.status = "uploading".to_string();
-            }
-            cooklang_sync_client::SyncStatus::Error { message } => {
-                state.status = "error".to_string();
-                state.last_error = Some(message);
-            }
-        }
+        state.apply_status_changed(status);
         notify_js_callback(&state);
     }
 
     fn on_complete(&self, success: bool, message: Option<String>) {
         let mut state = self.state.lock().unwrap();
-        if success {
-            state.status = "idle".to_string();
-            state.last_error = None;
-            state.last_synced = Some(chrono::Utc::now().to_rfc3339());
-        } else {
-            state.status = "error".to_string();
-            state.last_error = Some(message.unwrap_or_else(|| "Sync failed".to_string()));
-        }
+        state.apply_complete(success, message);
         notify_js_callback(&state);
     }
 }
@@ -762,10 +819,15 @@ pub fn start_sync(
         .await;
 
         if let Err(e) = result {
+            // `run_async` already reported this failure via the listener's
+            // `on_complete` (and pushed it to the JS callback) before
+            // returning it here. Re-apply the same classification (rather
+            // than defaulting to "error") so a payment_required push above
+            // isn't immediately clobbered — with no matching JS notification
+            // — the next time `getSyncStatus` is polled.
             let shared_state = get_sync_status_state();
             let mut state = shared_state.lock().unwrap();
-            state.status = "error".to_string();
-            state.last_error = Some(format!("{:?}", e));
+            state.apply_complete(false, Some(format!("{:?}", e)));
         }
 
         // Clear the global context when the task finishes.
@@ -1459,5 +1521,138 @@ salt = {}
         );
         assert_eq!(v[2]["inStock"], true);
         assert_eq!(v[2]["isLow"], true);
+    }
+}
+
+#[cfg(test)]
+mod sync_status_tests {
+    use super::*;
+
+    #[test]
+    fn detects_direct_payment_required_debug_text() {
+        // What most call sites produce: SyncError::PaymentRequired propagated
+        // unchanged, `format!("{:?}", e)`'d by run_async/start_sync.
+        assert!(is_payment_required_error("PaymentRequired"));
+    }
+
+    #[test]
+    fn detects_payment_required_wrapped_by_download_loop() {
+        // `syncer::download_loop` re-wraps any non-Unauthorized error into
+        // SyncError::Unknown(format!("Check download failed: {e}")), which
+        // loses the variant but keeps PaymentRequired's Display text.
+        let wrapped = "Unknown(\"Check download failed: Sync requires a paid plan\")";
+        assert!(is_payment_required_error(wrapped));
+    }
+
+    #[test]
+    fn does_not_flag_unrelated_errors() {
+        assert!(!is_payment_required_error("Unauthorized"));
+        assert!(!is_payment_required_error(
+            "IoErrorGeneric(Os { code: 2, kind: NotFound, message: \"No such file or directory\" })"
+        ));
+        assert!(!is_payment_required_error("Sync failed"));
+    }
+
+    #[test]
+    fn does_not_flag_an_io_error_whose_path_merely_contains_the_variant_name() {
+        // A recipe folder or file literally named "PaymentRequired" must not
+        // paywall an unrelated IO error — only an exact (trimmed) match on
+        // the direct forms counts, never a substring match.
+        let message = "IoError { path: \"/Users/alex/PaymentRequired/notes.cook\", \
+            source: Os { code: 2, kind: NotFound, message: \"No such file or directory\" } }";
+        assert!(!is_payment_required_error(message));
+    }
+
+    #[test]
+    fn detects_exact_display_text() {
+        assert!(is_payment_required_error("Sync requires a paid plan"));
+    }
+
+    #[test]
+    fn does_not_flag_display_text_as_a_mere_substring() {
+        // Same tightening as the Debug case: the Display text must match
+        // exactly, not just appear somewhere in a longer message.
+        assert!(!is_payment_required_error(
+            "context: Sync requires a paid plan (retry later)"
+        ));
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace_before_exact_matching() {
+        assert!(is_payment_required_error("  PaymentRequired  "));
+        assert!(is_payment_required_error("\nSync requires a paid plan\n"));
+    }
+
+    // These exercise `SyncStatusState::apply_status_changed`/`apply_complete`
+    // directly rather than the `NapiSyncStatusListener` trait methods: the
+    // trait methods also call `notify_js_callback`, whose `ThreadsafeFunction`
+    // needs real napi runtime symbols that a plain `cargo test` binary (no
+    // Node host) can't link. The `apply_*` methods hold 100% of the mapping
+    // logic the trait methods delegate to, so this covers the same behavior.
+
+    #[test]
+    fn on_complete_maps_payment_required_debug_text_without_generic_error() {
+        let mut state = SyncStatusState::default();
+        state.apply_complete(false, Some("PaymentRequired".to_string()));
+        assert_eq!(state.status, "payment_required");
+        assert!(
+            state.last_error.is_none(),
+            "payment_required must not carry the generic error text"
+        );
+    }
+
+    #[test]
+    fn on_complete_maps_wrapped_payment_required_from_download_loop() {
+        let mut state = SyncStatusState::default();
+        state.apply_complete(
+            false,
+            Some("Unknown(\"Check download failed: Sync requires a paid plan\")".to_string()),
+        );
+        assert_eq!(state.status, "payment_required");
+        assert!(state.last_error.is_none());
+    }
+
+    #[test]
+    fn on_complete_keeps_generic_error_for_other_failures() {
+        let mut state = SyncStatusState::default();
+        state.apply_complete(false, Some("Unauthorized".to_string()));
+        assert_eq!(state.status, "error");
+        assert_eq!(state.last_error.as_deref(), Some("Unauthorized"));
+    }
+
+    #[test]
+    fn on_complete_success_still_marks_idle_and_clears_error() {
+        let mut state = SyncStatusState::default();
+        state.apply_complete(true, None);
+        assert_eq!(state.status, "idle");
+        assert!(state.last_error.is_none());
+        assert!(state.last_synced.is_some());
+    }
+
+    #[test]
+    fn on_status_changed_error_variant_also_detects_payment_required() {
+        let mut state = SyncStatusState::default();
+        state.apply_status_changed(cooklang_sync_client::SyncStatus::Error {
+            message: "PaymentRequired".to_string(),
+        });
+        assert_eq!(state.status, "payment_required");
+        assert!(state.last_error.is_none());
+    }
+
+    #[test]
+    fn on_status_changed_error_variant_keeps_generic_error_message() {
+        let mut state = SyncStatusState::default();
+        state.apply_status_changed(cooklang_sync_client::SyncStatus::Error {
+            message: "boom".to_string(),
+        });
+        assert_eq!(state.status, "error");
+        assert_eq!(state.last_error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn on_status_changed_non_error_variants_are_unaffected() {
+        let mut state = SyncStatusState::default();
+        state.apply_status_changed(cooklang_sync_client::SyncStatus::Downloading);
+        assert_eq!(state.status, "downloading");
     }
 }
