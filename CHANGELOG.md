@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.40](https://github.com/cook-md/editor/compare/v0.1.0-alpha.39...v0.1.0-alpha.40) (2026-08-28)
+
+
+### Features
+
+* **sync:** gate CookCloud sync on the plan entitlement — locked and needs-plan states with in-app upgrade ([8038a73](https://github.com/cook-md/editor/commit/8038a739060b8365765a9a9830bae689becb2ad5))
+
 ## [0.1.0-alpha.39](https://github.com/cook-md/editor/compare/v0.1.0-alpha.38...v0.1.0-alpha.39) (2026-08-20)
 
 
