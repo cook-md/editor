@@ -33,23 +33,57 @@ class FakeFileService {
     size = 1024;
     reads: string[] = [];
     missing = false;
+    /** When true, `readFile` blocks until `settleReads` is called. */
+    deferReads = false;
+    protected waiting: Array<() => void> = [];
+
     async resolve(uri: URI): Promise<{ size: number }> {
         if (this.missing) { throw new Error(`not found: ${uri.toString()}`); }
         return { size: this.size };
     }
-    async readFile(uri: URI): Promise<{ value: BinaryBuffer }> {
-        if (this.missing) { throw new Error(`not found: ${uri.toString()}`); }
+
+    readFile(uri: URI): Promise<{ value: BinaryBuffer }> {
+        if (this.missing) { return Promise.reject(new Error(`not found: ${uri.toString()}`)); }
         this.reads.push(uri.toString());
-        return { value: BinaryBuffer.wrap(new Uint8Array([1, 2, 3])) };
+        const content = { value: BinaryBuffer.wrap(new Uint8Array([1, 2, 3])) };
+        if (!this.deferReads) {
+            return Promise.resolve(content);
+        }
+        return new Promise(resolve => this.waiting.push(() => resolve(content)));
+    }
+
+    /** Let every deferred read complete. */
+    settleReads(): void {
+        const waiting = this.waiting;
+        this.waiting = [];
+        for (const resume of waiting) {
+            resume();
+        }
     }
 }
 
-function createService(): { service: RecipeImageService; files: FakeFileService; created: string[]; revoked: string[] } {
+/** Let pending microtasks and timers run, so an in-flight read reaches `readFile`. */
+function flush(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+interface Harness {
+    service: RecipeImageService;
+    files: FakeFileService;
+    created: string[];
+    revoked: string[];
+    blobs: Blob[];
+}
+
+function createService(): Harness {
     const created: string[] = [];
     const revoked: string[] = [];
+    const blobs: Blob[] = [];
     let counter = 0;
     // jsdom has no URL.createObjectURL; stub it so the service is observable.
-    (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = () => {
+    // The blob is captured so the MIME type the service chose can be asserted.
+    (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = blob => {
+        blobs.push(blob);
         const url = `blob:fake/${counter++}`;
         created.push(url);
         return url;
@@ -62,7 +96,7 @@ function createService(): { service: RecipeImageService; files: FakeFileService;
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (service as any).fileService = files;
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { service, files, created, revoked };
+    return { service, files, created, revoked, blobs };
 }
 
 describe('RecipeImageService', () => {
@@ -137,5 +171,72 @@ describe('RecipeImageService', () => {
         service.releaseAll();
         await service.resolve(uri);
         expect(files.reads).to.have.length(2);
+    });
+
+    // The blob type is the only place the extension-to-MIME mapping is visible,
+    // so assert it directly rather than trusting that a URL came back at all.
+    it('gives each supported extension its MIME type', async () => {
+        const { service, blobs } = createService();
+        await service.resolve(new URI('file:///r/a.jpg'));
+        await service.resolve(new URI('file:///r/b.jpeg'));
+        await service.resolve(new URI('file:///r/c.png'));
+        await service.resolve(new URI('file:///r/d.webp'));
+        expect(blobs.map(blob => blob.type)).to.deep.equal([
+            'image/jpeg', 'image/jpeg', 'image/png', 'image/webp',
+        ]);
+    });
+
+    it('matches the extension case-insensitively', async () => {
+        const { service, blobs } = createService();
+        await service.resolve(new URI('file:///r/Hero.PNG'));
+        expect(blobs.map(blob => blob.type)).to.deep.equal(['image/png']);
+    });
+
+    // The widget disposes while a read is still in flight. Without tracking the
+    // in-flight read, that read would create an object URL after the cache had
+    // been emptied, so nothing would ever revoke it.
+    it('revokes the URL of a read that finishes after releaseAll', async () => {
+        const { service, files, created, revoked } = createService();
+        files.deferReads = true;
+        const pending = service.resolve(new URI('file:///r/Pancakes.jpg'));
+        await flush();
+        service.releaseAll();
+        files.settleReads();
+        expect(await pending).to.be.undefined;
+        expect(created).to.have.length(1);
+        expect(revoked).to.deep.equal(created);
+    });
+
+    // A file overwritten while its first read is in flight: the read settles
+    // after the invalidation, so its bytes are already stale and must not be
+    // cached, or every later resolve is a cache hit on the old image.
+    it('does not cache bytes read before a release of the same file', async () => {
+        const { service, files, created, revoked } = createService();
+        const uri = new URI('file:///r/Pancakes.jpg');
+        files.deferReads = true;
+        const stale = service.resolve(uri);
+        await flush();
+        service.release(uri);
+        files.settleReads();
+        expect(await stale).to.be.undefined;
+        expect(revoked).to.deep.equal(created);
+
+        files.deferReads = false;
+        expect(await service.resolve(uri)).to.not.be.undefined;
+        expect(files.reads).to.have.length(2);
+    });
+
+    it('shares one read between concurrent resolves of the same file', async () => {
+        const { service, files } = createService();
+        const uri = new URI('file:///r/Pancakes.jpg');
+        files.deferReads = true;
+        const first = service.resolve(uri);
+        const second = service.resolve(uri);
+        await flush();
+        files.settleReads();
+        const [a, b] = await Promise.all([first, second]);
+        expect(a).to.not.be.undefined;
+        expect(b).to.equal(a);
+        expect(files.reads).to.have.length(1);
     });
 });

@@ -14,13 +14,7 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
-
-const MIME_TYPES: Record<string, string> = {
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    webp: 'image/webp',
-};
+import { RECIPE_IMAGE_MIME_TYPES } from '../common/recipe-images';
 
 /**
  * Turns local image files into `blob:` URLs an `<img>` can load.
@@ -41,42 +35,70 @@ export class RecipeImageService {
     @inject(FileService)
     protected readonly fileService: FileService;
 
+    /** Object URLs for reads that have settled, so they can be revoked. */
     protected readonly urls = new Map<string, string>();
+
+    /** In-flight or settled reads, so concurrent callers share one read. */
+    protected readonly pending = new Map<string, Promise<string | undefined>>();
+
+    /**
+     * Bumped by every `release`/`releaseAll`. A read that started before the
+     * bump is stale by the time it settles and must not populate the cache.
+     */
+    protected epoch = 0;
 
     /**
      * A `blob:` URL for `uri`, or `undefined` when the file is missing,
      * unreadable, too large, or not a supported image type. Repeated calls for
-     * the same URI reuse one object URL.
+     * the same URI reuse one object URL, and concurrent calls share one read.
      */
-    async resolve(uri: URI): Promise<string | undefined> {
+    resolve(uri: URI): Promise<string | undefined> {
         const key = uri.toString();
-        const cached = this.urls.get(key);
-        if (cached) {
-            return cached;
+        const inFlight = this.pending.get(key);
+        if (inFlight) {
+            return inFlight;
         }
-        const type = MIME_TYPES[uri.path.ext.replace(/^\./, '').toLowerCase()];
+        const type = RECIPE_IMAGE_MIME_TYPES[uri.path.ext.replace(/^\./, '').toLowerCase()];
         if (!type) {
-            return undefined;
+            return Promise.resolve(undefined);
         }
+        const read = this.read(uri, key, type);
+        this.pending.set(key, read);
+        return read;
+    }
+
+    /** Read one file and cache its object URL, unless invalidated meanwhile. */
+    protected async read(uri: URI, key: string, type: string): Promise<string | undefined> {
+        const epoch = this.epoch;
         try {
             const stat = await this.fileService.resolve(uri);
             if ((stat.size ?? 0) > RecipeImageService.MAX_BYTES) {
+                this.forget(key, epoch);
                 return undefined;
             }
             const content = await this.fileService.readFile(uri);
             // `BinaryBuffer#buffer` is typed as `Uint8Array<ArrayBufferLike>`, but
             // `BlobPart` wants `ArrayBufferView<ArrayBuffer>`; the bytes are fine as-is.
             const url = URL.createObjectURL(new Blob([content.value.buffer as BlobPart], { type }));
-            // Another call may have populated the cache while we awaited.
-            const raced = this.urls.get(key);
-            if (raced) {
+            if (epoch !== this.epoch) {
+                // The file was invalidated, or the widget disposed, while this read
+                // was in flight. These bytes are stale and nothing would ever revoke
+                // the URL, so drop it instead of caching it.
                 URL.revokeObjectURL(url);
-                return raced;
+                return undefined;
             }
             this.urls.set(key, url);
             return url;
         } catch {
+            this.forget(key, epoch);
             return undefined;
+        }
+    }
+
+    /** Drop a read that produced nothing, so a later call retries it. */
+    protected forget(key: string, epoch: number): void {
+        if (epoch === this.epoch) {
+            this.pending.delete(key);
         }
     }
 
@@ -92,6 +114,8 @@ export class RecipeImageService {
             URL.revokeObjectURL(url);
             this.urls.delete(key);
         }
+        this.pending.delete(key);
+        this.epoch++;
     }
 
     /** Revoke every object URL handed out so far and empty the cache. */
@@ -100,5 +124,7 @@ export class RecipeImageService {
             URL.revokeObjectURL(url);
         }
         this.urls.clear();
+        this.pending.clear();
+        this.epoch++;
     }
 }
