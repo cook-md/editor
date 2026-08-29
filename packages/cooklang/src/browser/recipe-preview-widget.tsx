@@ -88,6 +88,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected images: ResolvedRecipeImages = { steps: {} };
     protected imageSequence = 0;
     protected imageDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+    /** File URIs the last successful refresh actually resolved (remote ones excluded). */
+    protected resolvedImageUris: ReadonlySet<string> = new Set<string>();
 
     @postConstruct()
     protected init(): void {
@@ -227,10 +229,19 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         const folder = this.uri.parent;
         this.toDispose.push(this.fileService.watch(folder));
         this.toDispose.push(this.fileService.onDidFilesChange(event => {
+            // Which files this recipe uses is `cooklang-find`'s answer, not
+            // something to re-derive here: consult the set the last refresh
+            // resolved rather than pattern-matching filenames.
             const touched = event.changes
                 .map(change => change.resource)
-                .filter(resource => this.isImageOfThisRecipe(resource));
-            if (touched.length === 0) {
+                .filter(resource => this.resolvedImageUris.has(resource.toString()));
+            // A file that did not exist at the last refresh cannot be in that
+            // set, so also react to any image appearing in the watched folder.
+            const folderKey = folder.toString();
+            const nearbyImage = event.changes.some(change =>
+                change.resource.parent.toString() === folderKey
+                && RECIPE_IMAGE_EXTENSIONS.includes(change.resource.path.ext.replace(/^\./, '').toLowerCase()));
+            if (touched.length === 0 && !nearbyImage) {
                 return;
             }
             // An image replaced in place keeps its URI, so the cached blob for
@@ -240,20 +251,6 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             }
             this.debouncedRefreshImages();
         }));
-    }
-
-    /** True when `resource` is a `<stem>.….<ext>` image belonging to this recipe. */
-    protected isImageOfThisRecipe(resource: URI): boolean {
-        if (resource.parent.toString() !== this.uri.parent.toString()) {
-            return false;
-        }
-        const name = resource.path.base;
-        const stem = this.uri.path.name;
-        if (!name.toLowerCase().startsWith(stem.toLowerCase() + '.')) {
-            return false;
-        }
-        const ext = resource.path.ext.replace(/^\./, '').toLowerCase();
-        return RECIPE_IMAGE_EXTENSIONS.includes(ext);
     }
 
     /** Coalesce the burst of events a multi-file copy produces into one refresh. */
@@ -278,30 +275,52 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         }
         const sequence = ++this.imageSequence;
         const resolved: ResolvedRecipeImages = { steps: {} };
+        const fileUris = new Set<string>();
         try {
             const json = await this.service.recipeImages(this.uri.path.fsPath());
             const discovered = JSON.parse(json) as RecipeImages;
-            resolved.title = await this.toImageSrc(discovered.title);
+            // Every entry is a `FileService` read over RPC, so they are flattened
+            // and awaited together: a 20-image recipe should not pay for forty
+            // sequential round-trips before anything renders.
+            const entries: Array<{ section?: string; step?: string; raw: string }> = [];
+            if (discovered.title) {
+                entries.push({ raw: discovered.title });
+            }
             for (const [section, steps] of Object.entries(discovered.steps ?? {})) {
                 for (const [step, raw] of Object.entries(steps)) {
-                    const src = await this.toImageSrc(raw);
-                    if (src) {
-                        (resolved.steps[section] ??= {})[step] = src;
-                    }
+                    entries.push({ section, step, raw });
                 }
             }
-        } catch {
-            // No images, an unsaved file, or an unreadable folder: render none.
+            await Promise.all(entries.map(async entry => {
+                const src = await this.toImageSrc(entry.raw, fileUris);
+                if (!src) {
+                    return;
+                }
+                if (entry.section === undefined || entry.step === undefined) {
+                    resolved.title = src;
+                } else {
+                    (resolved.steps[entry.section] ??= {})[entry.step] = src;
+                }
+            }));
+        } catch (e) {
+            // Usually harmless: no images, an unsaved file, or an unreadable
+            // folder. But it also catches a native addon that predates
+            // `recipeImages` and needs rebuilding, so say what happened.
+            console.debug('Recipe image refresh failed', e);
         }
         if (this.isDisposed || sequence !== this.imageSequence) {
             return;
         }
         this.images = resolved;
+        this.resolvedImageUris = fileUris;
         this.update();
     }
 
-    /** Resolve one raw image value to a URL an `<img>` can load. */
-    protected async toImageSrc(raw: string | undefined): Promise<string | undefined> {
+    /**
+     * Resolve one raw image value to a URL an `<img>` can load, recording every
+     * local file URI in `fileUris` so the watcher knows what this recipe reads.
+     */
+    protected async toImageSrc(raw: string | undefined, fileUris: Set<string>): Promise<string | undefined> {
         if (!raw) {
             return undefined;
         }
@@ -309,9 +328,13 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         if (!location) {
             return undefined;
         }
-        return location.kind === 'remote'
-            ? location.url
-            : this.imageService.resolve(location.uri);
+        if (location.kind === 'remote') {
+            return location.url;
+        }
+        // Recorded even when the read fails: a file that is missing now may be
+        // created later, and the watcher should notice when it is.
+        fileUris.add(location.uri.toString());
+        return this.imageService.resolve(location.uri);
     }
 
     // --- Rendering ---
