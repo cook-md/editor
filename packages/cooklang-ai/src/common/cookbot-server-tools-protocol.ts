@@ -27,6 +27,11 @@ export interface CookbotServerToolsService {
     searchRecipeCatalog(criteria: object): Promise<unknown>;
     /** Fetch one catalog recipe (content + suggested workspace path) by id. */
     getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe>;
+    /**
+     * The preferences the user already gave cook.md - the kickstart quiz from
+     * the website merged over their account profile.
+     */
+    getUserPreferences(): Promise<CookbotSavedPreferences>;
 }
 
 export interface CookbotSearchResult {
@@ -43,6 +48,18 @@ export interface CookbotFetchResult {
 export interface CookbotConvertResult {
     cooklangContent: string;
     recipeName: string;
+}
+
+export interface CookbotSavedPreferences {
+    hasPreferences: boolean;
+    /** Which stores answered: 'kickstart_quiz' and/or 'profile'. */
+    sources: string[];
+    /**
+     * The merged preferences object. Left untyped on purpose: its shape is
+     * owned by the server and read by the model as prose, so mirroring it here
+     * would only add a second place to keep in step.
+     */
+    preferences: Record<string, unknown>;
 }
 
 export interface CookbotCatalogRecipe {

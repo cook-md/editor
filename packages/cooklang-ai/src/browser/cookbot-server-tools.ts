@@ -23,6 +23,30 @@ function parseArgs(argString: string): Record<string, string> {
     }
 }
 
+/**
+ * Ceiling for a single tool result, in characters.
+ *
+ * A tool result is not a one-off cost: it joins the conversation history and
+ * is re-sent to the server on every later turn. One oversized result therefore
+ * fails not just its own request but every request after it, with no way for
+ * the user to recover except starting a new chat. The server caps what it
+ * returns, and this is the second line of defence for anything that slips
+ * through (or arrives from an older server).
+ */
+const MAX_TOOL_RESULT_CHARS = 200_000;
+
+/**
+ * Truncate an oversized tool result, telling the model what was dropped so it
+ * does not mistake the remainder for the whole.
+ */
+function capToolResult(result: string, toolName: string): string {
+    if (result.length <= MAX_TOOL_RESULT_CHARS) {
+        return result;
+    }
+    console.warn(`[Cookbot] ${toolName} returned ${result.length} chars, truncating to ${MAX_TOOL_RESULT_CHARS}`);
+    return `${result.slice(0, MAX_TOOL_RESULT_CHARS)}\n\n...(truncated: ${toolName} returned ${result.length} characters, showing the first ${MAX_TOOL_RESULT_CHARS})`;
+}
+
 // ── Server tools ────────────────────────────────────────────────────────
 
 @injectable()
@@ -63,7 +87,7 @@ export class CookbotSearchWebTool implements ToolProvider {
         }
         try {
             const results = await this.serverTools.searchWeb(args.query, args.max_results ? parseInt(args.max_results, 10) : undefined);
-            return JSON.stringify(results);
+            return capToolResult(JSON.stringify(results), CookbotSearchWebTool.ID);
         } catch (e) {
             return `Error searching web: ${e instanceof Error ? e.message : String(e)}`;
         }
@@ -104,7 +128,7 @@ export class CookbotFetchUrlTool implements ToolProvider {
         }
         try {
             const result = await this.serverTools.fetchUrl(args.url);
-            return JSON.stringify(result);
+            return capToolResult(JSON.stringify(result), CookbotFetchUrlTool.ID);
         } catch (e) {
             return `Error fetching URL: ${e instanceof Error ? e.message : String(e)}`;
         }
@@ -145,9 +169,55 @@ export class CookbotConvertUrlTool implements ToolProvider {
         }
         try {
             const result = await this.serverTools.convertUrlToCooklang(args.url);
-            return JSON.stringify(result);
+            return capToolResult(JSON.stringify(result), CookbotConvertUrlTool.ID);
         } catch (e) {
             return `Error converting URL: ${e instanceof Error ? e.message : String(e)}`;
+        }
+    }
+}
+
+/**
+ * Surfaces what the user already told cook.md, so the assistant can confirm
+ * those answers instead of re-asking them.
+ *
+ * Someone who filled in the kickstart quiz on the website has already answered
+ * most of the COOK.md interview; making them repeat it is the fastest way to
+ * look like the product does not know them.
+ */
+@injectable()
+export class CookbotGetServerPreferencesTool implements ToolProvider {
+    static ID = 'getServerPreferences';
+
+    @inject(CookbotServerToolsService)
+    protected readonly serverTools: CookbotServerToolsService;
+
+    getTool(): ToolRequest {
+        return {
+            id: CookbotGetServerPreferencesTool.ID,
+            name: CookbotGetServerPreferencesTool.ID,
+            displayName: 'Get Saved Preferences',
+            description: 'Fetch the cooking preferences this user already saved on cook.md '
+                + '(the kickstart quiz from the website, merged over their account profile). '
+                + 'Call this before starting the COOK.md preferences interview: if answers come '
+                + 'back, confirm them instead of asking the same questions again. '
+                + 'Returns hasPreferences:false when the user has saved nothing.',
+            parameters: {
+                type: 'object',
+                properties: {},
+            },
+            handler: async () => this.execute(),
+        };
+    }
+
+    private async execute(): Promise<string> {
+        try {
+            const saved = await this.serverTools.getUserPreferences();
+            return capToolResult(JSON.stringify(saved), CookbotGetServerPreferencesTool.ID);
+        } catch (e) {
+            // Saved preferences are a shortcut, never a prerequisite - say so,
+            // so the model falls back to interviewing rather than giving up.
+            return `Could not load saved preferences: ${e instanceof Error ? e.message : String(e)}. `
+                + 'Continue by asking the user directly.';
         }
     }
 }
@@ -190,7 +260,7 @@ export class CookbotConvertTextTool implements ToolProvider {
         }
         try {
             const result = await this.serverTools.convertTextToCooklang(args.name, args.text);
-            return JSON.stringify(result);
+            return capToolResult(JSON.stringify(result), CookbotConvertTextTool.ID);
         } catch (e) {
             return `Error converting text: ${e instanceof Error ? e.message : String(e)}`;
         }

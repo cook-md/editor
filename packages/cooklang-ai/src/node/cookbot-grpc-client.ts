@@ -32,6 +32,7 @@ import {
     CookbotFetchResult,
     CookbotConvertResult,
     CookbotCatalogRecipe,
+    CookbotSavedPreferences,
 } from '../common/cookbot-server-tools-protocol';
 import { CookbotUsageStats } from '../common/cookbot-usage-protocol';
 import { CookbotError } from '../common/cookbot-error';
@@ -45,6 +46,26 @@ export class CookbotGrpcClient {
 
     /** Ceiling for a single received gRPC message, in bytes (grpc-js defaults to 4 MB). */
     protected static readonly MAX_RECEIVE_MESSAGE_LENGTH = 64 * 1024 * 1024;
+
+    /**
+     * Budget for the conversation history we send, in bytes.
+     *
+     * A ChatRequest carries the whole history, so its size grows with the
+     * conversation rather than with what the user just typed. If it exceeds
+     * what the server will decode, the request fails at the transport - and
+     * because the offending turn stays in the history, so does every request
+     * after it, wedging the session with no way back but a new chat. Trimming
+     * on the way out keeps that failure impossible, and costs the user only
+     * the tail of an oversized tool result.
+     *
+     * Set well under the server's own decode limit so ordinary growth is
+     * handled by compaction, which can actually shrink the history, rather
+     * than by this last-resort trim.
+     */
+    protected static readonly MAX_REQUEST_BYTES = 8 * 1024 * 1024;
+
+    /** What one tool result is allowed to contribute once trimming kicks in. */
+    protected static readonly TRIMMED_TOOL_RESULT_CHARS = 20_000;
 
     private service: any;
     private sessionId: string | undefined;
@@ -180,6 +201,70 @@ export class CookbotGrpcClient {
         });
     }
 
+    /**
+     * Keep the outgoing history inside {@link MAX_REQUEST_BYTES} by shortening
+     * tool results, oldest first.
+     *
+     * Only tool results are touched: they are the only part of a conversation
+     * that can be arbitrarily large without the user having typed it, and the
+     * only part whose tail is routinely disposable. User and assistant text is
+     * never trimmed - losing what someone actually said would be worse than
+     * the failure this avoids.
+     *
+     * Returns the input untouched in the common case, so a normal conversation
+     * pays only one size calculation.
+     */
+    protected trimOversizedHistory(messages: CookbotMessageParam[]): CookbotMessageParam[] {
+        if (this.historyByteLength(messages) <= CookbotGrpcClient.MAX_REQUEST_BYTES) {
+            return messages;
+        }
+
+        // Copy before mutating: `messages` belongs to the caller's session and
+        // is reused for the next turn.
+        const trimmed = messages.map(msg => ({ ...msg, content: msg.content.map(part => ({ ...part })) }));
+        let dropped = 0;
+
+        // Oldest first: recent tool results are the ones the model is still
+        // reasoning about.
+        for (const msg of trimmed) {
+            for (const part of msg.content) {
+                const content = part.toolResultContent;
+                if (!content || content.length <= CookbotGrpcClient.TRIMMED_TOOL_RESULT_CHARS) {
+                    continue;
+                }
+                dropped += content.length - CookbotGrpcClient.TRIMMED_TOOL_RESULT_CHARS;
+                const kept = content.slice(0, CookbotGrpcClient.TRIMMED_TOOL_RESULT_CHARS);
+                part.toolResultContent = `${kept}\n\n...(truncated: this tool result was ${content.length} characters`
+                    + ' and has been shortened to keep the conversation within limits)';
+                if (this.historyByteLength(trimmed) <= CookbotGrpcClient.MAX_REQUEST_BYTES) {
+                    console.warn(`[Cookbot] Trimmed ${dropped} characters of tool results to keep the request within limits`);
+                    return trimmed;
+                }
+            }
+        }
+
+        // Still over budget with every tool result trimmed: the history is
+        // genuinely large. Send it and let the server's limit and compaction
+        // decide - failing here would be a worse outcome than trying.
+        console.warn(`[Cookbot] History is ${this.historyByteLength(trimmed)} bytes after trimming every tool result`);
+        return trimmed;
+    }
+
+    /** Approximate encoded size of the history: the bytes its strings occupy. */
+    protected historyByteLength(messages: CookbotMessageParam[]): number {
+        let total = 0;
+        for (const msg of messages) {
+            for (const part of msg.content) {
+                total += Buffer.byteLength(part.text || '', 'utf8')
+                    + Buffer.byteLength(part.input || '', 'utf8')
+                    + Buffer.byteLength(part.toolResultContent || '', 'utf8')
+                    + Buffer.byteLength(part.thinking || '', 'utf8')
+                    + Buffer.byteLength(part.signature || '', 'utf8');
+            }
+        }
+        return total;
+    }
+
     sendMessage(
         messages: CookbotMessageParam[],
         tools: CookbotToolDefinition[],
@@ -188,7 +273,7 @@ export class CookbotGrpcClient {
         this.ensureConnected();
 
         // Convert messages to proto format
-        const protoMessages = messages.map(msg => ({
+        const protoMessages = this.trimOversizedHistory(messages).map(msg => ({
             role: msg.role,
             content: msg.content.map(part => ({
                 type: part.type,
@@ -365,6 +450,37 @@ export class CookbotGrpcClient {
                     course: response.course,
                     content: response.content,
                     suggestedPath: response.suggestedPath,
+                });
+            });
+        });
+    }
+
+    async getUserPreferences(): Promise<CookbotSavedPreferences> {
+        return this.withReconnectRetry('GetUserPreferences', () => this.doGetUserPreferences());
+    }
+
+    protected async doGetUserPreferences(): Promise<CookbotSavedPreferences> {
+        this.ensureConnected();
+        return new Promise((resolve, reject) => {
+            this.service.GetUserPreferences({
+                sessionId: this.sessionId || '',
+            }, (err: grpc.ServiceError | null, response: any) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                let preferences: Record<string, unknown> = {};
+                try {
+                    preferences = JSON.parse(response.preferencesJson || '{}');
+                } catch {
+                    // The server sends a JSON object; anything else means the
+                    // user simply has nothing saved rather than a hard failure.
+                    console.warn('[Cookbot] GetUserPreferences returned unparseable JSON, treating as empty');
+                }
+                resolve({
+                    hasPreferences: !!response.hasPreferences,
+                    sources: response.sources || [],
+                    preferences,
                 });
             });
         });

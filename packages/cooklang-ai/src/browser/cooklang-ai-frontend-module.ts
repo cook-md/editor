@@ -21,11 +21,13 @@ import { CookbotUsagePath, CookbotUsageService } from '../common/cookbot-usage-p
 import { CookbotChatAgent } from './cookbot-chat-agent';
 import {
     CookbotSearchWebTool, CookbotFetchUrlTool, CookbotConvertUrlTool, CookbotConvertTextTool,
+    CookbotGetServerPreferencesTool,
 } from './cookbot-server-tools';
 import { CookbotSearchRecipeCatalogTool, CookbotAddCatalogRecipeTool } from './catalog-recipe-tools';
 import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
 import { WorkspacePreferencesSchema } from './file-tools/workspace-preferences';
 import { GetWorkspaceDirectoryStructure } from './file-tools/get-workspace-directory-structure';
+import { OpenRecipeFolder } from './file-tools/open-recipe-folder';
 import {
     FileContentFunction,
     GetWorkspaceFileList,
@@ -71,6 +73,10 @@ export default new ContainerModule(bind => {
     bindToolProvider(GetWorkspaceDirectoryStructure, bind);
     bindToolProvider(FindFilesByPattern, bind);
 
+    // Recovery when nothing is open: lets the assistant offer the folder picker
+    // instead of only reporting that every file tool failed.
+    bindToolProvider(OpenRecipeFolder, bind);
+
     // File tools — changeset infrastructure
     bind(ReplaceContentInFileFunctionHelper).toSelf().inSingletonScope();
     bind(ReplaceContentInFileFunctionHelperV2).toSelf().inSingletonScope();
@@ -87,6 +93,9 @@ export default new ContainerModule(bind => {
     bindToolProvider(CookbotFetchUrlTool, bind);
     bindToolProvider(CookbotConvertUrlTool, bind);
     bindToolProvider(CookbotConvertTextTool, bind);
+
+    // Saved cook.md preferences, so onboarding confirms rather than re-asks
+    bindToolProvider(CookbotGetServerPreferencesTool, bind);
 
     // cook.md catalog tools (issue cook-md#293)
     bindToolProvider(CookbotSearchRecipeCatalogTool, bind);

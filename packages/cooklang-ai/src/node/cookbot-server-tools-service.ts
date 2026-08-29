@@ -19,6 +19,7 @@ import {
     CookbotFetchResult,
     CookbotConvertResult,
     CookbotCatalogRecipe,
+    CookbotSavedPreferences,
 } from '../common/cookbot-server-tools-protocol';
 
 /**
@@ -58,5 +59,9 @@ export class CookbotServerToolsServiceImpl implements CookbotServerToolsService 
 
     async getCatalogRecipe(id: string): Promise<CookbotCatalogRecipe> {
         return this.grpcClient.getCatalogRecipe(id);
+    }
+
+    async getUserPreferences(): Promise<CookbotSavedPreferences> {
+        return this.grpcClient.getUserPreferences();
     }
 }
