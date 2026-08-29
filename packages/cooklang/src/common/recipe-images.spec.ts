@@ -12,7 +12,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { RecipeImages, lookupStepImage } from './recipe-images';
+import URI from '@theia/core/lib/common/uri';
+import { RecipeImages, lookupStepImage, resolveImageUri } from './recipe-images';
 
 describe('lookupStepImage', () => {
 
@@ -61,5 +62,57 @@ describe('lookupStepImage', () => {
 
     it('returns undefined when there are no images at all', () => {
         expect(lookupStepImage({ steps: {} }, 0, 0, 0)).to.be.undefined;
+    });
+});
+
+describe('resolveImageUri', () => {
+
+    const recipe = new URI('file:///work/recipes/Pancakes.cook');
+    const root = new URI('file:///work');
+
+    it('passes http and https URLs through untouched', () => {
+        expect(resolveImageUri('https://cdn.example/p.jpg', recipe, root))
+            .to.deep.equal({ kind: 'remote', url: 'https://cdn.example/p.jpg' });
+        expect(resolveImageUri('http://cdn.example/p.jpg', recipe, root))
+            .to.deep.equal({ kind: 'remote', url: 'http://cdn.example/p.jpg' });
+    });
+
+    // Discovery is sibling-based, so an absolute path always names a file next
+    // to the recipe. Rebuilding it from the recipe URI avoids converting a raw
+    // OS path into a URI in browser code.
+    it('resolves an absolute path against the recipe folder by basename', () => {
+        const result = resolveImageUri('/work/recipes/Pancakes.jpg', recipe, root);
+        expect(result?.kind).to.equal('file');
+        expect((result as { uri: URI }).uri.toString())
+            .to.equal('file:///work/recipes/Pancakes.jpg');
+    });
+
+    it('resolves a Windows-style absolute path by basename too', () => {
+        const result = resolveImageUri('C:\\work\\recipes\\Pancakes.jpg', recipe, root);
+        expect((result as { uri: URI }).uri.toString())
+            .to.equal('file:///work/recipes/Pancakes.jpg');
+    });
+
+    it('resolves a relative metadata path against the recipe folder', () => {
+        const result = resolveImageUri('photo.jpg', recipe, root);
+        expect((result as { uri: URI }).uri.toString())
+            .to.equal('file:///work/recipes/photo.jpg');
+    });
+
+    it('resolves a root-relative metadata path against the workspace root', () => {
+        const result = resolveImageUri('images/photo.jpg', recipe, root);
+        expect((result as { uri: URI }).uri.toString())
+            .to.equal('file:///work/images/photo.jpg');
+    });
+
+    it('falls back to the recipe folder when there is no workspace root', () => {
+        const result = resolveImageUri('images/photo.jpg', recipe, undefined);
+        expect((result as { uri: URI }).uri.toString())
+            .to.equal('file:///work/recipes/images/photo.jpg');
+    });
+
+    it('returns undefined for blank input', () => {
+        expect(resolveImageUri('', recipe, root)).to.be.undefined;
+        expect(resolveImageUri('   ', recipe, root)).to.be.undefined;
     });
 });

@@ -11,6 +11,8 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+import URI from '@theia/core/lib/common/uri';
+
 /**
  * Image paths for one recipe, as returned by the `recipeImages` RPC.
  *
@@ -46,4 +48,49 @@ export function lookupStepImage(
 ): string | undefined {
     return images.steps[String(sectionIndex)]?.[String(stepInSection)]
         ?? images.steps['0']?.[String(globalStepIndex)];
+}
+
+/** Where an image should be loaded from. */
+export type ImageLocation =
+    | { kind: 'remote'; url: string }
+    | { kind: 'file'; uri: URI };
+
+/** Image file extensions `cooklang-find` discovers, lower-case, in its own order. */
+export const RECIPE_IMAGE_EXTENSIONS: ReadonlyArray<string> = ['jpg', 'jpeg', 'png', 'webp'];
+
+/**
+ * Turn a raw image value from the `recipeImages` RPC into something loadable.
+ *
+ * - `http(s)` URLs are passed through.
+ * - An absolute path names a sibling of the recipe, so only its basename is
+ *   used and it is resolved against the recipe's folder. This keeps browser
+ *   code free of raw OS paths and works for both POSIX and Windows separators.
+ * - A relative path from metadata with no separator resolves against the
+ *   recipe's folder; one with a separator resolves against the workspace root
+ *   (matching cookcli, which serves relative metadata paths from the root),
+ *   falling back to the recipe's folder when no workspace is open.
+ */
+export function resolveImageUri(
+    raw: string,
+    recipeUri: URI,
+    workspaceRootUri: URI | undefined
+): ImageLocation | undefined {
+    const value = raw.trim();
+    if (value.length === 0) {
+        return undefined;
+    }
+    if (/^https?:\/\//i.test(value)) {
+        return { kind: 'remote', url: value };
+    }
+    const folder = recipeUri.parent;
+    const normalized = value.replace(/\\/g, '/');
+    const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
+    if (isAbsolute) {
+        const base = normalized.substring(normalized.lastIndexOf('/') + 1);
+        return base.length === 0 ? undefined : { kind: 'file', uri: folder.resolve(base) };
+    }
+    if (normalized.includes('/') && workspaceRootUri) {
+        return { kind: 'file', uri: workspaceRootUri.resolve(normalized) };
+    }
+    return { kind: 'file', uri: folder.resolve(normalized) };
 }
