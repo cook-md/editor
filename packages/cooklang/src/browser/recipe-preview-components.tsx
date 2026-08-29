@@ -34,6 +34,7 @@ import {
     formatQuantity,
     scaleRecipe,
 } from '../common/recipe-types';
+import { ResolvedRecipeImages, lookupStepImage } from '../common/recipe-images';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -41,6 +42,7 @@ import {
 
 const SKIP_META_KEYS = new Set([
     'name', 'tags', 'tag', 'description', 'images', 'image', 'locale',
+    'picture', 'pictures',
 ]);
 
 const KNOWN_META_KEYS: ReadonlyArray<string> = [
@@ -186,6 +188,31 @@ const StepIngredientsSummary = ({ items, ingredients }: StepIngredientsSummaryPr
 };
 
 // ---------------------------------------------------------------------------
+// RecipeImage
+// ---------------------------------------------------------------------------
+
+interface RecipeImageProps {
+    src: string;
+    alt: string;
+    className: string;
+}
+
+/**
+ * An image that removes itself when the source fails to load, so a corrupt or
+ * vanished file degrades to no image rather than a broken-image icon.
+ */
+const RecipeImage = ({ src, alt, className }: RecipeImageProps): React.ReactElement => {
+    const [failed, setFailed] = React.useState(false);
+    const onError = React.useCallback(() => setFailed(true), []);
+    // A new src is a new attempt: clear the previous failure.
+    React.useEffect(() => setFailed(false), [src]);
+    if (failed) {
+        return <></>;
+    }
+    return <img className={className} src={src} alt={alt} onError={onError} />;
+};
+
+// ---------------------------------------------------------------------------
 // SectionContentView  (single step or text note)
 // ---------------------------------------------------------------------------
 
@@ -195,6 +222,7 @@ interface SectionContentViewProps {
     cookware: Cookware[];
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
+    imageSrc?: string;
 }
 
 const SectionContentView = ({
@@ -203,6 +231,7 @@ const SectionContentView = ({
     cookware,
     timers,
     inlineQuantities,
+    imageSrc,
 }: SectionContentViewProps): React.ReactElement => {
     if (content.type === 'text') {
         return <div className='note-item'>{content.value}</div>;
@@ -224,6 +253,9 @@ const SectionContentView = ({
                     />
                 ))}
                 <StepIngredientsSummary items={items} ingredients={ingredients} />
+                {imageSrc && (
+                    <RecipeImage className='step-image' src={imageSrc} alt={`Step ${number}`} />
+                )}
             </div>
         </div>
     );
@@ -239,6 +271,7 @@ interface InstructionsPanelProps {
     cookware: Cookware[];
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
+    images?: ResolvedRecipeImages;
 }
 
 export const InstructionsPanel = ({
@@ -247,28 +280,49 @@ export const InstructionsPanel = ({
     cookware,
     timers,
     inlineQuantities,
-}: InstructionsPanelProps): React.ReactElement => (
-    <div className='recipe-instructions'>
-        <h2 className='instructions-title'>Instructions</h2>
-        {sections.map((section, sIdx) => (
-            <React.Fragment key={sIdx}>
-                {section.name && (
-                    <h3 className='section-header'>{section.name}</h3>
-                )}
-                {section.content.map((content, cIdx) => (
-                    <SectionContentView
-                        key={cIdx}
-                        content={content}
-                        ingredients={ingredients}
-                        cookware={cookware}
-                        timers={timers}
-                        inlineQuantities={inlineQuantities}
-                    />
-                ))}
-            </React.Fragment>
-        ))}
-    </div>
-);
+    images,
+}: InstructionsPanelProps): React.ReactElement => {
+    // Steps are counted here rather than read from `content.value.number` so the
+    // per-section and global counters match cookcli's `builders.rs` exactly,
+    // whichever convention the parser uses for `number`.
+    let globalStepIndex = 0;
+    return (
+        <div className='recipe-instructions'>
+            <h2 className='instructions-title'>Instructions</h2>
+            {sections.map((section, sIdx) => {
+                let stepInSection = 0;
+                return (
+                    <React.Fragment key={sIdx}>
+                        {section.name && (
+                            <h3 className='section-header'>{section.name}</h3>
+                        )}
+                        {section.content.map((content, cIdx) => {
+                            let imageSrc: string | undefined;
+                            if (content.type === 'step') {
+                                if (images) {
+                                    imageSrc = lookupStepImage(images, sIdx, stepInSection, globalStepIndex);
+                                }
+                                stepInSection++;
+                                globalStepIndex++;
+                            }
+                            return (
+                                <SectionContentView
+                                    key={cIdx}
+                                    content={content}
+                                    ingredients={ingredients}
+                                    cookware={cookware}
+                                    timers={timers}
+                                    inlineQuantities={inlineQuantities}
+                                    imageSrc={imageSrc}
+                                />
+                            );
+                        })}
+                    </React.Fragment>
+                );
+            })}
+        </div>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // IngredientRow
@@ -437,12 +491,13 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
 export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
+    images?: ResolvedRecipeImages;
     onShowSource?: () => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName, onShowSource, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
+export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
     const [scale, setScale] = React.useState(1);
     const meta = recipe.metadata.map;
 
@@ -465,6 +520,9 @@ export const RecipeView = ({ recipe, fileName, onShowSource, onAddToShoppingList
 
     return (
         <div>
+            {images?.title && (
+                <RecipeImage className='recipe-hero-image' src={images.title} alt={title} />
+            )}
             <div className='recipe-header'>
                 <h1 className='recipe-title'>{title}</h1>
                 <div className='recipe-header-actions'>
@@ -528,6 +586,7 @@ export const RecipeView = ({ recipe, fileName, onShowSource, onAddToShoppingList
                     cookware={scaled.cookware}
                     timers={scaled.timers}
                     inlineQuantities={scaled.inline_quantities}
+                    images={images}
                 />
             </div>
         </div>

@@ -388,3 +388,25 @@
     color: var(--theia-descriptionForeground);
     font-style: italic;
 }
+
+/* Recipe images -------------------------------------------------------- */
+
+.theia-recipe-preview .recipe-hero-image {
+    display: block;
+    margin: 0 auto 16px;
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px var(--theia-widget-shadow);
+}
+
+.theia-recipe-preview .step-image {
+    display: block;
+    margin-top: 10px;
+    max-width: 320px;
+    width: 100%;
+    height: auto;
+    border-radius: 6px;
+    box-shadow: 0 1px 4px var(--theia-widget-shadow);
+}
