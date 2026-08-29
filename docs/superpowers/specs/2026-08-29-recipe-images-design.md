@@ -151,22 +151,32 @@ Path resolution also lives here:
 ```ts
 export function resolveImageUri(
     raw: string,
-    recipeUri: URI,
-    workspaceRootUri: URI | undefined
+    recipeUri: URI
 ): { kind: 'remote'; url: string } | { kind: 'file'; uri: URI } | undefined;
 ```
 
-- `http://` / `https://` → passed through unchanged.
-- An absolute path → take its basename and resolve it against the recipe's
-  parent URI. Discovery is sibling-based, so this is always correct and avoids
-  converting a raw OS path into a URI in browser code.
-- A relative path from metadata → resolve against the recipe's folder first,
-  then the workspace root.
+Exactly three rules, with no heuristics:
 
-That last fallback is a deliberate, small superset of CookCLI, which resolves
-relative metadata paths against the workspace root only. `image: photo.jpg`
-next to the recipe is the obvious intent and currently 404s in CookCLI; trying
-the recipe folder first fixes that without breaking the root-relative case.
+- `http://` / `https://` (case-insensitive) → passed through unchanged.
+- An absolute path — POSIX `/…` or Windows `C:\…` / `C:/…` → used as given,
+  via `URI.fromFilePath`. Windows separators are normalised to `/` first,
+  because `URI.fromFilePath` does not translate them.
+- Anything else is relative → resolved against the recipe file's own folder.
+
+The rationale is that `cooklang-find` has already answered almost everything.
+`find_title_image` and `find_step_images` both return **absolute** paths, so
+those need no interpretation at all — rebuilding them from the recipe URI, or
+reducing them to a basename, would only discard information the crate gave us.
+The single genuinely ambiguous value is a metadata string (`image:`, `images:`,
+`picture:`, `pictures:`), which `Metadata::image_url()` hands back verbatim
+with zero resolution. For that one case we apply one conventional reading —
+relative to the recipe file — and stop guessing. In particular there is no
+workspace-root fallback: a metadata path containing a separator is treated the
+same as one without.
+
+`RECIPE_IMAGE_MIME_TYPES` also lives here and is the single source of truth for
+supported extensions; `RECIPE_IMAGE_EXTENSIONS` is derived from its keys and
+`RecipeImageService` reads its MIME types from it, so the two cannot drift.
 
 ### 3. Image loading — `packages/cooklang/src/browser/recipe-image-service.ts`
 
@@ -186,6 +196,12 @@ export class RecipeImageService {
   (`jpg`/`jpeg` → `image/jpeg`, `png` → `image/png`, `webp` → `image/webp`).
 - An internal `Map<string, string>` keyed by URI string means repeated renders
   of the same image reuse one object URL. `releaseAll()` revokes every URL.
+- A parallel map holds the *in-flight* read promise for each URI, so concurrent
+  `resolve` calls share one read, and an invalidation counter is captured before
+  the awaits. A read that settles after `release(uri)` or `releaseAll()` has
+  already run is stale: its object URL is revoked and discarded rather than
+  cached. Without that, disposing mid-read leaked a URL nothing could revoke,
+  and a file overwritten mid-read cached the old bytes permanently.
 - Files larger than 20 MB are skipped: `FileService` reads travel over the RPC
   channel to the backend, so a huge file would stall the preview.
 - A missing or unreadable file resolves to `undefined` rather than throwing.
@@ -207,16 +223,29 @@ protected images: ResolvedRecipeImages = { steps: {} };
 where the values are `src` strings ready for an `<img>`.
 
 - `setUri()` and the existing parse path both trigger `refreshImages()`.
-- `refreshImages()` calls `service.recipeImages(path)`, resolves every entry
-  through `RecipeImageService`, and guards on an `imageSequence` counter — the
-  same pattern `parseContent` uses — so a stale async resolve cannot overwrite
-  a newer result. Then `update()`.
+- `refreshImages()` calls `service.recipeImages(path)`, flattens the title and
+  every step entry into one list and resolves them with `Promise.all` — each is
+  a `FileService` read over RPC, so resolving them in sequence would make a
+  20-image recipe wait for ~40 round-trips before anything rendered. It guards
+  on an `imageSequence` counter — the same pattern `parseContent` uses — so a
+  stale async resolve cannot overwrite a newer result. Then `update()`.
+- A failed refresh is logged with `console.debug`. It is usually harmless (no
+  images, an unsaved file, an unreadable folder), but it is also where
+  `native.recipeImages is not a function` surfaces when the addon has not been
+  rebuilt, and that should not vanish silently.
 - Watching: `fileService.watch(this.uri.parent)` plus an `onDidFilesChange`
-  listener filtered to files whose name matches the recipe stem followed by a
-  dot and a supported image extension. Dropping `Pancakes.jpg` into the folder
-  refreshes an open preview; deleting it removes the image. The watcher
-  disposable goes on `this.toDispose`, and the handler is debounced by 150 ms
-  so a multi-file copy triggers one refresh.
+  listener. The listener does **not** re-derive the `<stem>.N.<ext>` naming
+  convention — that is `cooklang-find`'s job, and duplicating it meant a
+  metadata-referenced image such as `image: photo.jpg` never matched and so was
+  never invalidated. Instead `refreshImages()` records the set of file URIs it
+  actually resolved (remote ones excluded), and the handler refreshes when a
+  change either hits a URI in that set — calling `imageService.release(uri)` for
+  each, so an image replaced in place is re-read — or is a file in the watched
+  folder with an extension in `RECIPE_IMAGE_EXTENSIONS`. The second case is what
+  makes a *newly added* sibling image appear: a file that did not exist at the
+  last refresh cannot be in the resolved set. The watcher disposable goes on
+  `this.toDispose`, and the handler is debounced by 150 ms so a multi-file copy
+  triggers one refresh.
 
 ### 5. Rendering — `recipe-preview-components.tsx`
 
@@ -246,8 +275,14 @@ left-aligned. No hard-coded colours.
 - `recipe-images.spec.ts` — lookup precedence (section-specific beats linear),
   linear-only, section-only, missing, and every `resolveImageUri` branch.
   Monaco-free, no DOM.
-- `recipe-image-service.spec.ts` — MIME mapping, cache reuse, the size cap, and
-  missing-file → `undefined`, against a stubbed `FileService`.
+- `recipe-image-service.spec.ts` — MIME mapping (asserted on the captured
+  `Blob.type`, not merely that a URL came back), cache reuse, the size cap,
+  missing-file → `undefined`, and the in-flight cases above, against a stubbed
+  `FileService` whose reads can be deferred and settled by the test.
+- `recipe-preview-components.spec.ts` — `InstructionsPanel` rendered with
+  `renderToStaticMarkup` over a two-section recipe, checking that the panel
+  feeds `lookupStepImage` the right per-section and global indices and that a
+  text note does not advance either counter. Monaco-free, no jsdom needed.
 - Manual: open a recipe with `Pancakes.jpg`, `Pancakes.1.jpg` and
   `Pancakes.2.3.jpg`; confirm hero and step placement; then drop a new image
   into the folder and confirm the preview refreshes live.
