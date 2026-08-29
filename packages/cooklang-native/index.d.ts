@@ -61,6 +61,16 @@ export declare function checkedSet(entriesJson: string): Array<string>
  * Returns the file content, or `null` if no matching file is found.
  */
 export declare function findRecipe(baseDir: string, name: string): string | null
+/**
+ * Title and step images for the recipe at `recipe_path`, discovered with
+ * `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
+ *
+ * Returns JSON `{ "title": string | null, "steps": { section: { step: path } } }`.
+ * `title` is the raw value from metadata (which may be a URL or a relative path)
+ * or an absolute path to a sibling file. `steps` keys are zero-indexed, with
+ * section 0 holding the linear `Recipe.N.ext` form.
+ */
+export declare function recipeImages(recipePath: string): string
 export declare function compactChecked(entriesJson: string, currentIngredients: Array<string>): string
 /**
  * Search recipes under `base_dir` the way `cook search` does

@@ -275,6 +275,11 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         return result ?? undefined;
     }
 
+    async recipeImages(recipePath: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.recipeImages(recipePath);
+    }
+
     async searchRecipes(baseDir: string, query: string): Promise<string> {
         const native = require('@theia/cooklang-native');
         return native.searchRecipes(baseDir, query);

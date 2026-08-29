@@ -18,6 +18,7 @@ export const AISLE_CONF_TEXTMATE_SCOPE = 'source.aisle-conf';
 export { CooklangLanguageService, CooklangLanguageServicePath } from './cooklang-language-service';
 export { CooklangUri } from './cooklang-uri';
 export * from './recipe-types';
+export * from './recipe-images';
 export { CooklangPreferences, bindCooklangPreferences } from './cooklang-preferences';
 export * from './shopping-list-types';
 export * from './menu-types';

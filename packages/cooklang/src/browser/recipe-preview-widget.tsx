@@ -25,6 +25,13 @@ import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
 import { Recipe } from '../common/recipe-types';
+import {
+    RecipeImages,
+    ResolvedRecipeImages,
+    resolveImageUri,
+    RECIPE_IMAGE_EXTENSIONS,
+} from '../common/recipe-images';
+import { RecipeImageService } from './recipe-image-service';
 import { RecipeView } from './recipe-preview-components';
 
 import '../../src/browser/style/recipe-preview.css';
@@ -70,11 +77,19 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
 
+    @inject(RecipeImageService)
+    protected readonly imageService: RecipeImageService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected parseSequence = 0;
+    protected images: ResolvedRecipeImages = { steps: {} };
+    protected imageSequence = 0;
+    protected imageDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+    /** File URIs the last successful refresh actually resolved (remote ones excluded). */
+    protected resolvedImageUris: ReadonlySet<string> = new Set<string>();
 
     @postConstruct()
     protected init(): void {
@@ -102,6 +117,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.title.caption = `Recipe preview for ${uri.toString()}`;
         this.title.closable = true;
         this.title.iconClass = 'codicon codicon-open-preview';
+        this.watchImageFolder();
+        this.refreshImages();
         this.parseCurrentContent();
     }
 
@@ -190,6 +207,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 this.recipe = undefined;
                 this.parseErrors = [`Failed to parse response: ${e}`];
             }
+            this.refreshImages();
             this.update();
         }).catch(e => {
             if (this.isDisposed || sequence !== this.parseSequence) {
@@ -199,6 +217,124 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             this.parseErrors = [`Parse request failed: ${e}`];
             this.update();
         });
+    }
+
+    // --- Image helpers ---
+
+    /**
+     * Watch the recipe's folder so an image dropped in from Finder shows up in
+     * an already-open preview, and a deleted one disappears.
+     */
+    protected watchImageFolder(): void {
+        const folder = this.uri.parent;
+        this.toDispose.push(this.fileService.watch(folder));
+        this.toDispose.push(this.fileService.onDidFilesChange(event => {
+            // Which files this recipe uses is `cooklang-find`'s answer, not
+            // something to re-derive here: consult the set the last refresh
+            // resolved rather than pattern-matching filenames.
+            const touched = event.changes
+                .map(change => change.resource)
+                .filter(resource => this.resolvedImageUris.has(resource.toString()));
+            // A file that did not exist at the last refresh cannot be in that
+            // set, so also react to any image appearing in the watched folder.
+            const folderKey = folder.toString();
+            const nearbyImage = event.changes.some(change =>
+                change.resource.parent.toString() === folderKey
+                && RECIPE_IMAGE_EXTENSIONS.includes(change.resource.path.ext.replace(/^\./, '').toLowerCase()));
+            if (touched.length === 0 && !nearbyImage) {
+                return;
+            }
+            // An image replaced in place keeps its URI, so the cached blob for
+            // it has to go or the preview would keep showing the old bytes.
+            for (const resource of touched) {
+                this.imageService.release(resource);
+            }
+            this.debouncedRefreshImages();
+        }));
+    }
+
+    /** Coalesce the burst of events a multi-file copy produces into one refresh. */
+    protected debouncedRefreshImages(): void {
+        if (this.imageDebounceTimer !== undefined) {
+            clearTimeout(this.imageDebounceTimer);
+        }
+        this.imageDebounceTimer = setTimeout(() => {
+            this.imageDebounceTimer = undefined;
+            this.refreshImages();
+        }, 150);
+    }
+
+    /**
+     * Ask the backend which images exist for this recipe and turn each one into
+     * an `<img>` src. Guarded by `imageSequence` so a slow refresh cannot
+     * overwrite a newer one.
+     */
+    protected async refreshImages(): Promise<void> {
+        if (!this.uri) {
+            return;
+        }
+        const sequence = ++this.imageSequence;
+        const resolved: ResolvedRecipeImages = { steps: {} };
+        const fileUris = new Set<string>();
+        try {
+            const json = await this.service.recipeImages(this.uri.path.fsPath());
+            const discovered = JSON.parse(json) as RecipeImages;
+            // Every entry is a `FileService` read over RPC, so they are flattened
+            // and awaited together: a 20-image recipe should not pay for forty
+            // sequential round-trips before anything renders.
+            const entries: Array<{ section?: string; step?: string; raw: string }> = [];
+            if (discovered.title) {
+                entries.push({ raw: discovered.title });
+            }
+            for (const [section, steps] of Object.entries(discovered.steps ?? {})) {
+                for (const [step, raw] of Object.entries(steps)) {
+                    entries.push({ section, step, raw });
+                }
+            }
+            await Promise.all(entries.map(async entry => {
+                const src = await this.toImageSrc(entry.raw, fileUris);
+                if (!src) {
+                    return;
+                }
+                if (entry.section === undefined || entry.step === undefined) {
+                    resolved.title = src;
+                } else {
+                    (resolved.steps[entry.section] ??= {})[entry.step] = src;
+                }
+            }));
+        } catch (e) {
+            // Usually harmless: no images, an unsaved file, or an unreadable
+            // folder. But it also catches a native addon that predates
+            // `recipeImages` and needs rebuilding, so say what happened.
+            console.debug('Recipe image refresh failed', e);
+        }
+        if (this.isDisposed || sequence !== this.imageSequence) {
+            return;
+        }
+        this.images = resolved;
+        this.resolvedImageUris = fileUris;
+        this.update();
+    }
+
+    /**
+     * Resolve one raw image value to a URL an `<img>` can load, recording every
+     * local file URI in `fileUris` so the watcher knows what this recipe reads.
+     */
+    protected async toImageSrc(raw: string | undefined, fileUris: Set<string>): Promise<string | undefined> {
+        if (!raw) {
+            return undefined;
+        }
+        const location = resolveImageUri(raw, this.uri);
+        if (!location) {
+            return undefined;
+        }
+        if (location.kind === 'remote') {
+            return location.url;
+        }
+        // Recorded even when the read fails: a file that is missing now may be
+        // created later, and the watcher should notice when it is.
+        fileUris.add(location.uri.toString());
+        return this.imageService.resolve(location.uri);
     }
 
     // --- Rendering ---
@@ -229,6 +365,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 <RecipeView
                     recipe={this.recipe}
                     fileName={this.uri?.path.base ?? ''}
+                    images={this.images}
                     onShowSource={this.handleShowSource}
                     onAddToShoppingList={this.handleAddToShoppingList}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
@@ -263,6 +400,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             clearTimeout(this.debounceTimer);
             this.debounceTimer = undefined;
         }
+        if (this.imageDebounceTimer !== undefined) {
+            clearTimeout(this.imageDebounceTimer);
+            this.imageDebounceTimer = undefined;
+        }
+        this.imageService.releaseAll();
         super.dispose();
     }
 }
@@ -283,6 +425,7 @@ export function createRecipePreviewWidget(
     uri: URI
 ): RecipePreviewWidget {
     const child = container.createChild();
+    child.bind(RecipeImageService).toSelf().inSingletonScope();
     child.bind(RecipePreviewWidget).toSelf().inTransientScope();
     const widget = child.get(RecipePreviewWidget);
     widget.setUri(uri);

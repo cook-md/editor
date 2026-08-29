@@ -949,6 +949,26 @@ pub fn napi_find_recipe(base_dir: String, name: String) -> napi::Result<Option<S
     }
 }
 
+/// Title and step images for the recipe at `recipe_path`, discovered with
+/// `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
+///
+/// Returns JSON `{ "title": string | null, "steps": { section: { step: path } } }`.
+/// `title` is the raw value from metadata (which may be a URL or a relative path)
+/// or an absolute path to a sibling file. `steps` keys are zero-indexed, with
+/// section 0 holding the linear `Recipe.N.ext` form.
+#[napi(js_name = "recipeImages")]
+pub fn napi_recipe_images(recipe_path: String) -> napi::Result<String> {
+    let path = Utf8PathBuf::from(recipe_path);
+    let entry = cooklang_find::RecipeEntry::from_path(path)
+        .map_err(|e| napi::Error::from_reason(format!("recipeImages: {e}")))?;
+    let payload = serde_json::json!({
+        "title": entry.title_image(),
+        "steps": entry.step_images().images,
+    });
+    serde_json::to_string(&payload)
+        .map_err(|e| napi::Error::from_reason(format!("recipeImages serialize: {e}")))
+}
+
 #[napi(js_name = "compactChecked")]
 pub fn napi_compact_checked(
     entries_json: String,
@@ -1654,5 +1674,87 @@ mod sync_status_tests {
         let mut state = SyncStatusState::default();
         state.apply_status_changed(cooklang_sync_client::SyncStatus::Downloading);
         assert_eq!(state.status, "downloading");
+    }
+}
+
+#[cfg(test)]
+mod recipe_images_tests {
+    use super::*;
+    use std::fs;
+
+    /// Creates a temp dir with `Recipe.cook` plus the given sibling image files.
+    fn fixture(name: &str, images: &[&str]) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!(
+            "cooklang-images-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let recipe = dir.join("Pancakes.cook");
+        fs::write(&recipe, "Crack the @eggs{2}.\nFry it.\n").unwrap();
+        for image in images {
+            fs::write(dir.join(image), b"fake").unwrap();
+        }
+        (dir.clone(), recipe.to_string_lossy().to_string())
+    }
+
+    #[test]
+    fn reports_no_images_when_folder_has_none() {
+        let (_dir, path) = fixture("none", &[]);
+        let json = napi_recipe_images(path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["title"].is_null());
+        assert_eq!(value["steps"].as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn finds_the_sibling_title_image() {
+        let (_dir, path) = fixture("title", &["Pancakes.jpg"]);
+        let json = napi_recipe_images(path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["title"].as_str().unwrap().ends_with("Pancakes.jpg"));
+    }
+
+    #[test]
+    fn finds_a_title_image_for_every_supported_extension() {
+        for ext in ["jpg", "jpeg", "png", "webp"] {
+            let (_dir, path) = fixture(ext, &[&format!("Pancakes.{ext}")]);
+            let json = napi_recipe_images(path).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert!(
+                value["title"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .ends_with(&format!("Pancakes.{ext}")),
+                "extension {ext} was not discovered"
+            );
+        }
+    }
+
+    // `Recipe.N.ext` is the linear form: step N across all sections, stored at [0][N-1].
+    #[test]
+    fn stores_linear_step_images_under_section_zero() {
+        let (_dir, path) = fixture("linear", &["Pancakes.1.jpg", "Pancakes.3.png"]);
+        let json = napi_recipe_images(path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["steps"]["0"]["0"].as_str().unwrap().ends_with("Pancakes.1.jpg"));
+        assert!(value["steps"]["0"]["2"].as_str().unwrap().ends_with("Pancakes.3.png"));
+    }
+
+    // `Recipe.S.N.ext` is the sectioned form: section S step N, stored at [S-1][N-1].
+    #[test]
+    fn stores_section_step_images_under_the_section_index() {
+        let (_dir, path) = fixture("sectioned", &["Pancakes.2.4.jpg"]);
+        let json = napi_recipe_images(path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["steps"]["1"]["3"].as_str().unwrap().ends_with("Pancakes.2.4.jpg"));
+    }
+
+    #[test]
+    fn errors_when_the_recipe_does_not_exist() {
+        assert!(napi_recipe_images("/definitely/not/here/Nope.cook".to_string()).is_err());
     }
 }
