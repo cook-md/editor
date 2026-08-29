@@ -67,6 +67,20 @@ export interface CooklangLanguageService {
     findRecipe(baseDir: string, name: string): Promise<string | undefined>;
 
     /**
+     * Title and step images for the recipe at `recipePath`, discovered with
+     * `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
+     *
+     * Returns JSON `{ title: string | null, steps: { [section]: { [step]: path } } }`.
+     * `title` is raw: an absolute path, a URL, or a relative path from metadata.
+     * `steps` keys are zero-indexed; section 0 holds the linear `Recipe.N.ext` form.
+     *
+     * `recipePath` must be an OS filesystem path (not a URI) — this RPC reads
+     * from disk directly via `cooklang-find` and bypasses Theia's `FileService`.
+     * Electron-only by design; remote/virtual workspaces are not supported.
+     */
+    recipeImages(recipePath: string): Promise<string>;
+
+    /**
      * Search recipes under `baseDir` like `cook search` (cooklang-find: filename
      * + content term scoring over `.cook` and `.menu`). A blank query lists every
      * recipe. Same disk-access caveat as `findRecipe` (OS path, Electron-only).
