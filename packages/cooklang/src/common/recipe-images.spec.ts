@@ -68,51 +68,52 @@ describe('lookupStepImage', () => {
 describe('resolveImageUri', () => {
 
     const recipe = new URI('file:///work/recipes/Pancakes.cook');
-    const root = new URI('file:///work');
 
     it('passes http and https URLs through untouched', () => {
-        expect(resolveImageUri('https://cdn.example/p.jpg', recipe, root))
+        expect(resolveImageUri('https://cdn.example/p.jpg', recipe))
             .to.deep.equal({ kind: 'remote', url: 'https://cdn.example/p.jpg' });
-        expect(resolveImageUri('http://cdn.example/p.jpg', recipe, root))
+        expect(resolveImageUri('http://cdn.example/p.jpg', recipe))
             .to.deep.equal({ kind: 'remote', url: 'http://cdn.example/p.jpg' });
     });
 
-    // Discovery is sibling-based, so an absolute path always names a file next
-    // to the recipe. Rebuilding it from the recipe URI avoids converting a raw
-    // OS path into a URI in browser code.
-    it('resolves an absolute path against the recipe folder by basename', () => {
-        const result = resolveImageUri('/work/recipes/Pancakes.jpg', recipe, root);
+    // `cooklang-find` returns absolute paths for everything it discovers, so
+    // they are used exactly as given rather than rebuilt from the recipe URI.
+    it('keeps a POSIX absolute path in full', () => {
+        const result = resolveImageUri('/work/images/hero.jpg', recipe);
         expect(result?.kind).to.equal('file');
+        expect((result as { uri: URI }).uri.path.toString())
+            .to.equal('/work/images/hero.jpg');
+    });
+
+    it('keeps an absolute path that is a sibling of the recipe', () => {
+        const result = resolveImageUri('/work/recipes/Pancakes.jpg', recipe);
         expect((result as { uri: URI }).uri.toString())
             .to.equal('file:///work/recipes/Pancakes.jpg');
     });
 
-    it('resolves a Windows-style absolute path by basename too', () => {
-        const result = resolveImageUri('C:\\work\\recipes\\Pancakes.jpg', recipe, root);
-        expect((result as { uri: URI }).uri.toString())
-            .to.equal('file:///work/recipes/Pancakes.jpg');
+    it('accepts a Windows-style absolute path', () => {
+        const result = resolveImageUri('C:\\work\\images\\hero.jpg', recipe);
+        expect(result?.kind).to.equal('file');
+        expect((result as { uri: URI }).uri.path.toString().toLowerCase())
+            .to.equal('/c:/work/images/hero.jpg');
     });
 
-    it('resolves a relative metadata path against the recipe folder', () => {
-        const result = resolveImageUri('photo.jpg', recipe, root);
+    it('resolves a relative sibling against the recipe folder', () => {
+        const result = resolveImageUri('photo.jpg', recipe);
         expect((result as { uri: URI }).uri.toString())
             .to.equal('file:///work/recipes/photo.jpg');
     });
 
-    it('resolves a root-relative metadata path against the workspace root', () => {
-        const result = resolveImageUri('images/photo.jpg', recipe, root);
+    // A metadata path with a separator is still relative to the recipe file,
+    // not to the workspace root.
+    it('resolves a relative path with a separator under the recipe folder', () => {
+        const result = resolveImageUri('photos/hero.jpg', recipe);
         expect((result as { uri: URI }).uri.toString())
-            .to.equal('file:///work/images/photo.jpg');
-    });
-
-    it('falls back to the recipe folder when there is no workspace root', () => {
-        const result = resolveImageUri('images/photo.jpg', recipe, undefined);
-        expect((result as { uri: URI }).uri.toString())
-            .to.equal('file:///work/recipes/images/photo.jpg');
+            .to.equal('file:///work/recipes/photos/hero.jpg');
     });
 
     it('returns undefined for blank input', () => {
-        expect(resolveImageUri('', recipe, root)).to.be.undefined;
-        expect(resolveImageUri('   ', recipe, root)).to.be.undefined;
+        expect(resolveImageUri('', recipe)).to.be.undefined;
+        expect(resolveImageUri('   ', recipe)).to.be.undefined;
     });
 });

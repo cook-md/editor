@@ -305,12 +305,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         if (!raw) {
             return undefined;
         }
-        const root = this.workspaceService.tryGetRoots()[0];
-        const location = resolveImageUri(
-            raw,
-            this.uri,
-            root ? new URI(root.resource.toString()) : undefined
-        );
+        const location = resolveImageUri(raw, this.uri);
         if (!location) {
             return undefined;
         }

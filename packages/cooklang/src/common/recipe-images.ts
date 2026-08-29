@@ -55,26 +55,35 @@ export type ImageLocation =
     | { kind: 'remote'; url: string }
     | { kind: 'file'; uri: URI };
 
+/**
+ * MIME type per supported image file extension, lower-case and without the
+ * leading dot. This is the single source of truth for which extensions the
+ * preview understands; {@link RECIPE_IMAGE_EXTENSIONS} is derived from it.
+ */
+export const RECIPE_IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+};
+
 /** Image file extensions `cooklang-find` discovers, lower-case, in its own order. */
-export const RECIPE_IMAGE_EXTENSIONS: ReadonlyArray<string> = ['jpg', 'jpeg', 'png', 'webp'];
+export const RECIPE_IMAGE_EXTENSIONS: ReadonlyArray<string> = Object.keys(RECIPE_IMAGE_MIME_TYPES);
 
 /**
  * Turn a raw image value from the `recipeImages` RPC into something loadable.
  *
- * - `http(s)` URLs are passed through.
- * - An absolute path names a sibling of the recipe, so only its basename is
- *   used and it is resolved against the recipe's folder. This keeps browser
- *   code free of raw OS paths and works for both POSIX and Windows separators.
- * - A relative path from metadata with no separator resolves against the
- *   recipe's folder; one with a separator resolves against the workspace root
- *   (matching cookcli, which serves relative metadata paths from the root),
- *   falling back to the recipe's folder when no workspace is open.
+ * `cooklang-find` returns absolute paths for everything it discovers on disk
+ * and hands metadata values (`image:`, `images:`, `picture:`, `pictures:`)
+ * back verbatim, so exactly three rules are needed:
+ *
+ * 1. `http://` or `https://` (case-insensitive) is passed through as a remote URL.
+ * 2. An absolute path — POSIX `/…` or Windows `C:\…` / `C:/…` — is used as given.
+ * 3. Anything else is relative and resolves against the recipe file's own folder.
+ *
+ * Blank or whitespace-only input yields `undefined`.
  */
-export function resolveImageUri(
-    raw: string,
-    recipeUri: URI,
-    workspaceRootUri: URI | undefined
-): ImageLocation | undefined {
+export function resolveImageUri(raw: string, recipeUri: URI): ImageLocation | undefined {
     const value = raw.trim();
     if (value.length === 0) {
         return undefined;
@@ -82,15 +91,11 @@ export function resolveImageUri(
     if (/^https?:\/\//i.test(value)) {
         return { kind: 'remote', url: value };
     }
-    const folder = recipeUri.parent;
+    // `URI.fromFilePath` does not translate Windows separators, so normalise them.
     const normalized = value.replace(/\\/g, '/');
     const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
     if (isAbsolute) {
-        const base = normalized.substring(normalized.lastIndexOf('/') + 1);
-        return base.length === 0 ? undefined : { kind: 'file', uri: folder.resolve(base) };
+        return { kind: 'file', uri: URI.fromFilePath(normalized) };
     }
-    if (normalized.includes('/') && workspaceRootUri) {
-        return { kind: 'file', uri: workspaceRootUri.resolve(normalized) };
-    }
-    return { kind: 'file', uri: folder.resolve(normalized) };
+    return { kind: 'file', uri: recipeUri.parent.resolve(normalized) };
 }
