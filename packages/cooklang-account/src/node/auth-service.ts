@@ -34,6 +34,14 @@ const RENEWAL_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const AuthServiceBackend = Symbol('AuthServiceBackend');
 export interface AuthServiceBackend extends AuthService {
     readonly onDidChangeAuth: Event<AuthState>;
+    /**
+     * Fires with the fresh token whenever a session-token renewal succeeds
+     * (app-start renewal and the periodic 24h renewal). Does NOT fire for
+     * login/logout — use `onDidChangeAuth` for those. Backend services that
+     * hold onto a token for a long-running task (e.g. sync) should listen to
+     * this to pick up the renewed token instead of going stale.
+     */
+    readonly onDidRenewToken: Event<string>;
 }
 
 @injectable()
@@ -46,6 +54,9 @@ export class AuthServiceImpl implements AuthServiceBackend {
 
     private readonly onDidChangeAuthEmitter = new Emitter<AuthState>();
     readonly onDidChangeAuth: Event<AuthState> = this.onDidChangeAuthEmitter.event;
+
+    private readonly onDidRenewTokenEmitter = new Emitter<string>();
+    readonly onDidRenewToken: Event<string> = this.onDidRenewTokenEmitter.event;
 
     @postConstruct()
     protected init(): void {
@@ -239,6 +250,7 @@ p { color: #666; }
                 };
                 await this.saveToDisk(renewed);
                 this.authData = renewed;
+                this.onDidRenewTokenEmitter.fire(renewed.token);
             }
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : String(err);
