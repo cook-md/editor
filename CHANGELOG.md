@@ -13,6 +13,14 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.42](https://github.com/cook-md/editor/compare/v0.1.0-alpha.41...v0.1.0-alpha.42) (2026-08-30)
+
+
+### Features
+
+* **sync:** restart sync task on session-token renewal ([9ec221d](https://github.com/cook-md/editor/commit/9ec221dacae87f3cb902285024f5d03d3f9e7838))
+* **sync:** restart sync task on session-token renewal ([d06fc76](https://github.com/cook-md/editor/commit/d06fc76ac54551f75ef38cd1df75f5e28cb1cc74))
+
 ## [0.1.0-alpha.41](https://github.com/cook-md/editor/compare/v0.1.0-alpha.40...v0.1.0-alpha.41) (2026-08-29)
 
 
