@@ -38,6 +38,14 @@ export class SyncServiceImpl implements SyncService {
     private lastStatus: SyncStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
     private nativeModule: typeof import('@theia/cooklang-native') | undefined;
 
+    /**
+     * The token the currently-running native sync task was started with, or
+     * `undefined` when sync isn't running. Lets us detect a stale token
+     * locally (equality check) without asking the native side.
+     */
+    private syncStartedWithToken: string | undefined;
+    private restartingSync = false;
+
     private readonly onDidChangeSyncStatusEmitter = new Emitter<SyncStatus>();
     readonly onDidChangeSyncStatus: Event<SyncStatus> = this.onDidChangeSyncStatusEmitter.event;
 
@@ -49,11 +57,16 @@ export class SyncServiceImpl implements SyncService {
         // the binding async, breaking synchronous Container.get() in RpcConnectionHandler.
         this.loadPreferences().then(() => {
             this.registerNativeCallback();
-            this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
+            this.registerAuthListeners();
             if (this.syncEnabled) {
                 this.startSyncIfReady();
             }
         });
+    }
+
+    private registerAuthListeners(): void {
+        this.authService.onDidChangeAuth(state => this.handleAuthChange(state));
+        this.authService.onDidRenewToken(token => this.handleTokenRenewed(token));
     }
 
     async enableSync(): Promise<void> {
@@ -141,8 +154,24 @@ export class SyncServiceImpl implements SyncService {
                 token,
                 namespaceId
             );
+            this.syncStartedWithToken = token;
         } catch (err) {
             console.error('Failed to start sync:', err);
+            return;
+        }
+
+        // A renewal can fire while this start was still in flight (most notably
+        // the initial start on app boot, which awaits the workspace lookup above)
+        // — `handleTokenRenewed` would have found `syncStartedWithToken` still
+        // undefined at that moment and treated sync as "not running yet", so it
+        // no-ops rather than restarting. Reconcile once against whatever token is
+        // current now that the start has landed, so that race doesn't leave the
+        // task on a token that's already stale. If another renewal lands during
+        // the resulting restart's own start, that start performs this same
+        // one-pass reconcile — it converges once no further renewal is racing it.
+        const currentToken = await this.authService.getToken();
+        if (currentToken && currentToken !== token) {
+            await this.restartSyncWithFreshToken();
         }
     }
 
@@ -153,6 +182,7 @@ export class SyncServiceImpl implements SyncService {
         } catch {
             // Native module not available
         }
+        this.syncStartedWithToken = undefined;
         this.lastStatus = { status: 'stopped', lastSyncedAt: undefined, error: undefined };
         this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
     }
@@ -162,6 +192,51 @@ export class SyncServiceImpl implements SyncService {
             await this.stopSync();
         } else if (this.syncEnabled) {
             await this.startSyncIfReady();
+        }
+    }
+
+    /**
+     * Reacts to a successful session-token renewal from auth-service. The
+     * running native sync task captures its token at start time and keeps
+     * using it for the process lifetime, so a long-lived editor session
+     * otherwise ends up presenting a stale (eventually claimless, eventually
+     * expired) token to the sync server. No-ops when sync isn't running,
+     * when the renewed token is unchanged, or (implicitly) when renewal
+     * failed — auth-service only fires this event on success.
+     */
+    private async handleTokenRenewed(token: string): Promise<void> {
+        if (!this.syncEnabled || this.syncStartedWithToken === undefined) {
+            return;
+        }
+        if (token === this.syncStartedWithToken) {
+            return;
+        }
+        await this.restartSyncWithFreshToken();
+    }
+
+    private async restartSyncWithFreshToken(): Promise<void> {
+        if (this.restartingSync) {
+            // Guard against overlapping restarts — at most one restart per renewal event.
+            return;
+        }
+        this.restartingSync = true;
+        try {
+            // Reuse the same stop/start path the sync toggle uses so a normal
+            // restart only ever passes through existing statuses ('stopped'
+            // then whatever the native side reports next) — never a synthetic
+            // 'error'.
+            await this.stopSync();
+            await this.startSyncIfReady();
+            if (this.syncEnabled && this.syncStartedWithToken === undefined) {
+                // The restart's start failed outright (native threw) or bailed
+                // out early (missing workspace/namespace) — don't leave the
+                // widget showing a silent 'stopped' while the toggle is still
+                // on and the user has no running sync and no explanation.
+                this.lastStatus = { status: 'error', lastSyncedAt: this.lastStatus.lastSyncedAt, error: 'Failed to restart sync after token renewal' };
+                this.onDidChangeSyncStatusEmitter.fire(this.lastStatus);
+            }
+        } finally {
+            this.restartingSync = false;
         }
     }
 
