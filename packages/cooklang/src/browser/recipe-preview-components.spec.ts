@@ -11,12 +11,15 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+/* eslint-disable no-null/no-null */
+
 import { expect } from 'chai';
 import * as React from '@theia/core/shared/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Section } from '../common/recipe-types';
 import { ResolvedRecipeImages } from '../common/recipe-images';
 import { InstructionsPanel } from './recipe-preview-components';
+import { TimerBindingProvider } from './timer-components';
 
 /** A step whose only content is `text`, so it is identifiable in the markup. */
 function step(text: string, number: number): Section['content'][number] {
@@ -89,5 +92,76 @@ describe('InstructionsPanel step image indices', () => {
         const markup = render(withNote, { steps: { '0': { '1': 'second.jpg' } } });
         expect(imageForStep(markup, 'two')).to.equal('second.jpg');
         expect(imageForStep(markup, 'one')).to.be.undefined;
+    });
+});
+
+describe('InstructionsPanel timer positions', () => {
+
+    it('numbers timers within their step and steps across sections', () => {
+        const sections: Section[] = [
+            {
+                name: null,
+                content: [
+                    {
+                        type: 'step',
+                        value: {
+                            number: 1,
+                            items: [
+                                { type: 'timer', index: 0 },
+                                { type: 'text', value: ' then ' },
+                                { type: 'timer', index: 1 },
+                            ],
+                        },
+                    },
+                ],
+            },
+            {
+                name: null,
+                content: [
+                    { type: 'step', value: { number: 1, items: [{ type: 'timer', index: 2 }] } },
+                ],
+            },
+        ];
+        const seen: Array<[number, number]> = [];
+        const markup = renderToStaticMarkup(
+            React.createElement(
+                TimerBindingProvider,
+                {
+                    value: {
+                        ref: (globalStepIndex: number, timerPosition: number) => {
+                            seen.push([globalStepIndex, timerPosition]);
+                            return {
+                                recipePath: 'file:///a.cook',
+                                recipeName: 'a',
+                                globalStepIndex,
+                                timerPosition,
+                                scale: 1,
+                            };
+                        },
+                        find: () => undefined,
+                        start: () => undefined,
+                        toggle: () => undefined,
+                        reset: () => undefined,
+                        addTime: () => undefined,
+                        nowMs: () => 0,
+                    },
+                },
+                React.createElement(InstructionsPanel, {
+                    sections,
+                    ingredients: [],
+                    cookware: [],
+                    timers: [
+                        { name: null, quantity: { value: { type: 'number', value: { type: 'regular', value: 5 } }, unit: 'minutes', scalable: true } },
+                        { name: null, quantity: { value: { type: 'number', value: { type: 'regular', value: 6 } }, unit: 'minutes', scalable: true } },
+                        { name: null, quantity: { value: { type: 'number', value: { type: 'regular', value: 7 } }, unit: 'minutes', scalable: true } },
+                    ],
+                    inlineQuantities: [],
+                    images: { steps: {} },
+                })
+            )
+        );
+        expect(seen).to.deep.equal([[0, 0], [0, 1], [1, 0]]);
+        expect(markup).to.contain('5 minutes');
+        expect(markup).to.contain('7 minutes');
     });
 });

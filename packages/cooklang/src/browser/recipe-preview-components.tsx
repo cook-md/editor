@@ -36,6 +36,7 @@ import {
 } from '../common/recipe-types';
 import { ResolvedRecipeImages, lookupStepImage } from '../common/recipe-images';
 import { linkify } from '../common/recipe-links';
+import { TimerBadge } from './timer-components';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -83,20 +84,6 @@ function ingredientIndicesForSection(section: Section): number[] {
         }
     }
     return result;
-}
-
-/**
- * Format a timer for display. Uses the timer name when present, falls back to
- * the formatted quantity, and ultimately to an empty string.
- */
-function formatTimer(timer: Timer): string {
-    if (timer.name) {
-        return timer.name;
-    }
-    if (timer.quantity !== null) {
-        return formatQuantity(timer.quantity);
-    }
-    return '';
 }
 
 /**
@@ -169,9 +156,20 @@ interface StepItemViewProps {
     cookware: Cookware[];
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
+    globalStepIndex: number;
+    /** Index of this item among the timer items of its step. */
+    timerPosition: number;
 }
 
-const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }: StepItemViewProps): React.ReactElement => {
+const StepItemView = ({
+    item,
+    ingredients,
+    cookware,
+    timers,
+    inlineQuantities,
+    globalStepIndex,
+    timerPosition,
+}: StepItemViewProps): React.ReactElement => {
     switch (item.type) {
         case 'text':
             return <LinkedText text={item.value} />;
@@ -190,8 +188,12 @@ const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }:
 
         case 'timer': {
             const timer = timers[item.index];
-            const displayText = timer ? formatTimer(timer) : `timer[${item.index}]`;
-            return <span className='timer-badge'>{displayText}</span>;
+            if (!timer) {
+                return <span className='timer-badge'>{`timer[${item.index}]`}</span>;
+            }
+            return (
+                <TimerBadge timer={timer} globalStepIndex={globalStepIndex} timerPosition={timerPosition} />
+            );
         }
 
         case 'inlineQuantity': {
@@ -274,6 +276,7 @@ interface SectionContentViewProps {
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
     imageSrc?: string;
+    globalStepIndex: number;
 }
 
 const SectionContentView = ({
@@ -283,6 +286,7 @@ const SectionContentView = ({
     timers,
     inlineQuantities,
     imageSrc,
+    globalStepIndex,
 }: SectionContentViewProps): React.ReactElement => {
     if (content.type === 'text') {
         return <div className='note-item'><LinkedText text={content.value} /></div>;
@@ -293,16 +297,24 @@ const SectionContentView = ({
         <div className='step-item'>
             <div className='step-number'>{number}</div>
             <div className='step-content'>
-                {items.map((item, idx) => (
-                    <StepItemView
-                        key={idx}
-                        item={item}
-                        ingredients={ingredients}
-                        cookware={cookware}
-                        timers={timers}
-                        inlineQuantities={inlineQuantities}
-                    />
-                ))}
+                {(() => {
+                    let timerPosition = 0;
+                    return items.map((item, idx) => {
+                        const position = item.type === 'timer' ? timerPosition++ : 0;
+                        return (
+                            <StepItemView
+                                key={idx}
+                                item={item}
+                                ingredients={ingredients}
+                                cookware={cookware}
+                                timers={timers}
+                                inlineQuantities={inlineQuantities}
+                                globalStepIndex={globalStepIndex}
+                                timerPosition={position}
+                            />
+                        );
+                    });
+                })()}
                 <StepIngredientsSummary items={items} ingredients={ingredients} />
                 {imageSrc && (
                     <RecipeImage className='step-image' src={imageSrc} alt={`Step ${number}`} />
@@ -349,6 +361,7 @@ export const InstructionsPanel = ({
                         )}
                         {section.content.map((content, cIdx) => {
                             let imageSrc: string | undefined;
+                            const stepIndex = globalStepIndex;
                             if (content.type === 'step') {
                                 if (images) {
                                     imageSrc = lookupStepImage(images, sIdx, stepInSection, globalStepIndex);
@@ -365,6 +378,7 @@ export const InstructionsPanel = ({
                                     timers={timers}
                                     inlineQuantities={inlineQuantities}
                                     imageSrc={imageSrc}
+                                    globalStepIndex={stepIndex}
                                 />
                             );
                         })}
@@ -543,13 +557,23 @@ export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
     images?: ResolvedRecipeImages;
+    scale: number;
+    onScaleChange: (scale: number) => void;
     onShowSource?: () => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
-    const [scale, setScale] = React.useState(1);
+export const RecipeView = ({
+    recipe,
+    fileName,
+    images,
+    scale,
+    onScaleChange,
+    onShowSource,
+    onAddToShoppingList,
+    onNavigateToRecipe,
+}: RecipeViewProps): React.ReactElement => {
     const meta = recipe.metadata.map;
 
     // Derive title from metadata or strip the .cook extension from the filename.
@@ -588,7 +612,7 @@ export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShop
                             onChange={e => {
                                 const val = parseFloat(e.target.value);
                                 if (Number.isFinite(val) && val > 0) {
-                                    setScale(val);
+                                    onScaleChange(val);
                                 }
                             }}
                             title='Scale factor'

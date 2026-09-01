@@ -353,6 +353,44 @@
     white-space: nowrap;
 }
 
+.theia-recipe-preview .timer-badge-icon {
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: baseline;
+}
+
+.theia-recipe-preview .timer-badge-clock {
+    font-family: var(--theia-editor-font-family, monospace);
+}
+
+.theia-recipe-preview .timer-badge-idle,
+.theia-recipe-preview .timer-badge-running,
+.theia-recipe-preview .timer-badge-paused,
+.theia-recipe-preview .timer-badge-finished {
+    cursor: pointer;
+}
+
+.theia-recipe-preview .timer-badge-idle:hover {
+    border-color: var(--theia-focusBorder);
+}
+
+.theia-recipe-preview .timer-badge-running {
+    background: var(--theia-editorInfo-foreground);
+    border-color: var(--theia-editorInfo-foreground);
+    color: var(--theia-editor-background);
+}
+
+.theia-recipe-preview .timer-badge-paused {
+    opacity: 0.7;
+    border-style: dashed;
+}
+
+.theia-recipe-preview .timer-badge-finished {
+    background: var(--theia-editorWarning-foreground);
+    border-color: var(--theia-editorWarning-foreground);
+    color: var(--theia-editor-background);
+}
+
 /* Note block — styled as blockquote */
 .theia-recipe-preview .note-item {
     padding: 8px 16px;

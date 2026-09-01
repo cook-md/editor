@@ -112,6 +112,8 @@ describe('RecipeView link wiring', () => {
             React.createElement(RecipeView, {
                 recipe: recipeWith({ description: 'Adapted from https://cook.md/original' }),
                 fileName: 'Soup.cook',
+                scale: 1,
+                onScaleChange: () => undefined,
             })
         );
         expect(markup).to.contain('class="recipe-description"');

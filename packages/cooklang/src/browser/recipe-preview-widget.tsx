@@ -86,6 +86,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
+    protected scale = 1;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected parseSequence = 0;
@@ -343,6 +344,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
+    protected handleScaleChange = (scale: number): void => {
+        this.scale = scale;
+        this.update();
+    };
+
     protected handleShowSource = (): void => {
         if (this.uri) {
             this.editorManager.open(this.uri);
@@ -375,6 +381,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                         recipe={this.recipe}
                         fileName={this.uri?.path.base ?? ''}
                         images={this.images}
+                        scale={this.scale}
+                        onScaleChange={this.handleScaleChange}
                         onShowSource={this.handleShowSource}
                         onAddToShoppingList={this.handleAddToShoppingList}
                         onNavigateToRecipe={this.handleNavigateToRecipe}
