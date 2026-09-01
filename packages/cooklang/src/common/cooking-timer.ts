@@ -21,6 +21,7 @@
  * whole state machine is testable with a fake clock.
  */
 
+/** The phase of a started timer's lifecycle. */
 export type TimerState = 'running' | 'paused' | 'finished';
 
 /** Where a timer came from, and how to get back there. */
@@ -37,6 +38,7 @@ export interface TimerRecipeRef {
     scale: number;
 }
 
+/** The live state of a single started timer. */
 export interface ActiveTimer {
     id: string;
     title: string;
@@ -178,8 +180,9 @@ export function restart(timer: ActiveTimer, nowMs: number): ActiveTimer {
 }
 
 /**
- * Extends `timer` by `seconds`. Extending a finished timer revives it as
- * paused, holding just the added time.
+ * Extends `timer` by `seconds`, which may be negative to shorten it.
+ * Extending a finished timer revives it as paused, holding just the added
+ * time. The remaining time never goes below zero, whatever `seconds` is.
  */
 export function addTime(timer: ActiveTimer, seconds: number, nowMs: number): ActiveTimer {
     switch (timer.state) {
@@ -192,14 +195,14 @@ export function addTime(timer: ActiveTimer, seconds: number, nowMs: number): Act
         case 'paused':
             return {
                 ...timer,
-                pausedRemainingSeconds: (timer.pausedRemainingSeconds ?? timer.durationSeconds) + seconds,
+                pausedRemainingSeconds: Math.max(0, (timer.pausedRemainingSeconds ?? timer.durationSeconds) + seconds),
                 updatedAtMs: nowMs,
             };
         case 'finished':
             return {
                 ...timer,
                 state: 'paused',
-                pausedRemainingSeconds: seconds,
+                pausedRemainingSeconds: Math.max(0, seconds),
                 updatedAtMs: nowMs,
             };
     }

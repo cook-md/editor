@@ -137,6 +137,13 @@ describe('addTime', () => {
         expect(timer.state).to.equal('paused');
         expect(remainingSeconds(timer, T0 + 700_000)).to.equal(60);
     });
+
+    it('never lets the remaining time go below zero', () => {
+        const shortened = addTime(pause(started(), T0 + 60_000), -1000, T0 + 60_000);
+        expect(remainingSeconds(shortened, T0 + 60_000)).to.equal(0);
+        const revived = addTime(finish(started(), T0 + 600_000), -60, T0 + 700_000);
+        expect(remainingSeconds(revived, T0 + 700_000)).to.equal(0);
+    });
 });
 
 describe('isExpired and fireAtMs', () => {
