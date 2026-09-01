@@ -3299,7 +3299,6 @@ Create `packages/cooklang/src/browser/style/timers.css`:
 In `packages/cooklang/src/browser/cooklang-frontend-module.ts`, add the imports:
 
 ```ts
-import { CookingTimerService } from './cooking-timer-service';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
 import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
@@ -3310,7 +3309,8 @@ and add this block next to the shopping-list bindings:
 
 ```ts
     // --- Timers ---
-    bind(CookingTimerService).toSelf().inSingletonScope();
+    // CookingTimerService is already bound; Task 9 pulled it forward because
+    // the preview widget injects it and every preview threw without it.
     bind(TimerChime).toSelf().inSingletonScope();
     bind(TimerAlarmService).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(TimerAlarmService);
