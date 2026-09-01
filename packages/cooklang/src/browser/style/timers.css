@@ -40,6 +40,10 @@
     opacity: 0.75;
 }
 
+.theia-cooklang-timers .timer-row-main {
+    min-width: 0;
+}
+
 .theia-cooklang-timers .timer-row-clock {
     font-family: var(--theia-editor-font-family, monospace);
     font-size: 1.8em;
@@ -58,6 +62,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    max-width: 100%;
+    min-width: 0;
     /* A real button for keyboard and assistive tech, styled as a link. */
     background: none;
     border: none;
@@ -75,6 +81,13 @@
 
 .theia-cooklang-timers .timer-row-recipe:hover {
     text-decoration: underline;
+}
+
+.theia-cooklang-timers .timer-row-recipe-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
 }
 
 .theia-cooklang-timers .timer-row-scale {

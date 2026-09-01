@@ -13,6 +13,7 @@
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
+import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import * as React from '@theia/core/shared/react';
 import { TimerRecipeRef } from '../common/cooking-timer';
@@ -61,7 +62,32 @@ export class TimersWidget extends ReactWidget {
     protected handleAddTime = (id: string, seconds: number): void => this.timerService.addTime(id, seconds);
     protected handleRemove = (id: string): void => this.timerService.remove(id);
     protected handleRemoveFinished = (): void => this.timerService.removeFinished();
-    protected handleRemoveAll = (): void => this.timerService.removeAll();
+
+    protected handleRemoveAll = (): void => {
+        this.confirmRemoveAll().catch(e => console.warn('Could not clear the timers', e));
+    };
+
+    /**
+     * Clearing finished timers is harmless, but a running one represents
+     * something actually cooking, so ask before throwing those away.
+     */
+    protected async confirmRemoveAll(): Promise<void> {
+        const running = this.timerService.list().filter(timer => timer.state === 'running').length;
+        if (running > 0) {
+            const confirmed = await new ConfirmDialog({
+                title: 'Clear all timers',
+                msg: running === 1
+                    ? 'One timer is still running. Clearing it cannot be undone.'
+                    : `${running} timers are still running. Clearing them cannot be undone.`,
+                ok: 'Clear all',
+                cancel: 'Cancel',
+            }).open();
+            if (!confirmed) {
+                return;
+            }
+        }
+        this.timerService.removeAll();
+    }
 
     protected handleOpenRecipe = (ref: TimerRecipeRef): void => {
         this.commandRegistry.executeCommand('cooklang.openPreviewAtScale', ref.recipePath, ref.scale)

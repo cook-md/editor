@@ -182,7 +182,7 @@ export const TimerRow = ({
                     <button type='button' className='timer-row-recipe' title={`Open ${timer.recipeRef.recipeName}`}
                         onClick={() => onOpenRecipe(timer.recipeRef!)}>
                         <span className='codicon codicon-go-to-file'></span>
-                        {timer.recipeRef.recipeName}
+                        <span className='timer-row-recipe-name'>{timer.recipeRef.recipeName}</span>
                         {timer.recipeRef.scale !== 1 && (
                             <span className='timer-row-scale'>×{timer.recipeRef.scale}</span>
                         )}
