@@ -3236,9 +3236,19 @@ Create `packages/cooklang/src/browser/style/timers.css`:
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    /* A real button for keyboard and assistive tech, styled as a link. */
+    background: none;
+    border: none;
+    padding: 0;
     color: var(--theia-textLink-foreground);
     cursor: pointer;
     font-size: 0.92em;
+    font-family: inherit;
+}
+
+.theia-cooklang-timers .timer-row-recipe:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 2px;
 }
 
 .theia-cooklang-timers .timer-row-recipe:hover {
@@ -3370,6 +3380,8 @@ Bake for ~{50-60%minutes} and reduce ~{until thick}.
 - [ ] `~{10%seconds}` and `~dough{15%seconds}` render as clickable badges; `~{until thick}` renders as plain, unclickable text.
 - [ ] `~{50-60%minutes}` shows the range as written and starts a 50-minute timer.
 - [ ] Clicking a badge starts it; the badge counts down; clicking again pauses; clicking again resumes.
+- [ ] Tab to a timer badge and press Enter, then Space. Both start it. The badge is a `span` with `role='button'`, which gets no keyboard activation from the browser, and `renderToStaticMarkup` cannot exercise handlers — so this is only ever verified here.
+- [ ] Tab through a Timers panel row: the recipe control and all four buttons take focus and activate from the keyboard.
 - [ ] The Timers view (right side bar, `codicon-watch`) lists the running timers with recipe name, `+1 min`, play/pause, reset and delete.
 - [ ] Set Scale to 2, start a timer, then click that timer's recipe link in the panel — the preview opens with Scale showing 2.
 - [ ] Let a 10-second timer finish with the editor window **in the background**: an OS notification appears and the chime plays.
