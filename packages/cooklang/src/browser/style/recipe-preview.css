@@ -386,9 +386,13 @@
 }
 
 .theia-recipe-preview .timer-badge-finished {
-    background: var(--theia-editorWarning-foreground);
-    border-color: var(--theia-editorWarning-foreground);
-    color: var(--theia-editor-background);
+    /* The inputValidation warning pair is designed as background-plus-text and
+       stays legible in both themes. Using editorWarning-foreground as a
+       background instead only reached ~3.1:1 against editor-background in the
+       light theme, under the 4.5:1 needed for text this size. */
+    background: var(--theia-inputValidation-warningBackground);
+    border-color: var(--theia-inputValidation-warningBorder, var(--theia-editorWarning-foreground));
+    color: var(--theia-foreground);
 }
 
 /* Note block — styled as blockquote */

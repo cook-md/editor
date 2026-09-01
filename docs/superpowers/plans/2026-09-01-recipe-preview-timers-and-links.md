@@ -2818,9 +2818,13 @@ Replace the `.theia-recipe-preview .timer-badge` rule in `packages/cooklang/src/
 }
 
 .theia-recipe-preview .timer-badge-finished {
-    background: var(--theia-editorWarning-foreground);
-    border-color: var(--theia-editorWarning-foreground);
-    color: var(--theia-editor-background);
+    /* The inputValidation warning pair is designed as background-plus-text and
+       stays legible in both themes. Using editorWarning-foreground as a
+       background instead only reached ~3.1:1 against editor-background in the
+       light theme, under the 4.5:1 needed for text this size. */
+    background: var(--theia-inputValidation-warningBackground);
+    border-color: var(--theia-inputValidation-warningBorder, var(--theia-editorWarning-foreground));
+    color: var(--theia-foreground);
 }
 ```
 
@@ -3378,6 +3382,7 @@ Bake for ~{50-60%minutes} and reduce ~{until thick}.
 - [ ] `~{10%seconds}` and `~dough{15%seconds}` render as clickable badges; `~{until thick}` renders as plain, unclickable text.
 - [ ] `~{50-60%minutes}` shows the range as written and starts a 50-minute timer.
 - [ ] Clicking a badge starts it; the badge counts down; clicking again pauses; clicking again resumes.
+- [ ] Switch between a light and a dark theme with a running, a paused and a finished badge on screen. All three read clearly and are distinguishable from an unstarted badge in both.
 - [ ] Tab to a timer badge and press Enter, then Space. Both start it. The badge is a `span` with `role='button'`, which gets no keyboard activation from the browser, and `renderToStaticMarkup` cannot exercise handlers — so this is only ever verified here.
 - [ ] Tab through a Timers panel row: the recipe control and all four buttons take focus and activate from the keyboard.
 - [ ] The Timers view (right side bar, `codicon-watch`) lists the running timers with recipe name, `+1 min`, play/pause, reset and delete.
