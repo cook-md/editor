@@ -256,11 +256,14 @@ time in a recipe step to start one."
 
 ### 7. URLs
 
-`linkify` is applied in three places in `recipe-preview-components.tsx`:
+`linkify` is applied in four places in `recipe-preview-components.tsx`:
 
 - `MetadataPills` — pill values (this is where `source:` URLs live).
 - `StepItemView` `case 'text'` — step body text.
 - The `note-item` block.
+- The `recipe-description` paragraph. `description` is a metadata value too; it
+  is only rendered apart from the pills because `SKIP_META_KEYS` excludes it,
+  and it is a natural place to paste the URL a recipe was adapted from.
 
 Matches render as `<a className='recipe-link' href={href}>` whose `onClick`
 prevents default and calls an `openExternal(url)` callback supplied by the
