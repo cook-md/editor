@@ -16,8 +16,8 @@
 import { expect } from 'chai';
 import * as React from '@theia/core/shared/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Section } from '../common/recipe-types';
-import { MetadataPills, LinkedText, InstructionsPanel } from './recipe-preview-components';
+import { Recipe, Section } from '../common/recipe-types';
+import { MetadataPills, LinkedText, InstructionsPanel, RecipeView } from './recipe-preview-components';
 
 describe('LinkedText', () => {
 
@@ -42,13 +42,6 @@ describe('LinkedText', () => {
         expect(markup).to.contain('href="https://one.example"');
         expect(markup).to.contain('href="https://two.example"');
         expect(markup.indexOf('https://one.example')).to.be.lessThan(markup.indexOf('https://two.example'));
-    });
-
-    it('links a url in the recipe description', () => {
-        const markup = renderToStaticMarkup(
-            React.createElement(LinkedText, { text: 'Adapted from https://cook.md/original' })
-        );
-        expect(markup).to.contain('href="https://cook.md/original"');
     });
 });
 
@@ -98,5 +91,30 @@ describe('InstructionsPanel link wiring', () => {
         ]);
         expect(markup).to.contain('class="note-item"');
         expect(markup).to.contain('href="https://cook.md/notes"');
+    });
+});
+
+describe('RecipeView link wiring', () => {
+
+    function recipeWith(meta: Record<string, unknown>): Recipe {
+        return {
+            metadata: { map: meta },
+            sections: [],
+            ingredients: [],
+            cookware: [],
+            timers: [],
+            inline_quantities: [],
+        };
+    }
+
+    it('links a url in the recipe description', () => {
+        const markup = renderToStaticMarkup(
+            React.createElement(RecipeView, {
+                recipe: recipeWith({ description: 'Adapted from https://cook.md/original' }),
+                fileName: 'Soup.cook',
+            })
+        );
+        expect(markup).to.contain('class="recipe-description"');
+        expect(markup).to.contain('href="https://cook.md/original"');
     });
 });
