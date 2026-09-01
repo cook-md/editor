@@ -3386,6 +3386,8 @@ Bake for ~{50-60%minutes} and reduce ~{until thick}.
 - [ ] Tab to a timer badge and press Enter, then Space. Both start it. The badge is a `span` with `role='button'`, which gets no keyboard activation from the browser, and `renderToStaticMarkup` cannot exercise handlers — so this is only ever verified here.
 - [ ] Tab through a Timers panel row: the recipe control and all four buttons take focus and activate from the keyboard.
 - [ ] The Timers view (right side bar, `codicon-watch`) lists the running timers with recipe name, `+1 min`, play/pause, reset and delete.
+- [ ] Drag the right sidebar as narrow as it goes with a long recipe name and a `4d 08:05:30` clock on screen. The name truncates with an ellipsis rather than being clipped, and the four row controls stay reachable.
+- [ ] "Clear all" with a timer running asks for confirmation; with only finished timers it clears immediately.
 - [ ] Set Scale to 2, start a timer, then click that timer's recipe link in the panel — the preview opens with Scale showing 2.
 - [ ] Let a 10-second timer finish with the editor window **in the background**: an OS notification appears and the chime plays.
 - [ ] The chime specifically: start a timer and let it finish **without clicking anything else in the window first**, with the window backgrounded. A renderer `AudioContext` starts suspended until a user gesture, and the whole promise of this feature is that it fires while you are not interacting with the app. Electron defaults `autoplayPolicy` to `no-user-gesture-required`, so this should work — but that is reasoning, not evidence, and this is the check that turns it into evidence. If it is silent, the fix is `webPreferences.autoplayPolicy`, not the chime code.
