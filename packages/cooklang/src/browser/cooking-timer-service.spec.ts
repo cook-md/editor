@@ -101,6 +101,32 @@ describe('CookingTimerService', () => {
         expect(service.list()).to.have.length(1);
     });
 
+    it('announces a deliberately started timer', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        const started: string[] = [];
+        service.onDidStartTimer(timer => started.push(timer.id));
+        service.start(ref(), 'simmer', 600);
+        service.start(ref(), 'simmer', 600);
+        expect(started).to.deep.equal(['t1', 't1']);
+    });
+
+    it('stays quiet about timers that merely came back from storage', async () => {
+        const storage = new FakeStorage();
+        const first = createService(storage);
+        await first.load();
+        first.start(ref(), 'simmer', 600);
+        first.dispose();
+
+        const second = createService(storage);
+        const started: string[] = [];
+        second.onDidStartTimer(timer => started.push(timer.id));
+        await second.load();
+
+        expect(second.list()).to.have.length(1);
+        expect(started).to.deep.equal([]);
+    });
+
     it('fires onDidFinishTimer when a running timer expires', async () => {
         const service = createService(new FakeStorage());
         await service.load();

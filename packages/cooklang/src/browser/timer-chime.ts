@@ -33,14 +33,16 @@ const STRIKE_LENGTH_SECONDS = 0.4;
 export class TimerChime {
 
     protected context: AudioContext | undefined;
+    protected master: AudioNode | undefined;
 
     play(): void {
         try {
             const context = this.audioContext();
             // A context created before any user gesture starts suspended.
-            context.resume();
+            context.resume().catch(() => { /* a context that will not resume simply stays silent */ });
+            const master = this.masterOutput(context);
             for (let i = 0; i < STRIKES; i++) {
-                this.strike(context, context.currentTime + i * STRIKE_SPACING_SECONDS);
+                this.strike(context, master, context.currentTime + i * STRIKE_SPACING_SECONDS);
             }
         } catch (e) {
             console.debug('Could not play the timer chime', e);
@@ -54,13 +56,27 @@ export class TimerChime {
         return this.context;
     }
 
+    /**
+     * A compressor between the strikes and the speakers. Several timers can
+     * finish in the same second and each strike schedules three oscillators,
+     * so without this the summed gain clips into distortion.
+     */
+    protected masterOutput(context: AudioContext): AudioNode {
+        if (!this.master) {
+            const compressor = context.createDynamicsCompressor();
+            compressor.connect(context.destination);
+            this.master = compressor;
+        }
+        return this.master;
+    }
+
     /** One bell strike: a struck-metal spectrum under an exponential decay. */
-    protected strike(context: AudioContext, at: number): void {
+    protected strike(context: AudioContext, master: AudioNode, at: number): void {
         const envelope = context.createGain();
         envelope.gain.setValueAtTime(0.0001, at);
         envelope.gain.exponentialRampToValueAtTime(0.3, at + 0.01);
         envelope.gain.exponentialRampToValueAtTime(0.0001, at + STRIKE_LENGTH_SECONDS);
-        envelope.connect(context.destination);
+        envelope.connect(master);
 
         for (const [frequency, level] of PARTIALS) {
             const oscillator = context.createOscillator();

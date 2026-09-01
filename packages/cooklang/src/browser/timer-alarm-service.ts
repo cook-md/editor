@@ -48,13 +48,15 @@ export class TimerAlarmService implements FrontendApplicationContribution {
 
     onStart(): void {
         this.timerService.onDidFinishTimer(timer => this.alarm(timer));
-        // Ask for notification permission the first time a timer exists, not at
-        // startup: nobody wants a permission prompt for opening a recipe.
-        this.timerService.onDidChangeTimers(() => this.ensurePermission());
+        // Ask for notification permission the first time the user deliberately
+        // starts a timer — not at startup, and not when persisted timers merely
+        // reload from storage — since that is the natural moment for it and
+        // nobody wants a permission prompt for opening a recipe.
+        this.timerService.onDidStartTimer(() => this.ensurePermission());
     }
 
     protected ensurePermission(): void {
-        if (this.permissionRequested || this.timerService.list().length === 0) {
+        if (this.permissionRequested) {
             return;
         }
         this.permissionRequested = true;
@@ -74,9 +76,14 @@ export class TimerAlarmService implements FrontendApplicationContribution {
                 body: timer.recipeRef?.recipeName,
                 requireInteraction: true,
                 tag: `cooklang-timer-${timer.id}`,
+                // The chime is our sound. When it is on, the OS notification
+                // sound would just layer on top of it; when it is off, the
+                // user wants silence. Either way, `silent: true` is right.
+                silent: true,
             },
             () => {
-                this.commands.executeCommand(TimersCommands.TOGGLE_VIEW.id);
+                this.commands.executeCommand(TimersCommands.TOGGLE_VIEW.id)
+                    .catch(e => console.warn('Could not reveal the Timers view', e));
             }
         );
     }

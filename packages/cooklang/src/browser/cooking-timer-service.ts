@@ -122,6 +122,15 @@ export class CookingTimerService implements Disposable {
     protected readonly onDidFinishTimerEmitter = new Emitter<ActiveTimer>();
     readonly onDidFinishTimer: Event<ActiveTimer> = this.onDidFinishTimerEmitter.event;
 
+    protected readonly onDidStartTimerEmitter = new Emitter<ActiveTimer>();
+    /**
+     * Fired only when a timer is deliberately started, never when persisted
+     * timers reload. Anything that should follow a user's action rather than
+     * a state change — asking for notification permission, say — belongs here
+     * rather than on `onDidChangeTimers`, which also fires on restore.
+     */
+    readonly onDidStartTimer: Event<ActiveTimer> = this.onDidStartTimerEmitter.event;
+
     protected tickHandle: ReturnType<typeof setInterval> | undefined;
 
     @postConstruct()
@@ -176,13 +185,13 @@ export class CookingTimerService implements Disposable {
     start(ref: TimerRecipeRef, title: string, durationSeconds: number): ActiveTimer {
         const now = this.now();
         const existing = this.find(ref);
-        if (existing) {
-            // Re-read title, duration and scale: the recipe may have been
-            // edited or re-scaled since this timer was first started.
-            const updated = { ...existing, title, durationSeconds, recipeRef: ref };
-            return this.replace(restart(updated, now));
-        }
-        return this.replace(createAndStart(this.newId(), title, durationSeconds, now, ref));
+        // Re-read title, duration and scale: the recipe may have been edited
+        // or re-scaled since this timer was first started.
+        const started = existing
+            ? this.replace(restart({ ...existing, title, durationSeconds, recipeRef: ref }, now))
+            : this.replace(createAndStart(this.newId(), title, durationSeconds, now, ref));
+        this.onDidStartTimerEmitter.fire(started);
+        return started;
     }
 
     pause(id: string): void {
@@ -262,6 +271,7 @@ export class CookingTimerService implements Disposable {
         this.timers.clear();
         this.onDidChangeTimersEmitter.dispose();
         this.onDidFinishTimerEmitter.dispose();
+        this.onDidStartTimerEmitter.dispose();
     }
 
     // --- Internals ---
