@@ -72,13 +72,16 @@ export class TimersWidget extends ReactWidget {
      * something actually cooking, so ask before throwing those away.
      */
     protected async confirmRemoveAll(): Promise<void> {
-        const running = this.timerService.list().filter(timer => timer.state === 'running').length;
-        if (running > 0) {
+        // A paused timer is state the cook deliberately kept, so it deserves the
+        // same protection as a running one. Only an all-finished list clears
+        // without asking, because that throws nothing away.
+        const unfinished = this.timerService.list().filter(timer => timer.state !== 'finished').length;
+        if (unfinished > 0) {
             const confirmed = await new ConfirmDialog({
                 title: 'Clear all timers',
-                msg: running === 1
-                    ? 'One timer is still running. Clearing it cannot be undone.'
-                    : `${running} timers are still running. Clearing them cannot be undone.`,
+                msg: unfinished === 1
+                    ? 'One timer has not finished. Clearing it cannot be undone.'
+                    : `${unfinished} timers have not finished. Clearing them cannot be undone.`,
                 ok: 'Clear all',
                 cancel: 'Cancel',
             }).open();

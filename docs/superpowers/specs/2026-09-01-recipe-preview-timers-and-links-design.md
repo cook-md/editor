@@ -255,8 +255,9 @@ Rows are sorted running (soonest to fire first) → paused → finished. Each ro
 a port of `TimerCellView`: large monospace countdown, timer title, recipe name
 rendered as a link, a progress indicator, and the controls the iOS help page
 documents — `+1 min`, play/pause, reset, delete. A header row inside the panel
-carries "Clear finished" and "Clear all"; the latter asks for confirmation when
-a timer is still running, since that one represents something actually cooking.
+carries "Clear finished" and "Clear all"; the latter asks for confirmation unless
+every timer has finished, since a running or paused one is state the cook
+deliberately still has in play.
 
 Empty state: a short line pointing at the inline badges — "No timers yet. Click a
 time in a recipe step to start one."
