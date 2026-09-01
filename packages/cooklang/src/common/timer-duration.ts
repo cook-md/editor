@@ -103,7 +103,7 @@ interface DurationParts {
 }
 
 function splitDuration(totalSeconds: number): DurationParts {
-    const total = Math.max(0, totalSeconds);
+    const total = Number.isFinite(totalSeconds) ? Math.max(0, totalSeconds) : 0;
     return {
         days: Math.floor(total / 86400),
         hours: Math.floor((total % 86400) / 3600),
@@ -119,6 +119,7 @@ function pad(value: number): string {
 /**
  * A countdown clock: `10:00`, `01:05:30`, `4d 08:05:30`. Rounds up, so a
  * counter started at 10 minutes reads `10:00` rather than `09:59`.
+ * Non-finite input (`NaN`, `Infinity`) is treated as zero.
  */
 export function formatClock(totalSeconds: number): string {
     const { days, hours, minutes, seconds } = splitDuration(Math.ceil(totalSeconds));
@@ -133,6 +134,7 @@ export function formatClock(totalSeconds: number): string {
 
 /**
  * A human-readable duration: `10 min`, `5 min 30 sec`, `1 hour 5 min`.
+ * Non-finite input (`NaN`, `Infinity`) is treated as zero.
  */
 export function formatDuration(totalSeconds: number): string {
     const { days, hours, minutes, seconds } = splitDuration(Math.round(totalSeconds));

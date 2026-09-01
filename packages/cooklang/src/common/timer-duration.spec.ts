@@ -124,6 +124,12 @@ describe('formatClock', () => {
     it('clamps negatives to zero', () => {
         expect(formatClock(-5)).to.equal('00:00');
     });
+
+    it('treats non-finite input as zero', () => {
+        expect(formatClock(NaN)).to.equal('00:00');
+        expect(formatClock(Infinity)).to.equal('00:00');
+        expect(formatClock(-Infinity)).to.equal('00:00');
+    });
 });
 
 describe('formatDuration', () => {
@@ -137,5 +143,10 @@ describe('formatDuration', () => {
 
     it('renders zero explicitly', () => {
         expect(formatDuration(0)).to.equal('0 sec');
+    });
+
+    it('treats non-finite input as zero', () => {
+        expect(formatDuration(NaN)).to.equal('0 sec');
+        expect(formatDuration(Infinity)).to.equal('0 sec');
     });
 });
