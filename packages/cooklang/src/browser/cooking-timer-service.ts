@@ -18,6 +18,7 @@ import { StorageService } from '@theia/core/lib/browser/storage-service';
 import {
     ActiveTimer,
     TimerRecipeRef,
+    TimerState,
     addTime,
     createAndStart,
     finish,
@@ -29,6 +30,51 @@ import {
     restart,
     resume,
 } from '../common/cooking-timer';
+
+const TIMER_STATES: ReadonlySet<string> = new Set<TimerState>(['running', 'paused', 'finished']);
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * Whether a record read back from storage is a timer this build can run.
+ *
+ * Persisted timers outlive the build that wrote them, so anything here may
+ * come from an older or newer version, or be corrupt. A record that fails
+ * this check is dropped rather than trusted: a non-finite duration would make
+ * a timer that can never expire, which in turn would hold the tick interval
+ * open for the life of the window.
+ */
+function isStoredTimer(value: unknown): value is ActiveTimer {
+    if (typeof value !== 'object' || !value) {
+        return false;
+    }
+    const timer = value as Partial<ActiveTimer>;
+    if (typeof timer.id !== 'string' || timer.id.length === 0) {
+        return false;
+    }
+    if (typeof timer.title !== 'string') {
+        return false;
+    }
+    if (!isFiniteNumber(timer.durationSeconds) || timer.durationSeconds <= 0) {
+        return false;
+    }
+    if (typeof timer.state !== 'string' || !TIMER_STATES.has(timer.state)) {
+        return false;
+    }
+    if (!isFiniteNumber(timer.updatedAtMs)) {
+        return false;
+    }
+    if (timer.startedAtMs !== undefined && !isFiniteNumber(timer.startedAtMs)) {
+        return false;
+    }
+    if (timer.pausedRemainingSeconds !== undefined && !isFiniteNumber(timer.pausedRemainingSeconds)) {
+        return false;
+    }
+    // A running timer with no anchor could never count down.
+    return timer.state !== 'running' || isFiniteNumber(timer.startedAtMs);
+}
 
 /**
  * Owns every live cooking timer for the window. A port of the iOS app's
@@ -143,6 +189,13 @@ export class CookingTimerService implements Disposable {
                     return resume(timer, now);
                 case 'finished':
                     return restart(timer, now);
+                default:
+                    // Unreachable through the public API once `isStoredTimer`
+                    // rejects any other state on restore; kept as defence in
+                    // depth so a corrupt state can never poison `persist()`
+                    // with `undefined` (which `JSON.stringify` writes as
+                    // `null`, wiping every timer on the next restore).
+                    return timer;
             }
         });
     }
@@ -187,6 +240,7 @@ export class CookingTimerService implements Disposable {
 
     dispose(): void {
         this.stopTicking();
+        this.timers.clear();
         this.onDidChangeTimersEmitter.dispose();
         this.onDidFinishTimerEmitter.dispose();
     }
@@ -250,10 +304,28 @@ export class CookingTimerService implements Disposable {
      * the alarm belongs to the moment it expired, not to startup.
      */
     protected async restore(): Promise<void> {
-        const stored = await this.storageService.getData<ActiveTimer[]>(CookingTimerService.STORAGE_KEY, []);
+        let stored: unknown;
+        try {
+            stored = await this.storageService.getData<unknown>(CookingTimerService.STORAGE_KEY, []);
+        } catch (e) {
+            console.warn('Could not read stored cooking timers', e);
+            stored = [];
+        }
+        if (!Array.isArray(stored)) {
+            console.warn('Stored cooking timers were not a list; ignoring them');
+            stored = [];
+        }
         const now = this.now();
-        for (const timer of stored ?? []) {
-            this.timers.set(timer.id, isExpired(timer, now) ? finish(timer, now) : timer);
+        let dropped = 0;
+        for (const record of stored as unknown[]) {
+            if (!isStoredTimer(record)) {
+                dropped++;
+                continue;
+            }
+            this.timers.set(record.id, isExpired(record, now) ? finish(record, now) : record);
+        }
+        if (dropped > 0) {
+            console.warn(`Dropped ${dropped} unreadable cooking timer(s) from storage`);
         }
         this.evictOldest();
         this.updateTicking();

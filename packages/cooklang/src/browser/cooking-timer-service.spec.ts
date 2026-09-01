@@ -13,7 +13,7 @@
 
 import { expect } from 'chai';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
-import { ActiveTimer, TimerRecipeRef, remainingSeconds } from '../common/cooking-timer';
+import { ActiveTimer, TimerRecipeRef, remainingSeconds, createAndStart, pause, finish } from '../common/cooking-timer';
 import { CookingTimerService } from './cooking-timer-service';
 
 const T0 = 1_700_000_000_000;
@@ -196,5 +196,108 @@ describe('CookingTimerService', () => {
         service.addTime('t1', 60);
         service.remove('t1');
         expect(changes).to.equal(4);
+    });
+
+    it('drops unreadable records without losing the good ones', async () => {
+        const storage = new FakeStorage();
+        const good = {
+            id: 'keep', title: 'good', durationSeconds: 600,
+            state: 'paused', pausedRemainingSeconds: 600, updatedAtMs: T0,
+        };
+        storage.data.set('cooklang.timers', [
+            undefined,
+            'nonsense',
+            42,
+            { id: 'no-state', title: 'x', durationSeconds: 60, updatedAtMs: T0 },
+            { id: 'bad-state', title: 'x', durationSeconds: 60, state: 'idle', updatedAtMs: T0 },
+            { title: 'no id', durationSeconds: 60, state: 'paused', updatedAtMs: T0 },
+            good,
+        ]);
+        const service = createService(storage);
+        await service.load();
+        expect(service.list().map(t => t.id)).to.deep.equal(['keep']);
+    });
+
+    it('ignores stored data that is not a list', async () => {
+        const storage = new FakeStorage();
+        storage.data.set('cooklang.timers', { nope: true });
+        const service = createService(storage);
+        await service.load();
+        expect(service.list()).to.have.length(0);
+    });
+
+    it('refuses a timer that could never expire, so the tick cannot be held open', async () => {
+        const storage = new FakeStorage();
+        storage.data.set('cooklang.timers', [
+            { id: 'nan', title: 'x', durationSeconds: NaN, state: 'running', startedAtMs: T0, updatedAtMs: T0 },
+            { id: 'anchorless', title: 'x', durationSeconds: 600, state: 'running', updatedAtMs: T0 },
+        ]);
+        const service = createService(storage);
+        await service.load();
+        expect(service.list()).to.have.length(0);
+        expect(service.ticking).to.equal(false);
+    });
+
+    it('survives a listener that removes a timer while events are firing', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        service.start(ref(), 'simmer', 600);
+        service.onDidFinishTimer(timer => service.remove(timer.id));
+        service.currentTimeMs = T0 + 600_000;
+        service.tickNow();
+        expect(service.list()).to.have.length(0);
+        expect(service.ticking).to.equal(false);
+    });
+
+    it('resets a timer to its full duration, paused', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        service.start(ref(), 'simmer', 600);
+        service.currentTimeMs = T0 + 90_000;
+        service.reset('t1');
+        expect(service.get('t1')?.state).to.equal('paused');
+        expect(remainingSeconds(service.get('t1')!, service.currentTimeMs)).to.equal(600);
+        expect(service.ticking).to.equal(false);
+    });
+
+    it('restarts a finished timer and starts ticking again', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        service.start(ref(), 'simmer', 600);
+        service.currentTimeMs = T0 + 600_000;
+        service.tickNow();
+        expect(service.get('t1')?.state).to.equal('finished');
+        service.toggle('t1');
+        expect(service.get('t1')?.state).to.equal('running');
+        expect(remainingSeconds(service.get('t1')!, service.currentTimeMs)).to.equal(600);
+        expect(service.ticking).to.equal(true);
+    });
+
+    it('removes everything on removeAll', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        service.start(ref({ globalStepIndex: 1 }), 'a', 600);
+        service.start(ref({ globalStepIndex: 2 }), 'b', 600);
+        service.removeAll();
+        expect(service.list()).to.have.length(0);
+        expect(service.ticking).to.equal(false);
+    });
+
+    it('stops ticking and forgets everything on dispose', async () => {
+        const service = createService(new FakeStorage());
+        await service.load();
+        service.start(ref(), 'simmer', 600);
+        service.dispose();
+        expect(service.ticking).to.equal(false);
+        expect(service.list()).to.have.length(0);
+    });
+
+    it('sorts running first by soonest fire, then paused, then finished', () => {
+        const soon = createAndStart('soon', 'soon', 60, T0, ref());
+        const later = createAndStart('later', 'later', 600, T0, ref());
+        const held = pause(createAndStart('held', 'held', 600, T0, ref()), T0);
+        const done = finish(createAndStart('done', 'done', 600, T0, ref()), T0);
+        expect(CookingTimerService.sortForDisplay([done, held, later, soon]).map(t => t.id))
+            .to.deep.equal(['soon', 'later', 'held', 'done']);
     });
 });
