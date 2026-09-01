@@ -34,6 +34,9 @@ import {
 } from '../common/recipe-images';
 import { RecipeImageService } from './recipe-image-service';
 import { RecipeView, LinkOpenerProvider } from './recipe-preview-components';
+import { TimerRecipeRef } from '../common/cooking-timer';
+import { CookingTimerService } from './cooking-timer-service';
+import { TimerBinding, TimerBindingProvider } from './timer-components';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -84,6 +87,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(WindowService)
     protected readonly windowService: WindowService;
 
+    @inject(CookingTimerService)
+    protected readonly timerService: CookingTimerService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     protected scale = 1;
@@ -105,6 +111,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.toDispose.push(this.timerService.onDidChangeTimers(() => this.update()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -349,6 +356,17 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.update();
     };
 
+    /**
+     * Set the displayed scale from outside the React tree — used when opening a
+     * recipe from a timer that was started at a different scale.
+     */
+    setScale(scale: number): void {
+        if (Number.isFinite(scale) && scale > 0 && scale !== this.scale) {
+            this.scale = scale;
+            this.update();
+        }
+    }
+
     protected handleShowSource = (): void => {
         if (this.uri) {
             this.editorManager.open(this.uri);
@@ -373,21 +391,48 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.windowService.openNewWindow(url, { external: true });
     };
 
+    /** The recipe's display name, used to label timers in the Timers panel. */
+    protected recipeName(): string {
+        const name = this.recipe?.metadata.map['name'];
+        if (name !== undefined && name !== '') {
+            return String(name);
+        }
+        return (this.uri?.path.base ?? '').replace(/\.cook$/i, '');
+    }
+
+    protected readonly timerBinding: TimerBinding = {
+        ref: (globalStepIndex: number, timerPosition: number): TimerRecipeRef => ({
+            recipePath: this.uri?.toString() ?? '',
+            recipeName: this.recipeName(),
+            globalStepIndex,
+            timerPosition,
+            scale: this.scale,
+        }),
+        find: ref => this.timerService.find(ref),
+        start: (ref, title, durationSeconds) => this.timerService.start(ref, title, durationSeconds),
+        toggle: id => this.timerService.toggle(id),
+        reset: id => this.timerService.reset(id),
+        addTime: (id, seconds) => this.timerService.addTime(id, seconds),
+        nowMs: () => this.timerService.nowMs(),
+    };
+
     protected render(): React.ReactNode {
         if (this.recipe) {
             return (
-                <LinkOpenerProvider value={this.handleOpenLink}>
-                    <RecipeView
-                        recipe={this.recipe}
-                        fileName={this.uri?.path.base ?? ''}
-                        images={this.images}
-                        scale={this.scale}
-                        onScaleChange={this.handleScaleChange}
-                        onShowSource={this.handleShowSource}
-                        onAddToShoppingList={this.handleAddToShoppingList}
-                        onNavigateToRecipe={this.handleNavigateToRecipe}
-                    />
-                </LinkOpenerProvider>
+                <TimerBindingProvider value={this.timerBinding}>
+                    <LinkOpenerProvider value={this.handleOpenLink}>
+                        <RecipeView
+                            recipe={this.recipe}
+                            fileName={this.uri?.path.base ?? ''}
+                            images={this.images}
+                            scale={this.scale}
+                            onScaleChange={this.handleScaleChange}
+                            onShowSource={this.handleShowSource}
+                            onAddToShoppingList={this.handleAddToShoppingList}
+                            onNavigateToRecipe={this.handleNavigateToRecipe}
+                        />
+                    </LinkOpenerProvider>
+                </TimerBindingProvider>
             );
         }
 
