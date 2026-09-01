@@ -11,8 +11,6 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-/* eslint-disable no-null/no-null */
-
 import * as React from '@theia/core/shared/react';
 import { ActiveTimer, TimerRecipeRef, remainingSeconds } from '../common/cooking-timer';
 import { Timer, formatQuantity } from '../common/recipe-types';
@@ -63,8 +61,29 @@ export function timerBadgeLabel(timer: Timer): string {
     if (timer.name && quantity) {
         return `${timer.name} ${quantity}`;
     }
-    return timer.name ?? quantity;
+    return timer.name || quantity;
 }
+
+/**
+ * Enter and Space activate a `role='button'` element. The browser does this
+ * for a real `<button>` but not for a span, so we have to.
+ */
+function activateOnKey(activate: () => void): (event: React.KeyboardEvent) => void {
+    return event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            // Space would otherwise scroll the preview.
+            event.preventDefault();
+            activate();
+        }
+    };
+}
+
+/** Tooltip shown on a started badge, per lifecycle state. */
+const BADGE_TITLES: Record<string, string> = {
+    running: 'Pause timer',
+    paused: 'Resume timer',
+    finished: 'Restart timer',
+};
 
 /** Props for {@link TimerBadge}. */
 export interface TimerBadgeProps {
@@ -93,26 +112,23 @@ export const TimerBadge = ({ timer, globalStepIndex, timerPosition }: TimerBadge
     const active = binding.find(ref);
 
     if (!active) {
+        const start = (): void => binding.start(ref, timer.name || label, duration);
         return (
             <span className='timer-badge timer-badge-idle' role='button' tabIndex={0}
                 title={`Start a ${formatDuration(duration)} timer`}
-                onClick={() => binding.start(ref, timer.name ?? label, duration)}>
+                onClick={start} onKeyDown={activateOnKey(start)}>
                 <span className='codicon codicon-watch timer-badge-icon'></span>
                 {label}
             </span>
         );
     }
 
-    const titles: Record<string, string> = {
-        running: 'Pause timer',
-        paused: 'Resume timer',
-        finished: 'Restart timer',
-    };
+    const toggle = (): void => binding.toggle(active.id);
 
     return (
         <span className={`timer-badge timer-badge-${active.state}`} role='button' tabIndex={0}
-            title={titles[active.state]}
-            onClick={() => binding.toggle(active.id)}>
+            title={BADGE_TITLES[active.state]}
+            onClick={toggle} onKeyDown={activateOnKey(toggle)}>
             <span className='codicon codicon-watch timer-badge-icon'></span>
             <span className='timer-badge-clock'>{formatClock(remainingSeconds(active, binding.nowMs()))}</span>
         </span>
@@ -163,29 +179,30 @@ export const TimerRow = ({
                 <div className='timer-row-clock'>{formatClock(remaining)}</div>
                 <div className='timer-row-title'>{timer.title}</div>
                 {timer.recipeRef && onOpenRecipe && (
-                    <a className='timer-row-recipe' title={`Open ${timer.recipeRef.recipeName}`}
+                    <button className='timer-row-recipe' title={`Open ${timer.recipeRef.recipeName}`}
                         onClick={() => onOpenRecipe(timer.recipeRef!)}>
                         <span className='codicon codicon-go-to-file'></span>
                         {timer.recipeRef.recipeName}
                         {timer.recipeRef.scale !== 1 && (
                             <span className='timer-row-scale'>×{timer.recipeRef.scale}</span>
                         )}
-                    </a>
+                    </button>
                 )}
             </div>
             <div className='timer-row-progress'>
-                <div className='timer-row-progress-fill' style={{ width: `${elapsedFraction * 100}%` }}></div>
+                <div className='timer-row-progress-fill' style={{ width: `${(elapsedFraction * 100).toFixed(2)}%` }}></div>
             </div>
             <div className='timer-row-actions'>
                 <button className='timer-row-action' title='Add one minute'
                     onClick={() => onAddTime(timer.id, 60)}>+1 min</button>
-                <button className='timer-row-action' title={toggleTitle} onClick={() => onToggle(timer.id)}>
+                <button className='timer-row-action' title={toggleTitle} aria-label={toggleTitle}
+                    onClick={() => onToggle(timer.id)}>
                     <span className={`codicon ${toggleIcon}`}></span>
                 </button>
-                <button className='timer-row-action' title='Reset' onClick={() => onReset(timer.id)}>
+                <button className='timer-row-action' title='Reset' aria-label='Reset' onClick={() => onReset(timer.id)}>
                     <span className='codicon codicon-debug-restart'></span>
                 </button>
-                <button className='timer-row-action' title='Delete' onClick={() => onRemove(timer.id)}>
+                <button className='timer-row-action' title='Delete' aria-label='Delete' onClick={() => onRemove(timer.id)}>
                     <span className='codicon codicon-trash'></span>
                 </button>
             </div>

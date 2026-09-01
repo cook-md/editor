@@ -18,7 +18,7 @@ import * as React from '@theia/core/shared/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ActiveTimer, TimerRecipeRef, createAndStart, finish, pause } from '../common/cooking-timer';
 import { Timer } from '../common/recipe-types';
-import { TimerBadge, TimerBinding, TimerBindingProvider, TimerRow } from './timer-components';
+import { TimerBadge, TimerBinding, TimerBindingProvider, TimerRow, timerBadgeLabel } from './timer-components';
 
 const T0 = 1_700_000_000_000;
 
@@ -87,6 +87,15 @@ describe('TimerBadge', () => {
         expect(markup).to.contain('10 minutes');
     });
 
+    it('falls back to the duration when the name is empty', () => {
+        expect(timerBadgeLabel(minuteTimer(10, ''))).to.equal('10 minutes');
+        expect(renderBadge(minuteTimer(10, ''), undefined)).to.contain('10 minutes');
+    });
+
+    it('shows a bare named timer with no duration', () => {
+        expect(timerBadgeLabel({ name: 'sauce', quantity: null })).to.equal('sauce');
+    });
+
     it('stays a plain badge when the timer has no runnable duration', () => {
         const timer: Timer = {
             name: null,
@@ -108,11 +117,22 @@ describe('TimerBadge', () => {
         expect(renderBadge(minuteTimer(10, 'sauce'), active)).to.contain('timer-badge-paused');
     });
 
+    it('shows the frozen clock on a paused timer', () => {
+        const active = pause(createAndStart('t1', 'sauce', 600, T0 - 90_000, ref()), T0);
+        expect(renderBadge(minuteTimer(10, 'sauce'), active)).to.contain('08:30');
+    });
+
     it('marks a finished timer at zero', () => {
         const active = finish(createAndStart('t1', 'sauce', 600, T0 - 600_000, ref()), T0);
         const markup = renderBadge(minuteTimer(10, 'sauce'), active);
         expect(markup).to.contain('timer-badge-finished');
         expect(markup).to.contain('00:00');
+    });
+
+    it('escapes user-authored text rather than rendering it as markup', () => {
+        const markup = renderBadge(minuteTimer(10, '<img src=x onerror=alert(1)>'), undefined);
+        expect(markup).to.not.contain('<img');
+        expect(markup).to.contain('&lt;img');
     });
 });
 
@@ -148,5 +168,25 @@ describe('TimerRow', () => {
     it('omits the recipe link for a timer with no recipe', () => {
         const orphan: ActiveTimer = { ...createAndStart('t1', 'a', 600, T0, ref()), recipeRef: undefined };
         expect(renderRow(orphan)).to.not.contain('timer-row-recipe');
+    });
+
+    it('shows the scale when the recipe was not at 1x', () => {
+        const scaled: TimerRecipeRef = { ...ref(), scale: 2 };
+        const timer: ActiveTimer = { ...createAndStart('t1', 'a', 600, T0, scaled) };
+        expect(renderRow(timer)).to.contain('×2');
+    });
+
+    it('omits the recipe control when there is no handler for it', () => {
+        const markup = renderToStaticMarkup(
+            React.createElement(TimerRow, {
+                timer: createAndStart('t1', 'a', 600, T0, ref()),
+                nowMs: T0,
+                onToggle: () => undefined,
+                onReset: () => undefined,
+                onAddTime: () => undefined,
+                onRemove: () => undefined,
+            })
+        );
+        expect(markup).to.not.contain('timer-row-recipe');
     });
 });
