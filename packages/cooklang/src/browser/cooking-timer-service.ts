@@ -77,6 +77,25 @@ function isStoredTimer(value: unknown): value is ActiveTimer {
 }
 
 /**
+ * Whether a stored recipe reference is usable. A malformed one costs the
+ * timer its link back to a recipe but not the timer itself, so callers drop
+ * the reference rather than the record. `recipePath` in particular reaches
+ * `new URI(...)` when the Timers panel navigates, and a non-string there
+ * would throw.
+ */
+function isStoredRecipeRef(value: unknown): value is TimerRecipeRef {
+    if (typeof value !== 'object' || !value) {
+        return false;
+    }
+    const ref = value as Partial<TimerRecipeRef>;
+    return typeof ref.recipePath === 'string' && ref.recipePath.length > 0
+        && typeof ref.recipeName === 'string'
+        && isFiniteNumber(ref.globalStepIndex)
+        && isFiniteNumber(ref.timerPosition)
+        && isFiniteNumber(ref.scale) && ref.scale > 0;
+}
+
+/**
  * Owns every live cooking timer for the window. A port of the iOS app's
  * `TimerManager` plus `TimerStorage`
  * (`Packages/Timers/Sources/Timers/Core/`).
@@ -322,7 +341,10 @@ export class CookingTimerService implements Disposable {
                 dropped++;
                 continue;
             }
-            this.timers.set(record.id, isExpired(record, now) ? finish(record, now) : record);
+            const timer = record.recipeRef !== undefined && !isStoredRecipeRef(record.recipeRef)
+                ? { ...record, recipeRef: undefined }
+                : record;
+            this.timers.set(timer.id, isExpired(timer, now) ? finish(timer, now) : timer);
         }
         if (dropped > 0) {
             console.warn(`Dropped ${dropped} unreadable cooking timer(s) from storage`);

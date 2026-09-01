@@ -292,6 +292,39 @@ describe('CookingTimerService', () => {
         expect(service.list()).to.have.length(0);
     });
 
+    it('keeps a timer whose recipe reference is unusable, but drops the reference', async () => {
+        const storage = new FakeStorage();
+        storage.data.set('cooklang.timers', [
+            {
+                id: 'bad-ref', title: 'simmer', durationSeconds: 600, state: 'paused',
+                pausedRemainingSeconds: 600, updatedAtMs: T0,
+                recipeRef: { recipePath: 12345, recipeName: 7, globalStepIndex: 'a', timerPosition: undefined, scale: 'x' },
+            },
+            {
+                id: 'no-ref-object', title: 'rest', durationSeconds: 60, state: 'paused',
+                pausedRemainingSeconds: 60, updatedAtMs: T0, recipeRef: 'not an object',
+            },
+        ]);
+        const service = createService(storage);
+        await service.load();
+        expect(service.list().map(t => t.id)).to.deep.equal(['bad-ref', 'no-ref-object']);
+        expect(service.list().every(t => t.recipeRef === undefined)).to.equal(true);
+    });
+
+    it('keeps a well-formed recipe reference intact', async () => {
+        const storage = new FakeStorage();
+        storage.data.set('cooklang.timers', [
+            {
+                id: 'good-ref', title: 'simmer', durationSeconds: 600, state: 'paused',
+                pausedRemainingSeconds: 600, updatedAtMs: T0, recipeRef: ref(),
+            },
+        ]);
+        const service = createService(storage);
+        await service.load();
+        expect(service.get('good-ref')?.recipeRef?.recipeName).to.equal('Soup');
+        expect(service.find(ref())?.id).to.equal('good-ref');
+    });
+
     it('sorts running first by soonest fire, then paused, then finished', () => {
         const soon = createAndStart('soon', 'soon', 60, T0, ref());
         const later = createAndStart('later', 'later', 600, T0, ref());
