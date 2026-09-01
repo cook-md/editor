@@ -17,6 +17,7 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
+import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -32,7 +33,7 @@ import {
     RECIPE_IMAGE_EXTENSIONS,
 } from '../common/recipe-images';
 import { RecipeImageService } from './recipe-image-service';
-import { RecipeView } from './recipe-preview-components';
+import { RecipeView, LinkOpenerProvider } from './recipe-preview-components';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -79,6 +80,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(RecipeImageService)
     protected readonly imageService: RecipeImageService;
+
+    @inject(WindowService)
+    protected readonly windowService: WindowService;
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
@@ -359,17 +363,23 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         open(this.openerService, targetUri);
     };
 
+    protected handleOpenLink = (url: string): void => {
+        this.windowService.openNewWindow(url, { external: true });
+    };
+
     protected render(): React.ReactNode {
         if (this.recipe) {
             return (
-                <RecipeView
-                    recipe={this.recipe}
-                    fileName={this.uri?.path.base ?? ''}
-                    images={this.images}
-                    onShowSource={this.handleShowSource}
-                    onAddToShoppingList={this.handleAddToShoppingList}
-                    onNavigateToRecipe={this.handleNavigateToRecipe}
-                />
+                <LinkOpenerProvider value={this.handleOpenLink}>
+                    <RecipeView
+                        recipe={this.recipe}
+                        fileName={this.uri?.path.base ?? ''}
+                        images={this.images}
+                        onShowSource={this.handleShowSource}
+                        onAddToShoppingList={this.handleAddToShoppingList}
+                        onNavigateToRecipe={this.handleNavigateToRecipe}
+                    />
+                </LinkOpenerProvider>
             );
         }
 

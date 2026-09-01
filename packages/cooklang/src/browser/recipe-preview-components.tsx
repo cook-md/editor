@@ -35,6 +35,7 @@ import {
     scaleRecipe,
 } from '../common/recipe-types';
 import { ResolvedRecipeImages, lookupStepImage } from '../common/recipe-images';
+import { linkify } from '../common/recipe-links';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -109,6 +110,56 @@ function buildReferencePath(ref: RecipeReference): string {
 }
 
 // ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+/** Opens a URL outside the preview. Supplied by the widget. */
+export type LinkOpener = (url: string) => void;
+
+const LinkOpenerContext = React.createContext<LinkOpener | undefined>(undefined);
+
+/** Wraps a subtree so the links inside it open through `value`. */
+export const LinkOpenerProvider = LinkOpenerContext.Provider;
+
+interface LinkedTextProps {
+    text: string;
+}
+
+/**
+ * Recipe text with any URLs in it turned into links. Without a
+ * {@link LinkOpenerProvider} above it the anchors still render with their
+ * `href`, they just have no click behaviour — which is what keeps this
+ * component renderable in tests.
+ */
+export const LinkedText = ({ text }: LinkedTextProps): React.ReactElement => {
+    const openLink = React.useContext(LinkOpenerContext);
+    const tokens = linkify(text);
+    if (tokens.length === 0) {
+        return <></>;
+    }
+    if (tokens.length === 1 && tokens[0].type === 'text') {
+        return <React.Fragment>{text}</React.Fragment>;
+    }
+    return (
+        <React.Fragment>
+            {tokens.map((token, idx) => token.type === 'text' ? (
+                <React.Fragment key={idx}>{token.value}</React.Fragment>
+            ) : (
+                <a key={idx} className='recipe-link' href={token.href}
+                    onClick={e => {
+                        if (openLink) {
+                            e.preventDefault();
+                            openLink(token.href);
+                        }
+                    }}>
+                    {token.value}
+                </a>
+            ))}
+        </React.Fragment>
+    );
+};
+
+// ---------------------------------------------------------------------------
 // StepItemView
 // ---------------------------------------------------------------------------
 
@@ -123,7 +174,7 @@ interface StepItemViewProps {
 const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }: StepItemViewProps): React.ReactElement => {
     switch (item.type) {
         case 'text':
-            return <React.Fragment>{item.value}</React.Fragment>;
+            return <LinkedText text={item.value} />;
 
         case 'ingredient': {
             const ing = ingredients[item.index];
@@ -234,7 +285,7 @@ const SectionContentView = ({
     imageSrc,
 }: SectionContentViewProps): React.ReactElement => {
     if (content.type === 'text') {
-        return <div className='note-item'>{content.value}</div>;
+        return <div className='note-item'><LinkedText text={content.value} /></div>;
     }
 
     const { items, number } = content.value;
@@ -477,7 +528,7 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
         <div className='recipe-metadata'>
             {pills.map((pill, idx) => (
                 <span key={idx} className='metadata-pill'>
-                    <strong>{pill.label}:</strong> {pill.value}
+                    <strong>{pill.label}:</strong> <LinkedText text={pill.value} />
                 </span>
             ))}
         </div>

@@ -410,3 +410,15 @@
     border-radius: 6px;
     box-shadow: 0 1px 4px var(--theia-widget-shadow);
 }
+
+/* Links found in metadata values, step text and notes */
+.theia-recipe-preview .recipe-link {
+    color: var(--theia-textLink-foreground);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.theia-recipe-preview .recipe-link:hover {
+    color: var(--theia-textLink-activeForeground);
+    text-decoration: underline;
+}
