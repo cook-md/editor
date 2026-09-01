@@ -148,8 +148,13 @@ An `@injectable()` singleton, the port of `TimerManager` + `TimerStorage`.
   running**, so an idle window has no permanent interval.
 - Persistence: Theia's `StorageService` under key `cooklang.timers`. That
   service is workspace-scoped, so timers do not leak between workspaces; the
-  stored `recipePath` is still the full absolute URI string. Writes are
-  debounced; the stored shape is the `ActiveTimer[]` JSON directly.
+  stored `recipePath` is still the full absolute URI string. The stored shape
+  is the `ActiveTimer[]` JSON directly, written on every mutation — mutations
+  are user-driven plus one write per expiry, so there is nothing to debounce.
+- Restore validates every record and drops the ones it cannot run, rather than
+  trusting what storage returns. Persisted timers outlive the build that wrote
+  them, and an unvalidated record with a non-finite duration would produce a
+  timer that never expires and a tick interval that never stops.
 - Restore: remaining time is recomputed from `startedAtMs + durationSeconds`, so
   a timer that expired while the app was closed comes back as `finished`
   **without replaying the alarm**. The 20-most-recent cleanup rule from
