@@ -11,10 +11,13 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+/* eslint-disable no-null/no-null */
+
 import { expect } from 'chai';
 import * as React from '@theia/core/shared/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MetadataPills, LinkedText } from './recipe-preview-components';
+import { Section } from '../common/recipe-types';
+import { MetadataPills, LinkedText, InstructionsPanel } from './recipe-preview-components';
 
 describe('LinkedText', () => {
 
@@ -30,6 +33,22 @@ describe('LinkedText', () => {
         expect(markup).to.contain('<a class="recipe-link" href="https://cook.md/x">https://cook.md/x</a>');
         expect(markup).to.contain('Method from ');
         expect(markup).to.contain(' here');
+    });
+
+    it('renders every link in a string with distinct anchors', () => {
+        const markup = renderToStaticMarkup(
+            React.createElement(LinkedText, { text: 'a https://one.example b https://two.example c' })
+        );
+        expect(markup).to.contain('href="https://one.example"');
+        expect(markup).to.contain('href="https://two.example"');
+        expect(markup.indexOf('https://one.example')).to.be.lessThan(markup.indexOf('https://two.example'));
+    });
+
+    it('links a url in the recipe description', () => {
+        const markup = renderToStaticMarkup(
+            React.createElement(LinkedText, { text: 'Adapted from https://cook.md/original' })
+        );
+        expect(markup).to.contain('href="https://cook.md/original"');
     });
 });
 
@@ -48,5 +67,36 @@ describe('MetadataPills', () => {
         );
         expect(markup).to.not.contain('<a');
         expect(markup).to.contain('4');
+    });
+});
+
+describe('InstructionsPanel link wiring', () => {
+
+    function render(content: Section['content']): string {
+        return renderToStaticMarkup(
+            React.createElement(InstructionsPanel, {
+                sections: [{ name: null, content }],
+                ingredients: [],
+                cookware: [],
+                timers: [],
+                inlineQuantities: [],
+            })
+        );
+    }
+
+    it('links a url in step text', () => {
+        const markup = render([
+            { type: 'step', value: { number: 1, items: [{ type: 'text', value: 'See https://cook.md/x now' }] } },
+        ]);
+        expect(markup).to.contain('href="https://cook.md/x"');
+        expect(markup).to.contain('class="recipe-link"');
+    });
+
+    it('links a url in a note block', () => {
+        const markup = render([
+            { type: 'text', value: 'More at https://cook.md/notes' },
+        ]);
+        expect(markup).to.contain('class="note-item"');
+        expect(markup).to.contain('href="https://cook.md/notes"');
     });
 });

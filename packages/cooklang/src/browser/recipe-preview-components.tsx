@@ -133,7 +133,7 @@ interface LinkedTextProps {
  */
 export const LinkedText = ({ text }: LinkedTextProps): React.ReactElement => {
     const openLink = React.useContext(LinkOpenerContext);
-    const tokens = linkify(text);
+    const tokens = React.useMemo(() => linkify(text), [text]);
     if (tokens.length === 0) {
         return <></>;
     }
@@ -619,7 +619,7 @@ export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShop
             )}
 
             {description && (
-                <p className='recipe-description'>{description}</p>
+                <p className='recipe-description'><LinkedText text={description} /></p>
             )}
 
             <MetadataPills meta={meta} />
