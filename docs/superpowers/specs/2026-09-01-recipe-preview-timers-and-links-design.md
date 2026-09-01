@@ -236,7 +236,8 @@ callback. That makes the scale settable from outside the React tree.
 Each timer records the scale in force when it was started, in
 `TimerRecipeRef.scale`. A new command `cooklang.openPreviewAtScale(uri, scale)`
 in `recipe-preview-contribution.ts` reuses the existing `getOrCreatePreview` +
-`shell.addWidget` + `activateWidget` path and then calls `setScale`. The panel's
+`shell.addWidget` + `activateWidget` path, calling `setScale` before the widget
+is revealed so no stale scale is ever painted. The panel's
 recipe link invokes that command.
 
 Timer durations already reflect scaling: `scaleRecipe` scales `timers[].quantity`
