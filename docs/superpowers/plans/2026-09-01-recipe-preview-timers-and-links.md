@@ -2041,7 +2041,7 @@ import { ActiveTimer } from '../common/cooking-timer';
 import { CooklangPreferences } from '../common/cooklang-preferences';
 import { CookingTimerService } from './cooking-timer-service';
 import { TimerChime } from './timer-chime';
-import { TimersCommands } from './timers-view-contribution';
+import { TimersCommands } from './timers-commands';
 
 /**
  * Turns a finished timer into something you notice from the other side of the
@@ -2105,15 +2105,40 @@ export class TimerAlarmService implements FrontendApplicationContribution {
 }
 ```
 
-> `TimersCommands` does not exist yet — it arrives in Task 11. This file will not compile until then, which is expected; it is committed together with the view in Task 11.
+- [ ] **Step 3b: Create the commands module**
 
-- [ ] **Step 4: Commit the preferences and the chime**
+`TimersCommands` lives in its own file so the alarm service compiles now
+rather than waiting for the view in Task 11. Create
+`packages/cooklang/src/browser/timers-commands.ts`:
 
-The chime compiles on its own; the alarm service does not until Task 11.
+```ts
+<LICENSE HEADER>
+
+import { Command } from '@theia/core/lib/common/command';
+
+export namespace TimersCommands {
+    export const TOGGLE_VIEW: Command = {
+        id: 'cooklang.toggleTimers',
+        label: 'Cooklang: Toggle Timers',
+    };
+}
+```
+
+- [ ] **Step 4: Compile, lint and commit**
+
+Everything in this task compiles on its own — there is nothing left pending on
+a later task.
+
+```bash
+export PATH="$HOME/.local/node-v22.23.2-darwin-x64/bin:$PATH"
+npx lerna run compile --scope @theia/cooklang
+npx lerna run lint --scope @theia/cooklang
+```
 
 ```bash
 export PATH="$HOME/.local/node-v22.23.2-darwin-x64/bin:$PATH"
 git add packages/cooklang/src/common/cooklang-preferences.ts \
+        packages/cooklang/src/browser/timers-commands.ts \
         packages/cooklang/src/browser/timer-chime.ts \
         packages/cooklang/src/browser/timer-alarm-service.ts
 git commit -m "feat(cooklang): add timer alarm preferences, chime and notification service"
@@ -2466,7 +2491,8 @@ cd packages/cooklang && npx mocha --config ../../configs/mocharc.yml "./lib/brow
 
 Expected: all `TimerBadge` and `TimerRow` tests PASS.
 
-> The `timer-alarm-service.ts` file from Task 6 still fails to compile until Task 11. If `lerna run compile` fails only on `Cannot find module './timers-view-contribution'`, that is expected — the spec above still runs because mocha loads the compiled files that did emit. If TypeScript refuses to emit at all, temporarily comment out the `TimersCommands` import and its use in `timer-alarm-service.ts`, and restore them in Task 11.
+> Everything from Task 6 compiles already, so a compile failure here is a real
+> failure — do not work around it.
 
 - [ ] **Step 5: Lint and commit**
 
@@ -2939,7 +2965,8 @@ git add packages/cooklang/src/browser/recipe-preview-widget.tsx
 git commit -m "feat(cooklang): connect the recipe preview to the timer service"
 ```
 
-> Compile still fails on `timer-alarm-service.ts` until Task 11. Keep that import commented out if you did so in Task 7.
+> The package compiles cleanly at this point. A compile failure here is a real
+> failure — do not work around it.
 
 ---
 
@@ -3124,16 +3151,9 @@ Create `packages/cooklang/src/browser/timers-view-contribution.ts`:
 <LICENSE HEADER>
 
 import { injectable } from '@theia/core/shared/inversify';
-import { Command } from '@theia/core/lib/common/command';
 import { AbstractViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
 import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
-
-export namespace TimersCommands {
-    export const TOGGLE_VIEW: Command = {
-        id: 'cooklang.toggleTimers',
-        label: 'Cooklang: Toggle Timers',
-    };
-}
+import { TimersCommands } from './timers-commands';
 
 @injectable()
 export class TimersViewContribution extends AbstractViewContribution<TimersWidget> {
@@ -3262,15 +3282,7 @@ Create `packages/cooklang/src/browser/style/timers.css`:
 }
 ```
 
-- [ ] **Step 4: Restore the alarm service import**
-
-If you commented out the `TimersCommands` import in `timer-alarm-service.ts` during Task 7, restore it now:
-
-```ts
-import { TimersCommands } from './timers-view-contribution';
-```
-
-- [ ] **Step 5: Bind everything**
+- [ ] **Step 4: Bind everything**
 
 In `packages/cooklang/src/browser/cooklang-frontend-module.ts`, add the imports:
 
@@ -3300,7 +3312,7 @@ and add this block next to the shopping-list bindings:
     bindViewContribution(bind, TimersViewContribution);
 ```
 
-- [ ] **Step 6: Compile, lint and run the whole suite**
+- [ ] **Step 5: Compile, lint and run the whole suite**
 
 ```bash
 export PATH="$HOME/.local/node-v22.23.2-darwin-x64/bin:$PATH"
@@ -3311,13 +3323,12 @@ npx lerna run test --scope @theia/cooklang
 
 Expected: compile succeeds with no errors, lint is clean, every spec in `@theia/cooklang` passes.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add packages/cooklang/src/browser/timers-widget.tsx \
         packages/cooklang/src/browser/timers-view-contribution.ts \
         packages/cooklang/src/browser/style/timers.css \
-        packages/cooklang/src/browser/timer-alarm-service.ts \
         packages/cooklang/src/browser/cooklang-frontend-module.ts
 git commit -m "feat(cooklang): add the Timers panel"
 ```
