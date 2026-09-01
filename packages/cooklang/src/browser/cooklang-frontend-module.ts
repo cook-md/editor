@@ -78,8 +78,9 @@ export default new ContainerModule(bind => {
             createRecipePreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
 
-    // Cooking timer state, shared by the recipe preview's timer badges and
-    // (in a later task) the Timers panel.
+    // Cooking timer state, shared by the recipe preview's timer badges and the
+    // Timers panel. Bound here rather than with the other timer bindings below
+    // because the preview widget injects it, and a preview cannot open without.
     bind(CookingTimerService).toSelf().inSingletonScope();
 
     // Recipe preview commands, keybindings, toolbar, and context menu
@@ -158,9 +159,7 @@ export default new ContainerModule(bind => {
     bind(FrontendApplicationContribution).toService(ShoppingListContribution);
     bind(TabBarToolbarContribution).toService(ShoppingListContribution);
 
-    // --- Timers ---
-    // CookingTimerService is already bound; Task 9 pulled it forward because
-    // the preview widget injects it and every preview threw without it.
+    // --- Timers --- (CookingTimerService is bound above, with the preview.)
     bind(TimerChime).toSelf().inSingletonScope();
     bind(TimerAlarmService).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(TimerAlarmService);

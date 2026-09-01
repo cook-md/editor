@@ -12,14 +12,13 @@
 // *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { OSNotificationService } from '@theia/ai-core/lib/browser/os-notification-service';
 import { ActiveTimer } from '../common/cooking-timer';
 import { CooklangPreferences } from '../common/cooklang-preferences';
 import { CookingTimerService } from './cooking-timer-service';
 import { TimerChime } from './timer-chime';
-import { TimersCommands } from './timers-commands';
+import { TimersViewContribution } from './timers-view-contribution';
 
 /**
  * Turns a finished timer into something you notice from the other side of the
@@ -41,8 +40,8 @@ export class TimerAlarmService implements FrontendApplicationContribution {
     @inject(CooklangPreferences)
     protected readonly preferences: CooklangPreferences;
 
-    @inject(CommandRegistry)
-    protected readonly commands: CommandRegistry;
+    @inject(TimersViewContribution)
+    protected readonly timersView: TimersViewContribution;
 
     protected permissionRequested = false;
 
@@ -82,7 +81,11 @@ export class TimerAlarmService implements FrontendApplicationContribution {
                 silent: true,
             },
             () => {
-                this.commands.executeCommand(TimersCommands.TOGGLE_VIEW.id)
+                // Reveal, never toggle. The toggle command collapses the panel
+                // when the view is already the active tab — which is exactly
+                // where a cook watching a countdown is — so it would hide the
+                // thing the notification is pointing at.
+                this.timersView.openView({ activate: true })
                     .catch(e => console.warn('Could not reveal the Timers view', e));
             }
         );

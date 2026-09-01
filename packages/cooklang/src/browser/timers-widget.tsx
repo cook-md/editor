@@ -112,11 +112,11 @@ export class TimersWidget extends ReactWidget {
             <div className='timers-body'>
                 <div className='timers-header'>
                     {hasFinished && (
-                        <button className='timers-header-action' onClick={this.handleRemoveFinished}>
+                        <button type='button' className='timers-header-action' onClick={this.handleRemoveFinished}>
                             Clear finished
                         </button>
                     )}
-                    <button className='timers-header-action' onClick={this.handleRemoveAll}>
+                    <button type='button' className='timers-header-action' onClick={this.handleRemoveAll}>
                         Clear all
                     </button>
                 </div>

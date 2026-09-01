@@ -249,7 +249,10 @@ started timer uses — the scaled duration. No change needed.
 `browser/timers-widget.tsx` (`TimersWidget extends ReactWidget`) plus
 `browser/timers-view-contribution.ts` (`AbstractViewContribution`), docked with
 `area: 'right'` — the same area as the Shopping List view, id `cooklang-timers`,
-icon `codicon-watch`, toggled by `cooklang.timers.toggle`.
+icon `codicon-watch`, toggled by `cooklang.toggleTimers`. The finish
+notification reveals the view rather than toggling it — the toggle collapses
+the panel when it is already the active tab, which is exactly where someone
+watching a countdown would be.
 
 Rows are sorted running (soonest to fire first) → paused → finished. Each row is
 a port of `TimerCellView`: large monospace countdown, timer title, recipe name

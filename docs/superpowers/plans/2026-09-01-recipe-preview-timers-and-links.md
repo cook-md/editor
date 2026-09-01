@@ -3390,6 +3390,7 @@ Bake for ~{50-60%minutes} and reduce ~{until thick}.
 - [ ] "Clear all" asks for confirmation when any timer is running or paused; with only finished timers it clears immediately.
 - [ ] Set Scale to 2, start a timer, then click that timer's recipe link in the panel — the preview opens with Scale showing 2.
 - [ ] Let a 10-second timer finish with the editor window **in the background**: an OS notification appears and the chime plays.
+- [ ] Click that notification **while the Timers panel is already open and focused**. It must reveal/keep the panel, not collapse the sidebar. This is the case the toggle command got wrong.
 - [ ] The chime specifically: start a timer and let it finish **without clicking anything else in the window first**, with the window backgrounded. A renderer `AudioContext` starts suspended until a user gesture, and the whole promise of this feature is that it fires while you are not interacting with the app. Electron defaults `autoplayPolicy` to `no-user-gesture-required`, so this should work — but that is reasoning, not evidence, and this is the check that turns it into evidence. If it is silent, the fix is `webPreferences.autoplayPolicy`, not the chime code.
 - [ ] Two timers finishing within a second of each other: both notifications appear, and the chime does not distort.
 - [ ] Reload the window (`Ctrl/Cmd+R`) mid-countdown: the timer is still there with the right remaining time.
