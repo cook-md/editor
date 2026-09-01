@@ -179,7 +179,7 @@ export const TimerRow = ({
                 <div className='timer-row-clock'>{formatClock(remaining)}</div>
                 <div className='timer-row-title'>{timer.title}</div>
                 {timer.recipeRef && onOpenRecipe && (
-                    <button className='timer-row-recipe' title={`Open ${timer.recipeRef.recipeName}`}
+                    <button type='button' className='timer-row-recipe' title={`Open ${timer.recipeRef.recipeName}`}
                         onClick={() => onOpenRecipe(timer.recipeRef!)}>
                         <span className='codicon codicon-go-to-file'></span>
                         {timer.recipeRef.recipeName}
@@ -193,16 +193,16 @@ export const TimerRow = ({
                 <div className='timer-row-progress-fill' style={{ width: `${(elapsedFraction * 100).toFixed(2)}%` }}></div>
             </div>
             <div className='timer-row-actions'>
-                <button className='timer-row-action' title='Add one minute'
+                <button type='button' className='timer-row-action' title='Add one minute'
                     onClick={() => onAddTime(timer.id, 60)}>+1 min</button>
-                <button className='timer-row-action' title={toggleTitle} aria-label={toggleTitle}
+                <button type='button' className='timer-row-action' title={toggleTitle} aria-label={toggleTitle}
                     onClick={() => onToggle(timer.id)}>
                     <span className={`codicon ${toggleIcon}`}></span>
                 </button>
-                <button className='timer-row-action' title='Reset' aria-label='Reset' onClick={() => onReset(timer.id)}>
+                <button type='button' className='timer-row-action' title='Reset' aria-label='Reset' onClick={() => onReset(timer.id)}>
                     <span className='codicon codicon-debug-restart'></span>
                 </button>
-                <button className='timer-row-action' title='Delete' aria-label='Delete' onClick={() => onRemove(timer.id)}>
+                <button type='button' className='timer-row-action' title='Delete' aria-label='Delete' onClick={() => onRemove(timer.id)}>
                     <span className='codicon codicon-trash'></span>
                 </button>
             </div>
