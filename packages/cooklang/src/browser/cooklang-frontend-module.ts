@@ -29,6 +29,7 @@ import { CooklangGrammarContribution } from './cooklang-grammar-contribution';
 import { CooklangLanguageClientContribution } from './cooklang-language-client-contribution';
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
+import { CookingTimerService } from './cooking-timer-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
@@ -72,6 +73,10 @@ export default new ContainerModule(bind => {
         createWidget: (options: { uri: string }) =>
             createRecipePreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
+
+    // Cooking timer state, shared by the recipe preview's timer badges and
+    // (in a later task) the Timers panel.
+    bind(CookingTimerService).toSelf().inSingletonScope();
 
     // Recipe preview commands, keybindings, toolbar, and context menu
     bind(RecipePreviewContribution).toSelf().inSingletonScope();

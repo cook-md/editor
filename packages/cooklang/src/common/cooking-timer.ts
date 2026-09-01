@@ -26,7 +26,11 @@ export type TimerState = 'running' | 'paused' | 'finished';
 
 /** Where a timer came from, and how to get back there. */
 export interface TimerRecipeRef {
-    /** Full URI string of the `.cook` file. */
+    /**
+     * Full URI string of the `.cook` file, captured when the timer started.
+     * A snapshot, not a live pointer: renaming or moving the file afterwards
+     * orphans the timer from its badge, by design.
+     */
     recipePath: string;
     /** Display name of the recipe, for the panel row. */
     recipeName: string;

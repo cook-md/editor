@@ -111,12 +111,32 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
-        this.toDispose.push(this.timerService.onDidChangeTimers(() => this.update()));
+        this.toDispose.push(this.timerService.onDidChangeTimers(() => {
+            // A tick is only interesting to this preview if one of its own
+            // timers is in it. Ticks fire for every timer in the window, and a
+            // full re-render of a long recipe once a second is not free.
+            if (this.isVisible && this.hasOwnTimer()) {
+                this.update();
+            }
+        }));
     }
 
     protected override onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
         this.node.focus();
+    }
+
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        // Ticks were ignored while hidden, so the countdown may be stale.
+        this.update();
+    }
+
+    /** Whether any live timer belongs to the recipe this preview shows. */
+    protected hasOwnTimer(): boolean {
+        const path = this.uri?.toString();
+        return path !== undefined
+            && this.timerService.list().some(timer => timer.recipeRef?.recipePath === path);
     }
 
     /**
@@ -400,6 +420,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         return (this.uri?.path.base ?? '').replace(/\.cook$/i, '');
     }
 
+    // A property initializer, not a method: its arrow functions close over
+    // `this` but only dereference `this.timerService` when invoked, by which
+    // point property injection has run. Binding eagerly instead — e.g.
+    // `find: this.timerService.find` — would read `this.timerService` at
+    // construction time, before injection, and throw on `undefined`.
     protected readonly timerBinding: TimerBinding = {
         ref: (globalStepIndex: number, timerPosition: number): TimerRecipeRef => ({
             recipePath: this.uri?.toString() ?? '',
