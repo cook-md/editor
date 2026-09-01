@@ -35,6 +35,10 @@ import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-wid
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListContribution } from './shopping-list-contribution';
+import { TimerChime } from './timer-chime';
+import { TimerAlarmService } from './timer-alarm-service';
+import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
+import { TimersViewContribution } from './timers-view-contribution';
 import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
 import { MenuPreviewContribution } from './menu-preview-contribution';
 import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './report-widget';
@@ -153,4 +157,19 @@ export default new ContainerModule(bind => {
     bindViewContribution(bind, ShoppingListContribution);
     bind(FrontendApplicationContribution).toService(ShoppingListContribution);
     bind(TabBarToolbarContribution).toService(ShoppingListContribution);
+
+    // --- Timers ---
+    // CookingTimerService is already bound; Task 9 pulled it forward because
+    // the preview widget injects it and every preview threw without it.
+    bind(TimerChime).toSelf().inSingletonScope();
+    bind(TimerAlarmService).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(TimerAlarmService);
+
+    bind(TimersWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: TIMERS_WIDGET_ID,
+        createWidget: () => ctx.container.get<TimersWidget>(TimersWidget),
+    })).inSingletonScope();
+
+    bindViewContribution(bind, TimersViewContribution);
 });
