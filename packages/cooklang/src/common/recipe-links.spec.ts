@@ -93,4 +93,49 @@ describe('linkify', () => {
             { type: 'text', value: 'Cook: 1.5 hours' },
         ]);
     });
+
+    it('does not emit a link when trimming eats the scheme', () => {
+        expect(linkify('mailto:.')).to.deep.equal([{ type: 'text', value: 'mailto:.' }]);
+        expect(linkify('www..')).to.deep.equal([{ type: 'text', value: 'www..' }]);
+        expect(linkify('Check www.: it works')).to.deep.equal([
+            { type: 'text', value: 'Check www.: it works' },
+        ]);
+    });
+
+    it('reproduces the input exactly, whatever the tokens', () => {
+        const inputs = [
+            '',
+            '.',
+            'www.',
+            'mailto:.',
+            'https://',
+            'https://a.example',
+            'a https://b.example',
+            'https://a.example b',
+            'https://a.example https://a.example',
+            'Boil at 100°C — see https://a.example/√ for why.',
+            'no links at all',
+            'bare @ sign and a lone www without a dot',
+        ];
+        for (const input of inputs) {
+            const rebuilt = linkify(input).map(token => token.value).join('');
+            expect(rebuilt, `round trip of ${JSON.stringify(input)}`).to.equal(input);
+        }
+    });
+
+    it('stays linear on long input without links', function (): void {
+        this.timeout(5000);
+        const haystack = `${'a.'.repeat(100_000)} end`;
+        const started = Date.now();
+        expect(linkify(haystack)).to.have.length(1);
+        expect(Date.now() - started, 'linkify should not backtrack quadratically').to.be.lessThan(1000);
+    });
+
+    it('stays linear when trimming a long run of brackets', function (): void {
+        this.timeout(5000);
+        const haystack = `https://a.example${')'.repeat(50_000)}`;
+        const started = Date.now();
+        linkify(haystack);
+        expect(Date.now() - started, 'trimTrailing should not rescan per character').to.be.lessThan(1000);
+    });
 });
