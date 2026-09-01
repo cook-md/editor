@@ -2724,6 +2724,13 @@ In `InstructionsPanel`, capture the step's global index before it is incremented
 
 - [ ] **Step 4: Make `scale` a controlled prop**
 
+> Making these props required breaks `recipe-preview-widget.tsx`, whose
+> `RecipeView` call site does not pass them yet. Fix that in this same commit
+> so the package always compiles — add `protected scale = 1;` and a
+> `handleScaleChange` to the widget and pass both down. Nothing else from
+> Task 9: no `setScale()`, no timer service, no subscriptions.
+
+
 Still in `recipe-preview-components.tsx`, change `RecipeViewProps` and the top of `RecipeView`:
 
 ```tsx
@@ -2865,13 +2872,9 @@ and next to the other `@inject` fields:
 
 - [ ] **Step 2: Own the scale and expose a setter**
 
-Add the field next to `protected recipe`:
-
-```tsx
-    protected scale = 1;
-```
-
-and these members next to `handleShowSource`:
+Task 8 already added `protected scale = 1;` and `handleScaleChange`, and
+already passes both to `RecipeView`. Only the external setter is missing.
+Add it next to `handleShowSource`:
 
 ```tsx
     /**
@@ -2884,11 +2887,6 @@ and these members next to `handleShowSource`:
             this.update();
         }
     }
-
-    protected handleScaleChange = (scale: number): void => {
-        this.scale = scale;
-        this.update();
-    };
 ```
 
 - [ ] **Step 3: Build the timer binding**
