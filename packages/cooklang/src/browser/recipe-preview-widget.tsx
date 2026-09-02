@@ -17,6 +17,7 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
+import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -32,7 +33,10 @@ import {
     RECIPE_IMAGE_EXTENSIONS,
 } from '../common/recipe-images';
 import { RecipeImageService } from './recipe-image-service';
-import { RecipeView } from './recipe-preview-components';
+import { RecipeView, LinkOpenerProvider } from './recipe-preview-components';
+import { TimerRecipeRef } from '../common/cooking-timer';
+import { CookingTimerService } from './cooking-timer-service';
+import { TimerBinding, TimerBindingProvider } from './timer-components';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -80,8 +84,15 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(RecipeImageService)
     protected readonly imageService: RecipeImageService;
 
+    @inject(WindowService)
+    protected readonly windowService: WindowService;
+
+    @inject(CookingTimerService)
+    protected readonly timerService: CookingTimerService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
+    protected scale = 1;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected parseSequence = 0;
@@ -100,11 +111,32 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.toDispose.push(this.timerService.onDidChangeTimers(() => {
+            // A tick is only interesting to this preview if one of its own
+            // timers is in it. Ticks fire for every timer in the window, and a
+            // full re-render of a long recipe once a second is not free.
+            if (this.isVisible && this.hasOwnTimer()) {
+                this.update();
+            }
+        }));
     }
 
     protected override onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
         this.node.focus();
+    }
+
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        // Ticks were ignored while hidden, so the countdown may be stale.
+        this.update();
+    }
+
+    /** Whether any live timer belongs to the recipe this preview shows. */
+    protected hasOwnTimer(): boolean {
+        const path = this.uri?.toString();
+        return path !== undefined
+            && this.timerService.list().some(timer => timer.recipeRef?.recipePath === path);
     }
 
     /**
@@ -339,6 +371,22 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
+    protected handleScaleChange = (scale: number): void => {
+        this.scale = scale;
+        this.update();
+    };
+
+    /**
+     * Set the displayed scale from outside the React tree — used when opening a
+     * recipe from a timer that was started at a different scale.
+     */
+    setScale(scale: number): void {
+        if (Number.isFinite(scale) && scale > 0 && scale !== this.scale) {
+            this.scale = scale;
+            this.update();
+        }
+    }
+
     protected handleShowSource = (): void => {
         if (this.uri) {
             this.editorManager.open(this.uri);
@@ -359,17 +407,57 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         open(this.openerService, targetUri);
     };
 
+    protected handleOpenLink = (url: string): void => {
+        this.windowService.openNewWindow(url, { external: true });
+    };
+
+    /** The recipe's display name, used to label timers in the Timers panel. */
+    protected recipeName(): string {
+        const name = this.recipe?.metadata.map['name'];
+        if (name !== undefined && name !== '') {
+            return String(name);
+        }
+        return (this.uri?.path.base ?? '').replace(/\.cook$/i, '');
+    }
+
+    // A property initializer, not a method: its arrow functions close over
+    // `this` but only dereference `this.timerService` when invoked, by which
+    // point property injection has run. Binding eagerly instead — e.g.
+    // `find: this.timerService.find` — would read `this.timerService` at
+    // construction time, before injection, and throw on `undefined`.
+    protected readonly timerBinding: TimerBinding = {
+        ref: (globalStepIndex: number, timerPosition: number): TimerRecipeRef => ({
+            recipePath: this.uri?.toString() ?? '',
+            recipeName: this.recipeName(),
+            globalStepIndex,
+            timerPosition,
+            scale: this.scale,
+        }),
+        find: ref => this.timerService.find(ref),
+        start: (ref, title, durationSeconds) => this.timerService.start(ref, title, durationSeconds),
+        toggle: id => this.timerService.toggle(id),
+        reset: id => this.timerService.reset(id),
+        addTime: (id, seconds) => this.timerService.addTime(id, seconds),
+        nowMs: () => this.timerService.nowMs(),
+    };
+
     protected render(): React.ReactNode {
         if (this.recipe) {
             return (
-                <RecipeView
-                    recipe={this.recipe}
-                    fileName={this.uri?.path.base ?? ''}
-                    images={this.images}
-                    onShowSource={this.handleShowSource}
-                    onAddToShoppingList={this.handleAddToShoppingList}
-                    onNavigateToRecipe={this.handleNavigateToRecipe}
-                />
+                <TimerBindingProvider value={this.timerBinding}>
+                    <LinkOpenerProvider value={this.handleOpenLink}>
+                        <RecipeView
+                            recipe={this.recipe}
+                            fileName={this.uri?.path.base ?? ''}
+                            images={this.images}
+                            scale={this.scale}
+                            onScaleChange={this.handleScaleChange}
+                            onShowSource={this.handleShowSource}
+                            onAddToShoppingList={this.handleAddToShoppingList}
+                            onNavigateToRecipe={this.handleNavigateToRecipe}
+                        />
+                    </LinkOpenerProvider>
+                </TimerBindingProvider>
             );
         }
 

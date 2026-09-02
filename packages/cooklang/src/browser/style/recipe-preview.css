@@ -353,6 +353,48 @@
     white-space: nowrap;
 }
 
+.theia-recipe-preview .timer-badge-icon {
+    margin-right: 3px;
+    font-size: 0.9em;
+    vertical-align: baseline;
+}
+
+.theia-recipe-preview .timer-badge-clock {
+    font-family: var(--theia-editor-font-family, monospace);
+}
+
+.theia-recipe-preview .timer-badge-idle,
+.theia-recipe-preview .timer-badge-running,
+.theia-recipe-preview .timer-badge-paused,
+.theia-recipe-preview .timer-badge-finished {
+    cursor: pointer;
+}
+
+.theia-recipe-preview .timer-badge-idle:hover {
+    border-color: var(--theia-focusBorder);
+}
+
+.theia-recipe-preview .timer-badge-running {
+    background: var(--theia-editorInfo-foreground);
+    border-color: var(--theia-editorInfo-foreground);
+    color: var(--theia-editor-background);
+}
+
+.theia-recipe-preview .timer-badge-paused {
+    opacity: 0.7;
+    border-style: dashed;
+}
+
+.theia-recipe-preview .timer-badge-finished {
+    /* The inputValidation warning pair is designed as background-plus-text and
+       stays legible in both themes. Using editorWarning-foreground as a
+       background instead only reached ~3.1:1 against editor-background in the
+       light theme, under the 4.5:1 needed for text this size. */
+    background: var(--theia-inputValidation-warningBackground);
+    border-color: var(--theia-inputValidation-warningBorder, var(--theia-editorWarning-foreground));
+    color: var(--theia-foreground);
+}
+
 /* Note block — styled as blockquote */
 .theia-recipe-preview .note-item {
     padding: 8px 16px;
@@ -409,4 +451,16 @@
     height: auto;
     border-radius: 6px;
     box-shadow: 0 1px 4px var(--theia-widget-shadow);
+}
+
+/* Links found in metadata values, step text and notes */
+.theia-recipe-preview .recipe-link {
+    color: var(--theia-textLink-foreground);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.theia-recipe-preview .recipe-link:hover {
+    color: var(--theia-textLink-activeForeground);
+    text-decoration: underline;
 }

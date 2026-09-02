@@ -29,11 +29,16 @@ import { CooklangGrammarContribution } from './cooklang-grammar-contribution';
 import { CooklangLanguageClientContribution } from './cooklang-language-client-contribution';
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
+import { CookingTimerService } from './cooking-timer-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListContribution } from './shopping-list-contribution';
+import { TimerChime } from './timer-chime';
+import { TimerAlarmService } from './timer-alarm-service';
+import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
+import { TimersViewContribution } from './timers-view-contribution';
 import { MENU_PREVIEW_WIDGET_ID, createMenuPreviewWidget } from './menu-preview-widget';
 import { MenuPreviewContribution } from './menu-preview-contribution';
 import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './report-widget';
@@ -72,6 +77,11 @@ export default new ContainerModule(bind => {
         createWidget: (options: { uri: string }) =>
             createRecipePreviewWidget(ctx.container, new URI(options.uri)),
     })).inSingletonScope();
+
+    // Cooking timer state, shared by the recipe preview's timer badges and the
+    // Timers panel. Bound here rather than with the other timer bindings below
+    // because the preview widget injects it, and a preview cannot open without.
+    bind(CookingTimerService).toSelf().inSingletonScope();
 
     // Recipe preview commands, keybindings, toolbar, and context menu
     bind(RecipePreviewContribution).toSelf().inSingletonScope();
@@ -148,4 +158,17 @@ export default new ContainerModule(bind => {
     bindViewContribution(bind, ShoppingListContribution);
     bind(FrontendApplicationContribution).toService(ShoppingListContribution);
     bind(TabBarToolbarContribution).toService(ShoppingListContribution);
+
+    // --- Timers --- (CookingTimerService is bound above, with the preview.)
+    bind(TimerChime).toSelf().inSingletonScope();
+    bind(TimerAlarmService).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(TimerAlarmService);
+
+    bind(TimersWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: TIMERS_WIDGET_ID,
+        createWidget: () => ctx.container.get<TimersWidget>(TimersWidget),
+    })).inSingletonScope();
+
+    bindViewContribution(bind, TimersViewContribution);
 });

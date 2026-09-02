@@ -31,6 +31,16 @@ export const cooklangPreferencesSchema: PreferenceSchema = {
             'type': 'string',
             'description': 'Base URL of the Cooklang nutrition service used by report templates.',
             'default': 'https://nutrition.cook.md'
+        },
+        'cooklang.timers.notifications': {
+            'type': 'boolean',
+            'description': 'Show a system notification when a recipe timer finishes.',
+            'default': true
+        },
+        'cooklang.timers.sound': {
+            'type': 'boolean',
+            'description': 'Play a sound when a recipe timer finishes.',
+            'default': true
         }
     }
 };
@@ -38,6 +48,8 @@ export const cooklangPreferencesSchema: PreferenceSchema = {
 export interface CooklangConfiguration {
     'cooklang.openInPreviewMode': boolean;
     'cooklang.nutrition.serviceUrl': string;
+    'cooklang.timers.notifications': boolean;
+    'cooklang.timers.sound': boolean;
 }
 
 export const CooklangPreferenceContribution = Symbol('CooklangPreferenceContribution');

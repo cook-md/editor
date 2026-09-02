@@ -35,6 +35,8 @@ import {
     scaleRecipe,
 } from '../common/recipe-types';
 import { ResolvedRecipeImages, lookupStepImage } from '../common/recipe-images';
+import { linkify } from '../common/recipe-links';
+import { TimerBadge } from './timer-components';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -85,20 +87,6 @@ function ingredientIndicesForSection(section: Section): number[] {
 }
 
 /**
- * Format a timer for display. Uses the timer name when present, falls back to
- * the formatted quantity, and ultimately to an empty string.
- */
-function formatTimer(timer: Timer): string {
-    if (timer.name) {
-        return timer.name;
-    }
-    if (timer.quantity !== null) {
-        return formatQuantity(timer.quantity);
-    }
-    return '';
-}
-
-/**
  * Build a relative path from a recipe reference's components and name.
  */
 function buildReferencePath(ref: RecipeReference): string {
@@ -107,6 +95,56 @@ function buildReferencePath(ref: RecipeReference): string {
     }
     return ref.components.join('/') + '/' + ref.name;
 }
+
+// ---------------------------------------------------------------------------
+// Links
+// ---------------------------------------------------------------------------
+
+/** Opens a URL outside the preview. Supplied by the widget. */
+export type LinkOpener = (url: string) => void;
+
+const LinkOpenerContext = React.createContext<LinkOpener | undefined>(undefined);
+
+/** Wraps a subtree so the links inside it open through `value`. */
+export const LinkOpenerProvider = LinkOpenerContext.Provider;
+
+interface LinkedTextProps {
+    text: string;
+}
+
+/**
+ * Recipe text with any URLs in it turned into links. Without a
+ * {@link LinkOpenerProvider} above it the anchors still render with their
+ * `href`, they just have no click behaviour — which is what keeps this
+ * component renderable in tests.
+ */
+export const LinkedText = ({ text }: LinkedTextProps): React.ReactElement => {
+    const openLink = React.useContext(LinkOpenerContext);
+    const tokens = React.useMemo(() => linkify(text), [text]);
+    if (tokens.length === 0) {
+        return <></>;
+    }
+    if (tokens.length === 1 && tokens[0].type === 'text') {
+        return <React.Fragment>{text}</React.Fragment>;
+    }
+    return (
+        <React.Fragment>
+            {tokens.map((token, idx) => token.type === 'text' ? (
+                <React.Fragment key={idx}>{token.value}</React.Fragment>
+            ) : (
+                <a key={idx} className='recipe-link' href={token.href}
+                    onClick={e => {
+                        if (openLink) {
+                            e.preventDefault();
+                            openLink(token.href);
+                        }
+                    }}>
+                    {token.value}
+                </a>
+            ))}
+        </React.Fragment>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // StepItemView
@@ -118,12 +156,23 @@ interface StepItemViewProps {
     cookware: Cookware[];
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
+    globalStepIndex: number;
+    /** Index of this item among the timer items of its step. */
+    timerPosition: number;
 }
 
-const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }: StepItemViewProps): React.ReactElement => {
+const StepItemView = ({
+    item,
+    ingredients,
+    cookware,
+    timers,
+    inlineQuantities,
+    globalStepIndex,
+    timerPosition,
+}: StepItemViewProps): React.ReactElement => {
     switch (item.type) {
         case 'text':
-            return <React.Fragment>{item.value}</React.Fragment>;
+            return <LinkedText text={item.value} />;
 
         case 'ingredient': {
             const ing = ingredients[item.index];
@@ -139,8 +188,12 @@ const StepItemView = ({ item, ingredients, cookware, timers, inlineQuantities }:
 
         case 'timer': {
             const timer = timers[item.index];
-            const displayText = timer ? formatTimer(timer) : `timer[${item.index}]`;
-            return <span className='timer-badge'>{displayText}</span>;
+            if (!timer) {
+                return <span className='timer-badge'>{`timer[${item.index}]`}</span>;
+            }
+            return (
+                <TimerBadge timer={timer} globalStepIndex={globalStepIndex} timerPosition={timerPosition} />
+            );
         }
 
         case 'inlineQuantity': {
@@ -223,6 +276,7 @@ interface SectionContentViewProps {
     timers: Timer[];
     inlineQuantities: InlineQuantity[];
     imageSrc?: string;
+    globalStepIndex: number;
 }
 
 const SectionContentView = ({
@@ -232,9 +286,10 @@ const SectionContentView = ({
     timers,
     inlineQuantities,
     imageSrc,
+    globalStepIndex,
 }: SectionContentViewProps): React.ReactElement => {
     if (content.type === 'text') {
-        return <div className='note-item'>{content.value}</div>;
+        return <div className='note-item'><LinkedText text={content.value} /></div>;
     }
 
     const { items, number } = content.value;
@@ -242,16 +297,24 @@ const SectionContentView = ({
         <div className='step-item'>
             <div className='step-number'>{number}</div>
             <div className='step-content'>
-                {items.map((item, idx) => (
-                    <StepItemView
-                        key={idx}
-                        item={item}
-                        ingredients={ingredients}
-                        cookware={cookware}
-                        timers={timers}
-                        inlineQuantities={inlineQuantities}
-                    />
-                ))}
+                {(() => {
+                    let timerPosition = 0;
+                    return items.map((item, idx) => {
+                        const position = item.type === 'timer' ? timerPosition++ : 0;
+                        return (
+                            <StepItemView
+                                key={idx}
+                                item={item}
+                                ingredients={ingredients}
+                                cookware={cookware}
+                                timers={timers}
+                                inlineQuantities={inlineQuantities}
+                                globalStepIndex={globalStepIndex}
+                                timerPosition={position}
+                            />
+                        );
+                    });
+                })()}
                 <StepIngredientsSummary items={items} ingredients={ingredients} />
                 {imageSrc && (
                     <RecipeImage className='step-image' src={imageSrc} alt={`Step ${number}`} />
@@ -298,6 +361,7 @@ export const InstructionsPanel = ({
                         )}
                         {section.content.map((content, cIdx) => {
                             let imageSrc: string | undefined;
+                            const stepIndex = globalStepIndex;
                             if (content.type === 'step') {
                                 if (images) {
                                     imageSrc = lookupStepImage(images, sIdx, stepInSection, globalStepIndex);
@@ -314,6 +378,7 @@ export const InstructionsPanel = ({
                                     timers={timers}
                                     inlineQuantities={inlineQuantities}
                                     imageSrc={imageSrc}
+                                    globalStepIndex={stepIndex}
                                 />
                             );
                         })}
@@ -477,7 +542,7 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
         <div className='recipe-metadata'>
             {pills.map((pill, idx) => (
                 <span key={idx} className='metadata-pill'>
-                    <strong>{pill.label}:</strong> {pill.value}
+                    <strong>{pill.label}:</strong> <LinkedText text={pill.value} />
                 </span>
             ))}
         </div>
@@ -492,13 +557,23 @@ export interface RecipeViewProps {
     recipe: Recipe;
     fileName: string;
     images?: ResolvedRecipeImages;
+    scale: number;
+    onScaleChange: (scale: number) => void;
     onShowSource?: () => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
 }
 
-export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShoppingList, onNavigateToRecipe }: RecipeViewProps): React.ReactElement => {
-    const [scale, setScale] = React.useState(1);
+export const RecipeView = ({
+    recipe,
+    fileName,
+    images,
+    scale,
+    onScaleChange,
+    onShowSource,
+    onAddToShoppingList,
+    onNavigateToRecipe,
+}: RecipeViewProps): React.ReactElement => {
     const meta = recipe.metadata.map;
 
     // Derive title from metadata or strip the .cook extension from the filename.
@@ -537,7 +612,7 @@ export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShop
                             onChange={e => {
                                 const val = parseFloat(e.target.value);
                                 if (Number.isFinite(val) && val > 0) {
-                                    setScale(val);
+                                    onScaleChange(val);
                                 }
                             }}
                             title='Scale factor'
@@ -568,7 +643,7 @@ export const RecipeView = ({ recipe, fileName, images, onShowSource, onAddToShop
             )}
 
             {description && (
-                <p className='recipe-description'>{description}</p>
+                <p className='recipe-description'><LinkedText text={description} /></p>
             )}
 
             <MetadataPills meta={meta} />

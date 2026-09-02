@@ -51,6 +51,10 @@ export namespace CooklangPreviewCommands {
         label: 'Cooklang: Open Source',
         iconClass: 'codicon codicon-go-to-file'
     };
+    export const OPEN_PREVIEW_AT_SCALE: Command = {
+        id: 'cooklang.openPreviewAtScale',
+        label: 'Cooklang: Open Preview at Scale',
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +115,11 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
                 isEnabled: uri => CooklangUri.isRecipe(uri),
             })
         );
+        commands.registerCommand(CooklangPreviewCommands.OPEN_PREVIEW_AT_SCALE, {
+            execute: (uri: URI | string, scale: number) => this.openPreviewAtScale(uri, scale),
+            // Invoked from the Timers panel, never from the command palette.
+            isVisible: () => false,
+        });
     }
 
     // --- TabBarToolbarContribution ---
@@ -232,6 +241,21 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         }
 
         const preview = await this.getOrCreatePreview(uri);
+        await this.shell.addWidget(preview, { area: 'main' });
+        this.shell.activateWidget(preview.id);
+    }
+
+    /**
+     * Open (or reveal) the preview for `uri` and set its scale — the way back
+     * from a timer in the Timers panel to the recipe it came from.
+     */
+    protected async openPreviewAtScale(uri: URI | string, scale: number): Promise<void> {
+        const target = typeof uri === 'string' ? new URI(uri) : uri;
+        if (!CooklangUri.isRecipe(target)) {
+            return;
+        }
+        const preview = await this.getOrCreatePreview(target);
+        preview.setScale(scale);
         await this.shell.addWidget(preview, { area: 'main' });
         this.shell.activateWidget(preview.id);
     }

@@ -1,0 +1,127 @@
+.theia-cooklang-timers {
+    padding: 8px;
+    color: var(--theia-foreground);
+    font-size: var(--theia-ui-font-size1);
+}
+
+.theia-cooklang-timers .timers-empty {
+    padding: 16px 8px;
+    color: var(--theia-descriptionForeground);
+    line-height: 1.5;
+}
+
+.theia-cooklang-timers .timers-header {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.theia-cooklang-timers .timers-header-action {
+    background: none;
+    border: none;
+    color: var(--theia-textLink-foreground);
+    cursor: pointer;
+    padding: 2px 4px;
+}
+
+.theia-cooklang-timers .timer-row {
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.theia-cooklang-timers .timer-row-finished {
+    border-color: var(--theia-editorWarning-foreground);
+}
+
+.theia-cooklang-timers .timer-row-paused {
+    opacity: 0.75;
+}
+
+.theia-cooklang-timers .timer-row-main {
+    min-width: 0;
+}
+
+.theia-cooklang-timers .timer-row-clock {
+    font-family: var(--theia-editor-font-family, monospace);
+    font-size: 1.8em;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.theia-cooklang-timers .timer-row-title {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theia-cooklang-timers .timer-row-recipe {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
+    /* A real button for keyboard and assistive tech, styled as a link. */
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--theia-textLink-foreground);
+    cursor: pointer;
+    font-size: 0.92em;
+    font-family: inherit;
+}
+
+.theia-cooklang-timers .timer-row-recipe:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 2px;
+}
+
+.theia-cooklang-timers .timer-row-recipe:hover {
+    text-decoration: underline;
+}
+
+.theia-cooklang-timers .timer-row-recipe-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.theia-cooklang-timers .timer-row-scale {
+    color: var(--theia-descriptionForeground);
+}
+
+.theia-cooklang-timers .timer-row-progress {
+    height: 3px;
+    background: var(--theia-panel-border);
+    border-radius: 2px;
+    margin: 8px 0;
+    overflow: hidden;
+}
+
+.theia-cooklang-timers .timer-row-progress-fill {
+    height: 100%;
+    background: var(--theia-progressBar-background);
+}
+
+.theia-cooklang-timers .timer-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theia-cooklang-timers .timer-row-action {
+    background: none;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+    color: var(--theia-foreground);
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.theia-cooklang-timers .timer-row-action:hover {
+    border-color: var(--theia-focusBorder);
+}
