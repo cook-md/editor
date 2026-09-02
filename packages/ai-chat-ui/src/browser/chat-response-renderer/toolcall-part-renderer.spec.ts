@@ -14,8 +14,21 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
+import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
+
+let disableJSDOM = enableJSDOM();
+
+import 'reflect-metadata';
+
 import { expect } from 'chai';
+import * as React from '@theia/core/shared/react';
+import { ReactNode } from '@theia/core/shared/react';
+import { ToolCallChatResponseContent } from '@theia/ai-chat/lib/common';
+import { ToolCallResult } from '@theia/ai-core';
 import { condenseArguments, formatArgsForTooltip } from './toolcall-utils';
+import { ToolCallPartRenderer } from './toolcall-part-renderer';
+
+disableJSDOM();
 
 describe('condenseArguments', () => {
 
@@ -271,6 +284,55 @@ describe('formatArgsForTooltip', () => {
         const result = formatArgsForTooltip(args);
         expect(result.value).to.contain('\\[0\\]');
         expect(result.value).to.contain('\\[1\\]');
+    });
+
+});
+
+describe('ToolCallPartRenderer.renderResult', () => {
+
+    before(() => disableJSDOM = enableJSDOM());
+    after(() => disableJSDOM());
+
+    class TestRenderer extends ToolCallPartRenderer {
+        renderFor(result: ToolCallResult): ReactNode {
+            return this.renderResult({ result } as ToolCallChatResponseContent);
+        }
+    }
+
+    const renderer = new TestRenderer();
+
+    const asElement = (node: ReactNode): React.ReactElement => node as React.ReactElement;
+
+    it('renders a plain object whose "content" is a string as JSON, not as content parts', () => {
+        // The shape returned by the cookbot `fetchUrl` tool: a legal `object`
+        // ToolCallResult that happens to use `content` for something that is
+        // not a list of ToolCallContentResult.
+        const result = { content: 'the page text', title: 'A Recipe' };
+
+        const node = asElement(renderer.renderFor(result));
+
+        expect(node.type).to.equal('pre');
+        expect(node.props.children).to.equal(JSON.stringify(result, undefined, 2));
+    });
+
+    it('renders a JSON *string* whose parsed "content" is a string as JSON', () => {
+        // Tool handlers hand back strings; `renderResult` parses them first.
+        const result = { content: 'the page text', title: 'A Recipe' };
+
+        const node = asElement(renderer.renderFor(JSON.stringify(result)));
+
+        expect(node.type).to.equal('pre');
+        expect(node.props.children).to.equal(JSON.stringify(result, undefined, 2));
+    });
+
+    it('still renders a real ToolCallContent result as content parts', () => {
+        const result = { content: [{ type: 'text', text: 'hello' }] };
+
+        const node = asElement(renderer.renderFor(result));
+
+        expect(node.type).to.equal('div');
+        expect(node.props.className).to.equal('theia-toolCall-response-content');
+        expect(node.props.children).to.have.length(1);
     });
 
 });
