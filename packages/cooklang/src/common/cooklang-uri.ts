@@ -47,6 +47,16 @@ export namespace CooklangUri {
         return hasExtension(uri, MENU_EXTENSION);
     }
 
+    /**
+     * A URI for an absolute filesystem path returned by the native addon.
+     *
+     * `cooklang-find` reports OS paths, so Windows results arrive with `\`
+     * separators that `URI.fromFilePath` does not translate.
+     */
+    export function fromNativePath(path: string): URI {
+        return URI.fromFilePath(path.replace(/\\/g, '/'));
+    }
+
     /** Whether `uri` denotes any Cooklang file (recipe or menu). */
     export function isCooklang(uri: URI | undefined): boolean {
         return isRecipe(uri) || isMenu(uri);

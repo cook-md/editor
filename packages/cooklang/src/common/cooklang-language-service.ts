@@ -67,6 +67,19 @@ export interface CooklangLanguageService {
     findRecipe(baseDir: string, name: string): Promise<string | undefined>;
 
     /**
+     * The absolute path of the recipe `findRecipe` would read for `name` inside
+     * `baseDir`, or `undefined` when nothing matches.
+     *
+     * Use this to navigate to a referenced recipe rather than rebuilding the path
+     * from the reference text: `cooklang-find` owns the lookup rules (search
+     * order, `.cook` vs `.menu`, how a bare name maps onto the tree) and they are
+     * not reproducible by appending an extension to a workspace-relative path.
+     *
+     * Same disk-access caveat as `findRecipe` (OS path, Electron-only).
+     */
+    findRecipePath(baseDir: string, name: string): Promise<string | undefined>;
+
+    /**
      * Title and step images for the recipe at `recipePath`, discovered with
      * `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
      *

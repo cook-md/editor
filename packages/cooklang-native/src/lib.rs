@@ -949,6 +949,25 @@ pub fn napi_find_recipe(base_dir: String, name: String) -> napi::Result<Option<S
     }
 }
 
+/// Resolve a recipe by name (with or without extension) inside `base_dir` using
+/// `cooklang-find`'s lookup rules — the same rules `findRecipe` uses to read the
+/// content, so a reference that renders in the preview resolves to the very file
+/// the preview read. Returns the absolute path, or `null` if nothing matches.
+///
+/// Callers must not reconstruct this path themselves: `cooklang-find` decides the
+/// search order, which extensions to try (`.cook` then `.menu`) and how a bare
+/// name maps onto the tree, and those rules are not reproducible from a name.
+#[napi(js_name = "findRecipePath")]
+pub fn napi_find_recipe_path(base_dir: String, name: String) -> napi::Result<Option<String>> {
+    let base = Utf8PathBuf::from(base_dir);
+    let recipe_name = Utf8PathBuf::from(name);
+    match cooklang_find::get_recipe([base], recipe_name) {
+        Ok(entry) => Ok(entry.path().map(|path| path.to_string())),
+        Err(cooklang_find::fetcher::FetchError::InvalidPath(_)) => Ok(None),
+        Err(e) => Err(napi::Error::from_reason(format!("findRecipePath: {e}"))),
+    }
+}
+
 /// Title and step images for the recipe at `recipe_path`, discovered with
 /// `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
 ///
@@ -1389,6 +1408,61 @@ mod workspace_tools_tests {
         );
         ws.write("Week.menu", "= Monday\n@./Pancakes{2}\n");
         ws
+    }
+
+    #[test]
+    fn find_recipe_path_resolves_a_top_level_recipe_by_bare_name() {
+        let ws = temp_workspace();
+        let path = napi_find_recipe_path(ws.base_dir(), "Pancakes".to_string()).unwrap();
+        assert!(
+            path.as_deref().is_some_and(|p| p.ends_with("Pancakes.cook")),
+            "expected Pancakes.cook, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn find_recipe_path_resolves_a_recipe_in_a_subdirectory() {
+        // The case the preview widgets got wrong by resolving against the
+        // workspace root: the reference names a nested recipe.
+        let ws = temp_workspace();
+        let path = napi_find_recipe_path(ws.base_dir(), "Dinner/Salmon Bowl".to_string()).unwrap();
+        assert!(
+            path.as_deref()
+                .is_some_and(|p| p.ends_with("Dinner/Salmon Bowl.cook")),
+            "expected Dinner/Salmon Bowl.cook, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn find_recipe_path_resolves_a_menu_not_just_cook() {
+        // A hardcoded `+ '.cook'` in the caller can never reach this file.
+        let ws = temp_workspace();
+        let path = napi_find_recipe_path(ws.base_dir(), "Week".to_string()).unwrap();
+        assert!(
+            path.as_deref().is_some_and(|p| p.ends_with("Week.menu")),
+            "expected Week.menu, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn find_recipe_path_returns_none_for_a_missing_recipe() {
+        let ws = temp_workspace();
+        let path = napi_find_recipe_path(ws.base_dir(), "No Such Recipe".to_string()).unwrap();
+        assert_eq!(path, None);
+    }
+
+    #[test]
+    fn find_recipe_path_agrees_with_find_recipe() {
+        // The path and the content must come from the same file, or the preview
+        // would render one recipe and navigate to another.
+        let ws = temp_workspace();
+        let path = napi_find_recipe_path(ws.base_dir(), "Pancakes".to_string())
+            .unwrap()
+            .expect("path");
+        let content = napi_find_recipe(ws.base_dir(), "Pancakes".to_string())
+            .unwrap()
+            .expect("content");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
     }
 
     fn search(ws: &TempWs, query: &str) -> Vec<serde_json::Value> {

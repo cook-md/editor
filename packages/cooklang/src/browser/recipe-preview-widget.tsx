@@ -16,12 +16,10 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
-import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -33,6 +31,7 @@ import {
     RECIPE_IMAGE_EXTENSIONS,
 } from '../common/recipe-images';
 import { RecipeImageService } from './recipe-image-service';
+import { RecipeNavigator } from './recipe-navigator';
 import { RecipeView, LinkOpenerProvider } from './recipe-preview-components';
 import { TimerRecipeRef } from '../common/cooking-timer';
 import { CookingTimerService } from './cooking-timer-service';
@@ -72,17 +71,14 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(CommandRegistry)
     protected readonly commandRegistry: CommandRegistry;
 
-    @inject(OpenerService)
-    protected readonly openerService: OpenerService;
-
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
 
-    @inject(WorkspaceService)
-    protected readonly workspaceService: WorkspaceService;
-
     @inject(RecipeImageService)
     protected readonly imageService: RecipeImageService;
+
+    @inject(RecipeNavigator)
+    protected readonly navigator: RecipeNavigator;
 
     @inject(WindowService)
     protected readonly windowService: WindowService;
@@ -389,7 +385,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     protected handleShowSource = (): void => {
         if (this.uri) {
-            this.editorManager.open(this.uri);
+            this.navigator.openSource(this.uri);
         }
     };
 
@@ -398,13 +394,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
-        const root = this.workspaceService.tryGetRoots()[0];
-        if (!root) {
-            return;
-        }
-        const rootUri = new URI(root.resource.toString());
-        const targetUri = rootUri.resolve(referencePath + '.cook');
-        open(this.openerService, targetUri);
+        this.navigator.navigate(referencePath);
     };
 
     protected handleOpenLink = (url: string): void => {

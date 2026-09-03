@@ -37,8 +37,10 @@ if (shouldInitialize({
         release: options.release,
         environment: options.environment,
         sendDefaultPii: options.sendDefaultPii,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        beforeSend: event => options.beforeSend(event as any) as any,
+        // Sentry drops an event when `beforeSend` returns null; internally we use
+        // undefined for "no event", so translate at the boundary.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, no-null/no-null
+        beforeSend: event => (options.beforeSend(event as any) ?? null) as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         beforeBreadcrumb: breadcrumb => options.beforeBreadcrumb(breadcrumb as any) as any
     });

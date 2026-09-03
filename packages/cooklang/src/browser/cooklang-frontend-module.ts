@@ -34,6 +34,7 @@ import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { RecipeNavigator } from './recipe-navigator';
 import { ShoppingListContribution } from './shopping-list-contribution';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
@@ -147,6 +148,7 @@ export default new ContainerModule(bind => {
 
     // Shopping list
     bind(RecipeReferenceResolver).toSelf().inSingletonScope();
+    bind(RecipeNavigator).toSelf().inSingletonScope();
     bind(ShoppingListService).toSelf().inSingletonScope();
 
     bind(ShoppingListWidget).toSelf();

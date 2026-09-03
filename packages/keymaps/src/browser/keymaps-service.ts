@@ -61,7 +61,17 @@ export class KeymapsService {
      */
     @postConstruct()
     protected init(): void {
-        this.doInit();
+        // Not awaited on purpose (`@postConstruct` must stay synchronous), so the rejection has
+        // to be handled here. Default keybindings still work without `keymaps.json`, but `open()`
+        // and `updateKeymap()` await `deferredModel`, so it has to be settled too - otherwise
+        // "Keyboard Shortcuts" hangs forever instead of reporting that it could not load.
+        this.doInit().catch(e => {
+            console.error(`Failed to initialize the keymaps from '${UserStorageUri.resolve('keymaps.json')}'.`, e);
+            this.deferredModel.reject(e);
+        });
+        // Nothing need be awaiting the deferred at the moment it rejects; keep that from
+        // surfacing as a second, unhandled rejection.
+        this.deferredModel.promise.catch(() => { /* reported above, re-thrown to awaiting callers */ });
     }
 
     protected async doInit(): Promise<void> {

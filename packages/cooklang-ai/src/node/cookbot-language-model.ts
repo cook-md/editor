@@ -454,14 +454,24 @@ export class CookbotLanguageModel implements LanguageModel {
             }
 
             if (LanguageModelMessage.isThinkingMessage(msg)) {
-                raw.push({
-                    role: 'assistant',
-                    content: [{
-                        type: 'thinking',
-                        thinking: msg.thinking,
-                        signature: msg.signature || '',
-                    }],
-                });
+                // A thinking block is only replayable with the signature the
+                // model issued for it. A stream cut short before its
+                // `signature_delta` leaves one behind unsigned, and sending
+                // that with a blank signature earns
+                // `messages.N.content.0: Invalid \`signature\` in \`thinking\` block` -
+                // permanently, because the history is re-sent every turn. Drop
+                // it instead: losing the reasoning costs this turn's context,
+                // sending it costs the whole session.
+                if (msg.signature) {
+                    raw.push({
+                        role: 'assistant',
+                        content: [{
+                            type: 'thinking',
+                            thinking: msg.thinking,
+                            signature: msg.signature,
+                        }],
+                    });
+                }
                 continue;
             }
 

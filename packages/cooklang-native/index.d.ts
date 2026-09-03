@@ -62,6 +62,17 @@ export declare function checkedSet(entriesJson: string): Array<string>
  */
 export declare function findRecipe(baseDir: string, name: string): string | null
 /**
+ * Resolve a recipe by name (with or without extension) inside `base_dir` using
+ * `cooklang-find`'s lookup rules — the same rules `findRecipe` uses to read the
+ * content, so a reference that renders in the preview resolves to the very file
+ * the preview read. Returns the absolute path, or `null` if nothing matches.
+ *
+ * Callers must not reconstruct this path themselves: `cooklang-find` decides the
+ * search order, which extensions to try (`.cook` then `.menu`) and how a bare
+ * name maps onto the tree, and those rules are not reproducible from a name.
+ */
+export declare function findRecipePath(baseDir: string, name: string): string | null
+/**
  * Title and step images for the recipe at `recipe_path`, discovered with
  * `cooklang-find`'s naming rules (the same ones CookCLI's web server uses).
  *
