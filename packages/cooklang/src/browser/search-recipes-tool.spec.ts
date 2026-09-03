@@ -195,4 +195,72 @@ describe('SearchRecipesTool', () => {
         const result = await invoke(tool, { query: 'x' });
         expect(result.error).to.match(/boom/);
     });
+
+    describe('queries (batch)', () => {
+
+        it('runs every query in one call and keeps the input order', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon];
+            const result = await invoke(tool, { queries: ['salmon', 'pancakes'] }) as unknown as {
+                searches: Array<{ query: string; recipes?: Array<{ path: string }>; total?: number }>;
+            };
+            expect(result.searches.map(s => s.query)).to.deep.equal(['salmon', 'pancakes']);
+            expect(ls.calls.map(c => c.query)).to.deep.equal(['salmon', 'pancakes']);
+            expect(result.searches[0].recipes?.[0].path).to.equal('Dinner/Salmon.cook');
+            expect(result.searches[0].total).to.equal(1);
+        });
+
+        it('applies tag and limit to every query', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon, pancakes, menu];
+            const result = await invoke(tool, { queries: ['a', 'b'], tag: 'breakfast' }) as unknown as {
+                searches: Array<{ recipes?: Array<{ path: string }> }>;
+            };
+            expect(result.searches[0].recipes?.map(r => r.path)).to.deep.equal(['Pancakes.cook']);
+            expect(result.searches[1].recipes?.map(r => r.path)).to.deep.equal(['Pancakes.cook']);
+        });
+
+        it('reports a failing query in its own entry and still runs the rest', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon];
+            ls.searchRecipes = async (_baseDir: string, query: string) => {
+                if (query === 'bad') { throw new Error('native boom'); }
+                return JSON.stringify([salmon]);
+            };
+            const result = await invoke(tool, { queries: ['bad', 'good'] }) as unknown as {
+                searches: Array<{ query: string; error?: string; total?: number }>;
+            };
+            expect(result.searches[0].error).to.match(/native boom/);
+            expect(result.searches[1].total).to.equal(1);
+        });
+
+        it('collapses duplicate queries', async () => {
+            const { tool, ls } = createTool();
+            const result = await invoke(tool, { queries: ['salmon', 'salmon'] }) as unknown as { searches: unknown[] };
+            expect(result.searches).to.have.length(1);
+            expect(ls.calls).to.have.length(1);
+        });
+
+        it('rejects query and queries together', async () => {
+            const { tool } = createTool();
+            const result = await invoke(tool, { query: 'a', queries: ['b'] });
+            expect(result.error).to.match(/not both/);
+        });
+
+        it('rejects an empty array and a batch over the cap', async () => {
+            const { tool } = createTool();
+            expect((await invoke(tool, { queries: [] })).error).to.match(/must not be empty/);
+            const many = Array.from({ length: 26 }, (_, i) => `q${i}`);
+            expect((await invoke(tool, { queries: many })).error).to.match(/at most 25 items/);
+        });
+
+        it('leaves the single-query result shape untouched', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon];
+            const result = await invoke(tool, { query: 'salmon' });
+            expect(result.recipes).to.have.length(1);
+            expect(result.total).to.equal(1);
+            expect((result as unknown as { searches?: unknown }).searches).to.equal(undefined);
+        });
+    });
 });

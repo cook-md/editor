@@ -18,14 +18,23 @@ import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService, CooklangUri, ReportOutputFormat, ReportTemplates } from '../common';
 import { ReportConfigService } from './report-config-service';
 import { ReportPresenter } from './report-presenter';
+import { MAX_BATCH_ITEMS, parseBatchArg } from './batch-args';
 
 interface RenderTemplateArgs {
     templateContent?: string;
     templateUri?: string;
     recipeUri?: string;
+    recipeUris?: string[];
     show?: boolean;
     outputFormat?: ReportOutputFormat;
     scale?: number;
+}
+
+/** One recipe's outcome in a batched render. */
+interface BatchEntry {
+    recipeUri: string;
+    output?: string;
+    error?: string;
 }
 
 /**
@@ -109,6 +118,16 @@ export class RenderTemplateTool implements ToolProvider {
                             + 'root (e.g. "Baking/Napoleon.cook"); an absolute path or file:// URI also works. Defaults to the '
                             + 'active recipe in the editor. Renders the file\'s saved content on disk (unsaved editor edits are not included).',
                     },
+                    recipeUris: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: `Render the SAME template against several recipes in one call (max ${MAX_BATCH_ITEMS}). `
+                            + 'Use this whenever you are screening a shortlist — "which of these are over 35% protein?" — instead of '
+                            + 'one call per recipe: the template is sent once rather than retyped for every candidate. '
+                            + 'Returns { results: [{ recipeUri, output } | { recipeUri, error }] } in the order given; a recipe that '
+                            + 'fails to read or render reports its error in its own entry and the rest still come back. '
+                            + 'Mutually exclusive with recipeUri, and cannot be combined with show (a batch is headless).',
+                    },
                     show: {
                         type: 'boolean',
                         description: 'When true, open or refresh a Report tab showing the output. Default false (headless; output only returned to you).',
@@ -146,6 +165,9 @@ export class RenderTemplateTool implements ToolProvider {
             : await this.resolveTemplate(args.templateUri ?? '');
         if ('error' in template) {
             return this.fail(template.error);
+        }
+        if (args.recipeUris !== undefined) {
+            return this.executeBatch(args, template);
         }
         let recipeUri: URI | undefined;
         if (args.recipeUri) {
@@ -196,6 +218,70 @@ export class RenderTemplateTool implements ToolProvider {
         }
         // renderReport already returns `{ output }` | `{ error }`; pass through.
         return resultJson;
+    }
+
+    /**
+     * Renders one already-resolved template against several recipes.
+     *
+     * The point of the batch is that the template is resolved and transmitted
+     * once. A screening pass used to re-send the same inline Jinja source with
+     * every candidate — in one observed session, 28 calls averaging 457 bytes
+     * of arguments, almost all of it the same template retyped.
+     *
+     * A recipe that cannot be read or rendered fails **in its own slot**; the
+     * others still come back. One bad candidate costing a retry of the whole
+     * shortlist would give the waste straight back.
+     */
+    protected async executeBatch(args: RenderTemplateArgs, template: ResolvedTemplate): Promise<string> {
+        if (args.recipeUri) {
+            return this.fail('Pass either recipeUri or recipeUris, not both.');
+        }
+        if (args.show) {
+            return this.fail('show renders a single recipe into the Report tab; a batch is headless. '
+                + 'Screen with recipeUris, then render the one you want to present with recipeUri and show:true.');
+        }
+        const refs = parseBatchArg(args.recipeUris, 'recipeUris');
+        if ('error' in refs) {
+            return this.fail(refs.error);
+        }
+        const results: BatchEntry[] = [];
+        for (const ref of refs) {
+            results.push(await this.renderOne(ref, template, args.scale ?? 1));
+        }
+        return JSON.stringify({ results });
+    }
+
+    /** Renders one recipe reference, mapping every failure into the entry itself. */
+    protected async renderOne(ref: string, template: ResolvedTemplate, scale: number): Promise<BatchEntry> {
+        const recipeUri = this.reportConfigService.resolveWorkspaceUri(ref);
+        if (!recipeUri) {
+            return {
+                recipeUri: ref,
+                error: `Could not resolve '${ref}': it is a relative path but no workspace is open.`,
+            };
+        }
+        if (!CooklangUri.isCooklang(recipeUri)) {
+            return { recipeUri: ref, error: `Must be a .cook or .menu file, got: ${recipeUri.path.base}` };
+        }
+        let recipeContent: string;
+        try {
+            recipeContent = (await this.fileService.read(recipeUri)).value;
+        } catch (e) {
+            return { recipeUri: ref, error: `Could not read recipe: ${this.message(e)}` };
+        }
+        try {
+            const configJson = await this.reportConfigService.buildConfigJson(scale, recipeUri);
+            const resultJson = await this.languageService.renderReport(recipeContent, template.content, configJson);
+            const parsed = this.tryParse(resultJson);
+            if (!parsed) {
+                return { recipeUri: ref, error: 'Render returned an unreadable result.' };
+            }
+            return parsed.error !== undefined
+                ? { recipeUri: ref, error: parsed.error }
+                : { recipeUri: ref, output: parsed.output };
+        } catch (e) {
+            return { recipeUri: ref, error: `Render failed: ${this.message(e)}` };
+        }
     }
 
     protected inlineTemplate(content: string): ResolvedTemplate {

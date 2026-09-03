@@ -53,11 +53,13 @@ class FakeConfigService {
 class FakeLanguageService {
     calls: Array<{ recipe: string; template: string; config: string }> = [];
     response = JSON.stringify({ output: 'RENDERED' });
+    /** Overrides `response` per call when set, so a batch can vary by recipe. */
+    responder: ((recipe: string) => string) | undefined;
     throwError: Error | undefined;
     async renderReport(recipe: string, template: string, config: string): Promise<string> {
         if (this.throwError) { throw this.throwError; }
         this.calls.push({ recipe, template, config });
-        return this.response;
+        return this.responder ? this.responder(recipe) : this.response;
     }
 }
 
@@ -98,6 +100,15 @@ function createTool(): {
 
 /** Invokes the registered tool handler with a JSON argument string. */
 async function invoke(tool: RenderTemplateTool, args: object): Promise<{ output?: string; error?: string }> {
+    const result = await tool.getTool().handler(JSON.stringify(args));
+    return JSON.parse(result as string);
+}
+
+/** Invokes the handler and parses a batched `{ results: [...] }` envelope. */
+async function invokeBatch(tool: RenderTemplateTool, args: object): Promise<{
+    results?: Array<{ recipeUri: string; output?: string; error?: string }>;
+    error?: string;
+}> {
     const result = await tool.getTool().handler(JSON.stringify(args));
     return JSON.parse(result as string);
 }
@@ -332,6 +343,137 @@ describe('RenderTemplateTool', () => {
             expect(shown.templateLabel).to.equal('AI Template');
             expect(shown.inlineTemplateContent).to.equal('TPL');
             expect(shown.outputFormat).to.equal('markdown');
+        });
+    });
+
+    describe('recipeUris (batch)', () => {
+
+        it('advertises recipeUris as an array parameter', () => {
+            const { tool } = createTool();
+            const props = tool.getTool().parameters.properties as Record<string, { type?: string }>;
+            expect(props.recipeUris.type).to.equal('array');
+        });
+
+        it('renders one template against several recipes and keeps the input order', async () => {
+            const { tool, config, language, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A body');
+            files.files.set('file:///ws/b.cook', 'B body');
+            language.responder = recipe => JSON.stringify({ output: `OUT ${recipe}` });
+
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['a.cook', 'b.cook'] });
+
+            expect(result.results).to.deep.equal([
+                { recipeUri: 'a.cook', output: 'OUT A body' },
+                { recipeUri: 'b.cook', output: 'OUT B body' },
+            ]);
+        });
+
+        it('sends the template once per call, not once per recipe', async () => {
+            const { tool, config, language, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A');
+            files.files.set('file:///ws/b.cook', 'B');
+            files.files.set('file:///ws/config/reports/cost.jinja', 'COST TPL');
+
+            await invokeBatch(tool, { templateUri: 'config/reports/cost.jinja', recipeUris: ['a.cook', 'b.cook'] });
+
+            // The template file is resolved once and reused for every recipe —
+            // this is the whole point of the batch.
+            expect(language.calls.map(c => c.template)).to.deep.equal(['COST TPL', 'COST TPL']);
+        });
+
+        it('reports a failing recipe in its own entry and still renders the rest', async () => {
+            const { tool, config, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/good.cook', 'G');
+
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['missing.cook', 'good.cook'] });
+
+            expect(result.results).to.have.length(2);
+            expect(result.results![0].error).to.match(/Could not read recipe/);
+            expect(result.results![1].output).to.equal('RENDERED');
+        });
+
+        it('reports a per-recipe render error without failing the batch', async () => {
+            const { tool, config, language, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A');
+            files.files.set('file:///ws/b.cook', 'B');
+            language.responder = recipe =>
+                recipe === 'A' ? JSON.stringify({ error: 'unresolved ingredient' }) : JSON.stringify({ output: 'OK' });
+
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['a.cook', 'b.cook'] });
+
+            expect(result.results![0].error).to.equal('unresolved ingredient');
+            expect(result.results![1].output).to.equal('OK');
+        });
+
+        it('rejects a non-.cook entry in its own slot', async () => {
+            const { tool, config, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A');
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['notes.txt', 'a.cook'] });
+            expect(result.results![0].error).to.match(/\.cook or \.menu/);
+            expect(result.results![1].output).to.equal('RENDERED');
+        });
+
+        it('collapses duplicate recipes', async () => {
+            const { tool, config, language, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A');
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['a.cook', 'a.cook'] });
+            expect(result.results).to.have.length(1);
+            expect(language.calls).to.have.length(1);
+        });
+
+        it('rejects recipeUri and recipeUris together', async () => {
+            const { tool, config } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUri: 'a.cook', recipeUris: ['b.cook'] });
+            expect(result.error).to.match(/not both/);
+        });
+
+        it('rejects show with a batch and says how to present one result', async () => {
+            const { tool, config, presenter } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            const result = await invokeBatch(tool, { templateContent: 'TPL', recipeUris: ['a.cook'], show: true });
+            expect(result.error).to.match(/batch is headless/);
+            expect(presenter.shown).to.have.length(0);
+        });
+
+        it('rejects an empty array, a non-array, and non-string entries', async () => {
+            const { tool, config } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            expect((await invokeBatch(tool, { templateContent: 'T', recipeUris: [] })).error).to.match(/must not be empty/);
+            expect((await invokeBatch(tool, { templateContent: 'T', recipeUris: 'a.cook' })).error).to.match(/must be an array/);
+            expect((await invokeBatch(tool, { templateContent: 'T', recipeUris: ['a.cook', 3] })).error).to.match(/non-empty strings/);
+        });
+
+        it('rejects a batch larger than the cap and says to narrow first', async () => {
+            const { tool, config } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            const many = Array.from({ length: 26 }, (_, i) => `r${i}.cook`);
+            const result = await invokeBatch(tool, { templateContent: 'T', recipeUris: many });
+            expect(result.error).to.match(/at most 25 items, got 26/);
+            expect(result.error).to.match(/Narrow the shortlist/);
+        });
+
+        it('still validates the template before touching any recipe', async () => {
+            const { tool, config, language } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            const result = await invokeBatch(tool, { templateUri: 'builtin:nope', recipeUris: ['a.cook'] });
+            expect(result.error).to.match(/Unknown built-in template/);
+            expect(language.calls).to.have.length(0);
+        });
+
+        it('passes scale through for every recipe in the batch', async () => {
+            const { tool, config, files } = createTool();
+            config.workspaceRoot = new URI('file:///ws');
+            files.files.set('file:///ws/a.cook', 'A');
+            files.files.set('file:///ws/b.cook', 'B');
+            await invokeBatch(tool, { templateContent: 'T', recipeUris: ['a.cook', 'b.cook'], scale: 4 });
+            expect(config.lastScale).to.equal(4);
         });
     });
 });
