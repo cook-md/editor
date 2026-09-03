@@ -13,6 +13,19 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.43](https://github.com/cook-md/editor/compare/v0.1.0-alpha.42...v0.1.0-alpha.43) (2026-09-03)
+
+
+### Features
+
+* clickable URLs and working timers in the recipe preview ([#115](https://github.com/cook-md/editor/issues/115)) ([e07d84e](https://github.com/cook-md/editor/commit/e07d84ef1f63b92c438012e272fadb4c2ae15a9f))
+* **cooklang,cooklang-ai:** batch arguments for the read tools ([#124](https://github.com/cook-md/editor/issues/124)) ([ac5d3ab](https://github.com/cook-md/editor/commit/ac5d3ab183a53e837dcddaebfc77c71bed440b4e))
+
+
+### Bug Fixes
+
+* six Sentry issues from alpha.38-.42 ([#118](https://github.com/cook-md/editor/issues/118)) ([95a741f](https://github.com/cook-md/editor/commit/95a741fb710b9c57d9b120a2bc087de199427807))
+
 ## [0.1.0-alpha.42](https://github.com/cook-md/editor/compare/v0.1.0-alpha.41...v0.1.0-alpha.42) (2026-08-30)
 
 
