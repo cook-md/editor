@@ -820,10 +820,17 @@ export class ElectronMainApplication {
         // the second instance passes it's original argument array as the fourth argument to this method
         // The `argv` second parameter is not usable for us since it is mangled by electron before being passed here
 
-        if (originalArgv.includes('--open-url')) {
-            this.openUrl(originalArgv[originalArgv.length - 1]);
+        // That fourth argument is the `additionalData` the second instance handed to
+        // `requestSingleInstanceLock`. An instance the OS starts on our behalf - a file
+        // association, a URL scheme handler - never reaches that call, so it arrives as
+        // null and any use of it throws, losing the activation entirely. Treat it as "no
+        // arguments", which still focuses the running window.
+        const argv = Array.isArray(originalArgv) ? originalArgv : [];
+
+        if (argv.includes('--open-url')) {
+            this.openUrl(argv[argv.length - 1]);
         } else {
-            createYargs(this.processArgv.getProcessArgvWithoutBin(originalArgv), cwd)
+            createYargs(this.processArgv.getProcessArgvWithoutBin(argv), cwd)
                 .help(false)
                 .command('$0 [file]', false,
                     cmd => cmd

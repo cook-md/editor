@@ -64,8 +64,14 @@ describe('buildOptions', () => {
             exception: { values: [{ value: 'failed at /Users/jane/Recipes/x.cook' }] },
             extra: { recipeContent: 'Add @salt{}' }
         });
-        expect(scrubbed.exception!.values![0].value).to.equal('failed at ~/Recipes/x.cook');
-        expect(scrubbed.extra).to.not.have.property('recipeContent');
+        expect(scrubbed!.exception!.values![0].value).to.equal('failed at ~/Recipes/x.cook');
+        expect(scrubbed!.extra).to.not.have.property('recipeContent');
+    });
+
+    it('drops unactionable events instead of reporting them', () => {
+        const options = buildOptions({ release: '0.0.0', packaged: true, homeDir: '/Users/jane' });
+        const dropped = options.beforeSend({ exception: { values: [{ value: 'write EIO' }] } });
+        expect(dropped).to.be.undefined;
     });
 
     it('scrubs breadcrumbs through beforeBreadcrumb', () => {

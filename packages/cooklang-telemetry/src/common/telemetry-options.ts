@@ -12,6 +12,7 @@
 // *****************************************************************************
 
 import { ScrubbableBreadcrumb, ScrubbableEvent, scrubBreadcrumb, scrubEvent } from './scrub';
+import { isUnactionableError } from './unactionable-errors';
 
 /**
  * Sentry DSN for the Cook Editor project. A DSN is write-only and not a
@@ -51,7 +52,8 @@ export interface TelemetryOptions {
     release: string;
     environment: string;
     sendDefaultPii: false;
-    beforeSend(event: ScrubbableEvent): ScrubbableEvent;
+    /** Returns `undefined` to drop the event rather than report it. */
+    beforeSend(event: ScrubbableEvent): ScrubbableEvent | undefined;
     beforeBreadcrumb(breadcrumb: ScrubbableBreadcrumb): ScrubbableBreadcrumb;
 }
 
@@ -63,7 +65,7 @@ export function buildOptions(args: BuildOptionsArgs): TelemetryOptions {
         release: args.release,
         environment: args.packaged ? 'production' : 'development',
         sendDefaultPii: false,
-        beforeSend: event => scrubEvent(event, scrubOptions),
+        beforeSend: event => isUnactionableError(event) ? undefined : scrubEvent(event, scrubOptions),
         beforeBreadcrumb: breadcrumb => scrubBreadcrumb(breadcrumb, scrubOptions)
     };
 }
