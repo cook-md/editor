@@ -16,16 +16,15 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { CommandRegistry } from '@theia/core/lib/common/command';
-import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
 import { MenuParseResult } from '../common/menu-types';
 import { MenuView } from './menu-preview-components';
+import { RecipeNavigator } from './recipe-navigator';
 
 import '../../src/browser/style/menu-preview.css';
 
@@ -61,14 +60,11 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     @inject(CommandRegistry)
     protected readonly commandRegistry: CommandRegistry;
 
-    @inject(OpenerService)
-    protected readonly openerService: OpenerService;
-
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
 
-    @inject(WorkspaceService)
-    protected readonly workspaceService: WorkspaceService;
+    @inject(RecipeNavigator)
+    protected readonly navigator: RecipeNavigator;
 
     protected uri: URI;
     protected menuResult: MenuParseResult | undefined;
@@ -206,7 +202,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     protected handleShowSource = (): void => {
         if (this.uri) {
-            this.editorManager.open(this.uri);
+            this.navigator.openSource(this.uri);
         }
     };
 
@@ -220,16 +216,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
-        const root = this.workspaceService.tryGetRoots()[0];
-        if (!root) {
-            return;
-        }
-        const rootUri = new URI(root.resource.toString());
-        const cleanPath = referencePath.startsWith('./')
-            ? referencePath.slice(2)
-            : referencePath;
-        const targetUri = rootUri.resolve(cleanPath + '.cook');
-        open(this.openerService, targetUri);
+        this.navigator.navigate(referencePath);
     };
 
     protected render(): React.ReactNode {
