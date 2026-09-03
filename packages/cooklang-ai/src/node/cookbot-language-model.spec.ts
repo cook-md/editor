@@ -12,8 +12,8 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { LanguageModelStreamResponse, LanguageModelStreamResponsePart, UserRequest } from '@theia/ai-core/lib/common';
-import { CookbotChatChunk, CookbotInitResult } from '../common/cookbot-protocol';
+import { LanguageModelMessage, LanguageModelStreamResponse, LanguageModelStreamResponsePart, UserRequest } from '@theia/ai-core/lib/common';
+import { CookbotChatChunk, CookbotInitResult, CookbotMessageParam } from '../common/cookbot-protocol';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotSessionInitializer } from './cookbot-session-initializer';
 
@@ -462,4 +462,56 @@ describe('CookbotLanguageModel empty responses', () => {
         expect(thrown?.message).to.contain('too long');
         expect(thrown?.message).to.contain('new chat');
     });
+});
+
+describe('CookbotLanguageModel thinking blocks', () => {
+
+    function transform(messages: LanguageModelMessage[]): CookbotMessageParam[] {
+        const model = createModel(new FakeGrpcClient());
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (model as any).transformMessages(messages);
+    }
+
+    const thinking = (thought: string, signature: string): LanguageModelMessage =>
+        ({ actor: 'ai', type: 'thinking', thinking: thought, signature }) as LanguageModelMessage;
+
+    const text = (content: string): LanguageModelMessage =>
+        ({ actor: 'user', type: 'text', text: content }) as LanguageModelMessage;
+
+    it('keeps a signed thinking block', () => {
+        const raw = transform([thinking('weighing options', 'sig-abc')]);
+
+        expect(raw).to.have.length(1);
+        expect(raw[0].content[0]).to.deep.include({
+            type: 'thinking',
+            thinking: 'weighing options',
+            signature: 'sig-abc'
+        });
+    });
+
+    it('drops an unsigned thinking block rather than sending an empty signature', () => {
+        // Anthropic answers a blank signature with
+        // `messages.N.content.0: Invalid \`signature\` in \`thinking\` block`,
+        // and since the history is re-sent every turn that 400 is permanent.
+        const raw = transform([thinking('interrupted before the signature arrived', '')]);
+
+        expect(raw).to.be.empty;
+    });
+
+    it('drops a thinking block whose signature is missing entirely', () => {
+        const raw = transform([
+            { actor: 'ai', type: 'thinking', thinking: 'no signature field' } as LanguageModelMessage
+        ]);
+
+        expect(raw).to.be.empty;
+    });
+
+    it('keeps the rest of the turn when an unsigned thinking block is dropped', () => {
+        const raw = transform([thinking('unsigned', ''), text('what next?')]);
+
+        expect(raw).to.have.length(1);
+        expect(raw[0].role).to.equal('user');
+        expect(raw[0].content[0]).to.deep.include({ type: 'text', text: 'what next?' });
+    });
+
 });
