@@ -536,8 +536,41 @@ export class CookbotLanguageModel implements LanguageModel {
 
     /**
      * Check if a tool call result contains an error.
+     *
+     * A Theia `error` content part is the structured case, but none of the
+     * cooklang or workspace tools produce one: their handlers return a plain
+     * string, and a failure is `{"error": "..."}` inside it (see
+     * `workspace-functions.ts`). Reading only the structured part reported
+     * every one of those as a success — a run of six "File not found" replies
+     * logged clean, and the server-side `tool_calls` table held zero errors
+     * across every session it had ever recorded. Inspect the payload too.
      */
     private hasError(result: ToolCallResult): boolean {
-        return isToolCallContent(result) && result.content.some(part => part.type === 'error');
+        if (isToolCallContent(result) && result.content.some(part => part.type === 'error')) {
+            return true;
+        }
+        return this.payloadReportsError(this.formatToolCallResult(result));
+    }
+
+    /**
+     * Whether a formatted tool result is a `{"error": "..."}` failure report.
+     *
+     * Narrow on purpose: only a JSON object whose top-level `error` is a
+     * non-empty string counts. A recipe that merely mentions the word, or a
+     * success carrying `"error": null`, is not a failure. Mirrored in the
+     * server's `payload_reports_error` (`crates/server/src/grpc/tool_log.rs`),
+     * which is the backstop for clients that never set the flag at all.
+     */
+    private payloadReportsError(content: string): boolean {
+        const trimmed = content.trimStart();
+        if (!trimmed.startsWith('{')) {
+            return false;
+        }
+        try {
+            const message = JSON.parse(trimmed)?.error;
+            return typeof message === 'string' && message.trim().length > 0;
+        } catch {
+            return false;
+        }
     }
 }

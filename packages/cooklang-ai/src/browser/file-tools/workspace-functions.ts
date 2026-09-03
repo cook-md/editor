@@ -28,6 +28,31 @@ import {
     FIND_FILES_BY_PATTERN_FUNCTION_ID,
 } from './function-ids';
 import { CONSIDER_GITIGNORE_PREF, FILE_CONTENT_MAX_SIZE_KB_PREF, USER_EXCLUDE_PATTERN_PREF } from './workspace-preferences';
+import { MAX_BATCH_ITEMS, parseBatchArg } from './batch-args';
+
+/** One file's outcome in a batched read. */
+interface BatchFileEntry {
+    file: string;
+    content?: string;
+    error?: string;
+}
+
+/** Maximum files reported per glob. */
+const MAX_FIND_RESULTS = 200;
+
+/** One glob and the files it has matched so far during a workspace walk. */
+interface PatternBucket {
+    pattern: string;
+    matcher: Minimatch;
+    results: string[];
+}
+
+/** One directory's outcome in a batched listing. */
+interface BatchDirEntry {
+    path: string;
+    entries?: string[];
+    error?: string;
+}
 
 // ── FileContentFunction ─────────────────────────────────────────────────
 
@@ -74,6 +99,16 @@ export class FileContentFunction implements ToolProvider {
                             'The relative path to the target file within the workspace (e.g., "src/index.ts", "package.json"). ' +
                             'Must be relative to the workspace root. Absolute paths and paths outside the workspace will result in an error.',
                     },
+                    files: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description:
+                            `Read several files in one call (max ${MAX_BATCH_ITEMS}) instead of one call per file — always prefer ` +
+                            'this when you already know which files you need. Returns ' +
+                            '{ files: [{ file, content } | { file, error }] } in the order given; a file that cannot be read ' +
+                            'reports its error in its own entry and the others still come back. Mutually exclusive with `file`, ' +
+                            'and cannot be combined with offset/limit (those page through a single file).',
+                    },
                     offset: {
                         type: 'number',
                         description: 'Zero-based line offset to start reading from (default: 0). ' +
@@ -84,10 +119,15 @@ export class FileContentFunction implements ToolProvider {
                         description: 'Maximum number of lines to return. Defaults to the rest of the file.',
                     },
                 },
-                required: ['file'],
             },
             handler: (argString, ctx) => {
-                const { file, offset, limit } = this.parseArg(argString);
+                const { file, files, offset, limit } = this.parseArg(argString);
+                if (files !== undefined) {
+                    return this.getFileContentBatch(files, file, offset, limit, ctx?.cancellationToken);
+                }
+                if (typeof file !== 'string' || !file) {
+                    return Promise.resolve(JSON.stringify({ error: 'Pass either file (one path) or files (an array of paths).' }));
+                }
                 return this.getFileContent(file, ctx?.cancellationToken, offset, limit);
             },
             providerName: undefined,
@@ -106,9 +146,73 @@ export class FileContentFunction implements ToolProvider {
         };
     }
 
-    protected parseArg(argString: string): { file: string; offset?: number; limit?: number } {
+    protected parseArg(argString: string): { file?: string; files?: unknown; offset?: number; limit?: number } {
         const result = JSON.parse(argString);
-        return { file: result.file, offset: result.offset, limit: result.limit };
+        return { file: result.file, files: result.files, offset: result.offset, limit: result.limit };
+    }
+
+    /**
+     * Reads several files under one tool call.
+     *
+     * A file that cannot be read fails in its own slot — a shortlist where one
+     * path was mistyped should not cost a retry of the whole batch, which is
+     * the round trip the batch was there to save.
+     *
+     * `offset`/`limit` page through one file, so they are rejected here rather
+     * than silently applied to every entry.
+     */
+    protected async getFileContentBatch(
+        files: unknown,
+        file: string | undefined,
+        offset: number | undefined,
+        limit: number | undefined,
+        cancellationToken?: CancellationToken,
+    ): Promise<string> {
+        if (typeof file === 'string' && file) {
+            return JSON.stringify({ error: 'Pass either file or files, not both.' });
+        }
+        if (offset !== undefined || limit !== undefined) {
+            return JSON.stringify({
+                error: 'offset and limit page through a single file; read that one with `file` instead of `files`.',
+            });
+        }
+        const paths = parseBatchArg(files, 'files');
+        if ('error' in paths) {
+            return JSON.stringify(paths);
+        }
+        const results: BatchFileEntry[] = [];
+        for (const path of paths) {
+            if (cancellationToken?.isCancellationRequested) {
+                return JSON.stringify({ error: 'Operation cancelled by user' });
+            }
+            const raw = await this.getFileContent(path, cancellationToken);
+            const failure = this.errorPayload(raw);
+            results.push(failure !== undefined ? { file: path, error: failure } : { file: path, content: raw });
+        }
+        return JSON.stringify({ files: results });
+    }
+
+    /**
+     * The message from a `{ "error": ... }` reply, or undefined for content.
+     *
+     * `getFileContent` answers with the raw file body on success and a JSON
+     * error object on failure, so the batch has to tell them apart to place an
+     * entry. Narrow on purpose: a recipe whose entire body happens to parse as
+     * an object with a non-empty string `error` is indistinguishable, and that
+     * is not a file anyone has.
+     */
+    protected errorPayload(raw: string): string | undefined {
+        const trimmed = raw.trimStart();
+        if (!trimmed.startsWith('{')) {
+            return undefined;
+        }
+        try {
+            const parsed = JSON.parse(trimmed);
+            const message = parsed?.error;
+            return typeof message === 'string' && message.trim() ? message : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     async getFileContent(file: string, cancellationToken?: CancellationToken, offset?: number, limit?: number): Promise<string> {
@@ -309,8 +413,15 @@ export class GetWorkspaceFileList implements ToolProvider {
                             'Relative path to a directory within the workspace (e.g., "src", "src/components"). ' +
                             'Use "" or "." to list the workspace root. Paths outside the workspace will result in an error.',
                     },
+                    paths: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description:
+                            `List several directories in one call (max ${MAX_BATCH_ITEMS}) instead of one call each. Returns ` +
+                            '{ directories: [{ path, entries } | { path, error }] } in the order given; a directory that cannot ' +
+                            'be listed reports its error in its own entry. Mutually exclusive with `path`.',
+                    },
                 },
-                required: ['path'],
             },
             description:
                 'Lists files and directories within a specified workspace directory. ' +
@@ -319,9 +430,59 @@ export class GetWorkspaceFileList implements ToolProvider {
                 'For finding specific files by pattern, use findFilesByPattern instead.',
             handler: (argString, ctx) => {
                 const args = JSON.parse(argString);
+                if (args.paths !== undefined) {
+                    return this.getProjectFileListBatch(args.paths, args.path, ctx?.cancellationToken);
+                }
                 return this.getProjectFileList(args.path, ctx?.cancellationToken);
             },
         };
+    }
+
+    /**
+     * Lists several directories under one tool call.
+     *
+     * As with the batched read, a directory that cannot be listed fails in its
+     * own slot so one bad path does not discard the rest.
+     */
+    protected async getProjectFileListBatch(paths: unknown, path: unknown, cancellationToken?: CancellationToken): Promise<string> {
+        if (typeof path === 'string' && path) {
+            return JSON.stringify({ error: 'Pass either path or paths, not both.' });
+        }
+        const dirs = parseBatchArg(paths, 'paths');
+        if ('error' in dirs) {
+            return JSON.stringify(dirs);
+        }
+        const directories: BatchDirEntry[] = [];
+        for (const dir of dirs) {
+            if (cancellationToken?.isCancellationRequested) {
+                return JSON.stringify({ error: 'Operation cancelled by user' });
+            }
+            let listed: string | string[];
+            try {
+                listed = await this.getProjectFileList(dir, cancellationToken);
+            } catch (error) {
+                // `ensureWithinWorkspace` throws rather than returning; in a
+                // batch that must land in the entry, not abort the call.
+                directories.push({ path: dir, error: (error as Error).message });
+                continue;
+            }
+            if (Array.isArray(listed)) {
+                directories.push({ path: dir, entries: listed });
+            } else {
+                const parsed = this.tryParseError(listed);
+                directories.push({ path: dir, error: parsed ?? 'Directory not found' });
+            }
+        }
+        return JSON.stringify({ directories });
+    }
+
+    protected tryParseError(raw: string): string | undefined {
+        try {
+            const parsed = JSON.parse(raw);
+            return typeof parsed?.error === 'string' ? parsed.error : undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     async getProjectFileList(path?: string, cancellationToken?: CancellationToken): Promise<string | string[]> {
@@ -417,6 +578,16 @@ export class FindFilesByPattern implements ToolProvider {
                             '\'**/*.{js,ts}\' (JS or TS files), \'**/test/**/*.spec.ts\' (test files). ' +
                             'Use specific subdirectory prefixes for better performance.',
                     },
+                    patterns: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description:
+                            `Match several globs in one call (max ${MAX_BATCH_ITEMS}), e.g. ['**/*.cook', '**/*.menu']. ` +
+                            'Much cheaper than one call per pattern: the workspace is walked ONCE and every pattern is tested ' +
+                            'against each file, rather than a fresh recursive traversal per glob. Returns ' +
+                            '{ patterns: [{ pattern, files, totalFound?, truncated? }] } in the order given. ' +
+                            'Mutually exclusive with `pattern`; `exclude` applies to every pattern.',
+                    },
                     exclude: {
                         type: 'array',
                         items: { type: 'string' },
@@ -426,10 +597,15 @@ export class FindFilesByPattern implements ToolProvider {
                             'Common exclusions (node_modules, .git) are applied automatically via gitignore.',
                     },
                 },
-                required: ['pattern'],
             },
             handler: (argString, ctx) => {
                 const args = JSON.parse(argString);
+                if (args.patterns !== undefined) {
+                    return this.findFilesBatch(args.patterns, args.pattern, args.exclude, ctx?.cancellationToken);
+                }
+                if (typeof args.pattern !== 'string' || !args.pattern) {
+                    return Promise.resolve(JSON.stringify({ error: 'Pass either pattern (one glob) or patterns (an array of globs).' }));
+                }
                 return this.findFiles(args.pattern, args.exclude, ctx?.cancellationToken);
             },
             providerName: undefined,
@@ -467,25 +643,74 @@ export class FindFilesByPattern implements ToolProvider {
             if (cancellationToken?.isCancellationRequested) {
                 return JSON.stringify({ error: 'Operation cancelled by user' });
             }
-            const patternMatcher = new Minimatch(pattern, { dot: false });
             const excludeMatchers = allExcludes.map(ep => new Minimatch(ep, { dot: true }));
-            const files: string[] = [];
-            const maxResults = 200;
-            await this.traverseDirectory(workspaceRoot, workspaceRoot, patternMatcher, excludeMatchers, files, maxResults, cancellationToken);
+            const buckets = [this.bucketFor(pattern)];
+            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS, cancellationToken);
             if (cancellationToken?.isCancellationRequested) {
                 return JSON.stringify({ error: 'Operation cancelled by user' });
             }
-            const result: Record<string, unknown> = {
-                files: files.slice(0, maxResults),
-            };
-            if (files.length > maxResults) {
-                result.totalFound = files.length;
-                result.truncated = true;
-            }
-            return JSON.stringify(result);
+            return JSON.stringify(this.summarise(buckets[0]));
         } catch (error) {
             return JSON.stringify({ error: `Failed to find files: ${(error as Error).message}` });
         }
+    }
+
+    /**
+     * Matches several globs in ONE workspace walk.
+     *
+     * The saving here is not just the round trip: `findFiles` traverses the
+     * whole tree recursively per glob, so asking for `**​/*.cook` and
+     * `**​/*.menu` separately walked it twice. Every pattern is tested against
+     * each file as the walk passes it instead.
+     */
+    protected async findFilesBatch(
+        patterns: unknown,
+        pattern: unknown,
+        excludePatterns?: string[],
+        cancellationToken?: CancellationToken,
+    ): Promise<string> {
+        if (typeof pattern === 'string' && pattern) {
+            return JSON.stringify({ error: 'Pass either pattern or patterns, not both.' });
+        }
+        const globs = parseBatchArg(patterns, 'patterns');
+        if ('error' in globs) {
+            return JSON.stringify(globs);
+        }
+        if (cancellationToken?.isCancellationRequested) {
+            return JSON.stringify({ error: 'Operation cancelled by user' });
+        }
+        let workspaceRoot: URI;
+        try {
+            workspaceRoot = await this.workspaceScope.getWorkspaceRoot();
+        } catch (error) {
+            return JSON.stringify({ error: (error as Error).message });
+        }
+        try {
+            const ignorePatterns = await this.buildIgnorePatterns(workspaceRoot);
+            const allExcludes = [...ignorePatterns, ...(excludePatterns ?? [])];
+            const excludeMatchers = allExcludes.map(ep => new Minimatch(ep, { dot: true }));
+            const buckets = globs.map(glob => this.bucketFor(glob));
+            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS, cancellationToken);
+            if (cancellationToken?.isCancellationRequested) {
+                return JSON.stringify({ error: 'Operation cancelled by user' });
+            }
+            return JSON.stringify({ patterns: buckets.map(bucket => ({ pattern: bucket.pattern, ...this.summarise(bucket) })) });
+        } catch (error) {
+            return JSON.stringify({ error: `Failed to find files: ${(error as Error).message}` });
+        }
+    }
+
+    protected bucketFor(pattern: string): PatternBucket {
+        return { pattern, matcher: new Minimatch(pattern, { dot: false }), results: [] };
+    }
+
+    protected summarise(bucket: PatternBucket): Record<string, unknown> {
+        const result: Record<string, unknown> = { files: bucket.results.slice(0, MAX_FIND_RESULTS) };
+        if (bucket.results.length > MAX_FIND_RESULTS) {
+            result.totalFound = bucket.results.length;
+            result.truncated = true;
+        }
+        return result;
     }
 
     protected async buildIgnorePatterns(workspaceRoot: URI): Promise<string[]> {
@@ -509,16 +734,21 @@ export class FindFilesByPattern implements ToolProvider {
         return patterns;
     }
 
+    /**
+     * Walks the workspace once, filling every bucket whose glob matches.
+     *
+     * The walk stops early only when *all* buckets are full: with one bucket
+     * that is the original single-pattern behaviour unchanged.
+     */
     protected async traverseDirectory(
         currentUri: URI,
         workspaceRoot: URI,
-        patternMatcher: Minimatch,
+        buckets: PatternBucket[],
         excludeMatchers: Minimatch[],
-        results: string[],
         maxResults: number,
         cancellationToken?: CancellationToken,
     ): Promise<void> {
-        if (cancellationToken?.isCancellationRequested || results.length >= maxResults) {
+        if (cancellationToken?.isCancellationRequested || this.allFull(buckets, maxResults)) {
             return;
         }
         try {
@@ -527,7 +757,7 @@ export class FindFilesByPattern implements ToolProvider {
                 return;
             }
             for (const child of stat.children) {
-                if (cancellationToken?.isCancellationRequested || results.length >= maxResults) {
+                if (cancellationToken?.isCancellationRequested || this.allFull(buckets, maxResults)) {
                     break;
                 }
                 const relativePath = workspaceRoot.relative(child.resource)?.toString();
@@ -541,13 +771,21 @@ export class FindFilesByPattern implements ToolProvider {
                     continue;
                 }
                 if (child.isDirectory) {
-                    await this.traverseDirectory(child.resource, workspaceRoot, patternMatcher, excludeMatchers, results, maxResults, cancellationToken);
-                } else if (patternMatcher.match(relativePath)) {
-                    results.push(relativePath);
+                    await this.traverseDirectory(child.resource, workspaceRoot, buckets, excludeMatchers, maxResults, cancellationToken);
+                } else {
+                    for (const bucket of buckets) {
+                        if (bucket.results.length < maxResults && bucket.matcher.match(relativePath)) {
+                            bucket.results.push(relativePath);
+                        }
+                    }
                 }
             }
         } catch {
             // If we can't access a directory, skip it
         }
+    }
+
+    protected allFull(buckets: PatternBucket[], maxResults: number): boolean {
+        return buckets.every(bucket => bucket.results.length >= maxResults);
     }
 }

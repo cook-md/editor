@@ -515,3 +515,33 @@ describe('CookbotLanguageModel thinking blocks', () => {
     });
 
 });
+
+describe('CookbotLanguageModel tool error detection', () => {
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const hasError = (result: unknown): boolean =>
+        (CookbotLanguageModel.prototype as any).hasError.call(
+            Object.create(CookbotLanguageModel.prototype), result);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    it('flags a structured Theia error part', () => {
+        expect(hasError({ content: [{ type: 'error', data: 'boom' }] })).to.equal(true);
+    });
+
+    it('flags the { error } payload the workspace and cooklang tools return', () => {
+        // These handlers return a plain string; the flag was always false for
+        // them, which is why the tool_calls table recorded no failures at all.
+        expect(hasError('{"error":"File not found"}')).to.equal(true);
+        expect(hasError({ content: [{ type: 'text', text: '{"error":"Directory not found"}' }] })).to.equal(true);
+    });
+
+    it('does not flag ordinary results', () => {
+        expect(hasError('Add @flour{200%g}')).to.equal(false);
+        expect(hasError('{"files":["a.cook"]}')).to.equal(false);
+        expect(hasError('{"error":null}')).to.equal(false);
+        expect(hasError('{"error":""}')).to.equal(false);
+        expect(hasError('Common error: adding the salt too early.')).to.equal(false);
+        expect(hasError('{not json')).to.equal(false);
+        expect(hasError(undefined)).to.equal(false);
+    });
+});
