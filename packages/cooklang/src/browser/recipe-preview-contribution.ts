@@ -21,10 +21,12 @@ import { NavigatableWidget } from '@theia/core/lib/browser/navigatable-types';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { NavigatorContextMenu } from '@theia/navigator/lib/browser/navigator-contribution';
 import URI from '@theia/core/lib/common/uri';
-import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { OpenerOptions, OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { SelectionService } from '@theia/core/lib/common/selection-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
 import { COOKLANG_LANGUAGE_ID, CooklangPreferences, CooklangUri } from '../common';
+import { EmptyFileDetector } from './empty-file-detector';
+import { PreviewTabManager } from './preview-tab-manager';
 import {
     RecipePreviewWidget,
     RECIPE_PREVIEW_WIDGET_ID,
@@ -79,21 +81,31 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     @inject(SelectionService)
     protected readonly selectionService: SelectionService;
 
+    @inject(EmptyFileDetector)
+    protected readonly emptyFileDetector: EmptyFileDetector;
+
+    @inject(PreviewTabManager)
+    protected readonly previewTabs: PreviewTabManager;
+
     readonly id = 'cooklang-preview-open-handler';
     readonly label = 'Cooklang: Recipe Preview';
 
-    canHandle(uri: URI): number {
+    async canHandle(uri: URI): Promise<number> {
         if (uri.scheme === 'file' && CooklangUri.isRecipe(uri) && this.preferences['cooklang.openInPreviewMode']) {
-            return 200;
+            // An empty recipe has nothing to preview and no way to type into
+            // one, so a file straight out of `New File...` opens in the editor.
+            return await this.emptyFileDetector.isEmpty(uri) ? 0 : 200;
         }
         return 0;
     }
 
-    async open(uri: URI): Promise<RecipePreviewWidget> {
+    async open(uri: URI, options?: OpenerOptions): Promise<RecipePreviewWidget> {
+        const created = this.widgetManager.tryGetWidget(createRecipePreviewWidgetId(uri)) === undefined;
         const preview = await this.getOrCreatePreview(uri);
         if (!preview.isAttached) {
-            await this.shell.addWidget(preview, { area: 'main' });
+            await this.shell.addWidget(preview, this.previewTabs.placement());
         }
+        this.previewTabs.apply(preview, options, created);
         this.shell.activateWidget(preview.id);
         return preview;
     }
@@ -256,6 +268,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         }
         const preview = await this.getOrCreatePreview(target);
         preview.setScale(scale);
+        this.previewTabs.pin(preview);
         await this.shell.addWidget(preview, { area: 'main' });
         this.shell.activateWidget(preview.id);
     }

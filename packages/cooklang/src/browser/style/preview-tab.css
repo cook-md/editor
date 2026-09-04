@@ -1,0 +1,10 @@
+/********************************************************************************
+ * Copyright (C) 2024-2026 cook.md and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception
+ ********************************************************************************/
+
+/* The reusable preview tab, shown the way Theia renders preview editors. */
+.cooklang-preview-tab-temporary .lm-TabBar-tabLabel {
+    font-style: italic;
+}
