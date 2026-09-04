@@ -57,8 +57,25 @@ import { SearchRecipesTool } from './search-recipes-tool';
 import { GetPantryTool, CheckPantryTool } from './pantry-tools';
 import { GenerateShoppingListTool } from './generate-shopping-list-tool';
 import { bindCooklangPreferences } from '../common';
+import { EmptyFileDetector } from './empty-file-detector';
+import { PreviewTabManager } from './preview-tab-manager';
+import { CooklangWorkspaceCommandContribution } from './cooklang-workspace-command-contribution';
+import { createCooklangFileNavigatorWidget } from './cooklang-navigator-widget';
+import { WorkspaceCommandContribution } from '@theia/workspace/lib/browser/workspace-commands';
+import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
 
-export default new ContainerModule(bind => {
+export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
+    // Shared by both preview open handlers: an empty file opens in the editor,
+    // and a preview opened by a single click reuses one tab.
+    bind(EmptyFileDetector).toSelf().inSingletonScope();
+    bind(PreviewTabManager).toSelf().inSingletonScope();
+
+    // `New File...` proposes `Untitled.cook` rather than upstream's `Untitled.txt`.
+    rebind(WorkspaceCommandContribution).to(CooklangWorkspaceCommandContribution).inSingletonScope();
+
+    // Explorer with `alt`/`option` click opening the source of a recipe.
+    rebind(FileNavigatorWidget).toDynamicValue(ctx => createCooklangFileNavigatorWidget(ctx.container));
+
     // TextMate grammar
     bind(CooklangGrammarContribution).toSelf().inSingletonScope();
     bind(LanguageGrammarDefinitionContribution).toService(CooklangGrammarContribution);
