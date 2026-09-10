@@ -24,6 +24,9 @@ import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
 
 const DEFAULT_NUTRITION_SERVICE_URL = 'https://nutrition.cook.md';
 
+/** Must match {@link RECIPE_PREVIEW_WIDGET_ID} without importing the React widget module. */
+const RECIPE_PREVIEW_WIDGET_ID_PREFIX = 'recipe-preview-widget';
+
 /**
  * Resolves the active recipe/menu URI and assembles the render config from
  * workspace conventions. Shared by the "Render Report" command and the
@@ -66,12 +69,19 @@ export class ReportConfigService {
 
     /**
      * Returns the widget's resource URI when it is a navigatable showing a
-     * `.cook` or `.menu` resource (text editor, recipe preview, report tab).
+     * Cooklang recipe or menu (text editor, recipe preview, report tab).
+     * Includes Obsidian-style `.md` recipes once they are open in a recipe
+     * preview (preview widgets are only created for confirmed recipes).
      */
     protected getCooklangResourceUri(widget: Widget | undefined): URI | undefined {
         if (NavigatableWidget.is(widget)) {
             const uri = widget.getResourceUri();
             if (CooklangUri.isCooklang(uri)) {
+                return uri;
+            }
+            // Recipe preview for a Markdown recipe — preview open handlers only
+            // claim `.md` files that already have `recipe: true` frontmatter.
+            if (CooklangUri.isMarkdown(uri) && widget.id.startsWith(RECIPE_PREVIEW_WIDGET_ID_PREFIX)) {
                 return uri;
             }
         }

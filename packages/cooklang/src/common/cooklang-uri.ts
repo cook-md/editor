@@ -16,14 +16,20 @@ import URI from '@theia/core/lib/common/uri';
 /**
  * Helpers for recognizing Cooklang files by their URI.
  *
- * The Cooklang language is associated with editors purely by file extension
- * (`.cook` / `.menu`, registered in {@link cooklang-grammar-contribution}).
- * Monaco matches those extensions case-insensitively, so a file named
- * `Recipe.COOK` is highlighted and served by the language server just like
- * `recipe.cook`. Feature gates (preview toolbar buttons, open handlers,
- * shopping-list/report commands) must therefore match case-insensitively too —
- * a case-sensitive `uri.path.ext === '.cook'` check silently hides the preview
- * affordance for such files even though they are fully recognized as Cooklang.
+ * Native Cooklang files (`.cook` / `.menu`) are associated with editors by
+ * extension (registered in {@link cooklang-grammar-contribution}). Monaco
+ * matches those extensions case-insensitively, so a file named `Recipe.COOK`
+ * is highlighted and served by the language server just like `recipe.cook`.
+ * Feature gates (preview toolbar buttons, open handlers, shopping-list/report
+ * commands) must therefore match case-insensitively too — a case-sensitive
+ * `uri.path.ext === '.cook'` check silently hides the preview affordance for
+ * such files even though they are fully recognized as Cooklang.
+ *
+ * Obsidian-compatible Markdown recipes (`.md` with frontmatter `recipe: true`)
+ * are *not* decided by extension alone — see {@link RecipeFrontmatter} and the
+ * markdown recipe language contribution. {@link isMarkdown} only identifies
+ * candidates; content (or the Monaco language id after detection) decides
+ * whether a given `.md` file is a recipe.
  */
 export namespace CooklangUri {
 
@@ -32,6 +38,12 @@ export namespace CooklangUri {
 
     /** File extension for Cooklang menu files. */
     export const MENU_EXTENSION = '.menu';
+
+    /**
+     * File extension for Markdown files that may be Obsidian-style recipes
+     * when their frontmatter contains `recipe: true`.
+     */
+    export const MARKDOWN_EXTENSION = '.md';
 
     function hasExtension(uri: URI | undefined, extension: string): boolean {
         return uri !== undefined && uri.path.ext.toLowerCase() === extension;
@@ -48,6 +60,17 @@ export namespace CooklangUri {
     }
 
     /**
+     * Whether `uri` denotes a Markdown file (`.md`, any case).
+     *
+     * A Markdown URI is only a Cooklang recipe when its content has
+     * Obsidian-style `recipe: true` frontmatter (or Monaco has already
+     * reassigned the model language to `cooklang`).
+     */
+    export function isMarkdown(uri: URI | undefined): boolean {
+        return hasExtension(uri, MARKDOWN_EXTENSION);
+    }
+
+    /**
      * A URI for an absolute filesystem path returned by the native addon.
      *
      * `cooklang-find` reports OS paths, so Windows results arrive with `\`
@@ -57,7 +80,7 @@ export namespace CooklangUri {
         return URI.fromFilePath(path.replace(/\\/g, '/'));
     }
 
-    /** Whether `uri` denotes any Cooklang file (recipe or menu). */
+    /** Whether `uri` denotes any native Cooklang file (`.cook` or `.menu`). */
     export function isCooklang(uri: URI | undefined): boolean {
         return isRecipe(uri) || isMenu(uri);
     }

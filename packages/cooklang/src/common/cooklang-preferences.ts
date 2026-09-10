@@ -24,7 +24,7 @@ export const cooklangPreferencesSchema: PreferenceSchema = {
     'properties': {
         'cooklang.openInPreviewMode': {
             'type': 'boolean',
-            'description': 'Open .cook files in preview mode by default.',
+            'description': 'Open .cook files (and Obsidian-style .md recipes with recipe: true) in preview mode by default.',
             'default': true
         },
         'cooklang.nutrition.serviceUrl': {

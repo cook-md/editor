@@ -28,7 +28,9 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
+import { RECIPE_PREVIEW_WIDGET_ID } from './recipe-preview-widget';
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -74,6 +76,9 @@ export class ShoppingListContribution
 
     @inject(RecipeReferenceResolver)
     protected readonly referenceResolver: RecipeReferenceResolver;
+
+    @inject(MarkdownRecipeDetector)
+    protected readonly markdownRecipes: MarkdownRecipeDetector;
 
     constructor() {
         super({
@@ -138,14 +143,15 @@ export class ShoppingListContribution
     // --- Helpers ---
 
     /**
-     * Resolves the target .cook URI from command arguments, navigator selection,
-     * or the currently active widget.
+     * Resolves the target recipe URI from command arguments, navigator selection,
+     * or the currently active widget. Accepts native `.cook` files and
+     * Obsidian-style `.md` recipes already recognized as Cooklang.
      */
     protected resolveTargetUri(args: unknown[]): URI | undefined {
         // 1. Direct URI argument (from context menu or programmatic invocation)
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (CooklangUri.isRecipe(uri)) {
+            if (this.isRecipeResource(uri)) {
                 return uri;
             }
         }
@@ -153,7 +159,7 @@ export class ShoppingListContribution
         // 2. Widget argument (toolbar passes the widget as first arg)
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (CooklangUri.isRecipe(uri)) {
+            if (this.isRecipeResource(uri)) {
                 return uri;
             }
         }
@@ -161,7 +167,7 @@ export class ShoppingListContribution
         // 3. Navigator selection (right-click context menu)
         const selection = this.selectionService.selection;
         const selectedUri = UriSelection.getUri(selection);
-        if (CooklangUri.isRecipe(selectedUri)) {
+        if (this.isRecipeResource(selectedUri)) {
             return selectedUri;
         }
 
@@ -170,12 +176,29 @@ export class ShoppingListContribution
         const currentWidget = this.shell?.currentWidget;
         if (NavigatableWidget.is(currentWidget)) {
             const uri = currentWidget.getResourceUri();
-            if (CooklangUri.isRecipe(uri)) {
+            if (this.isRecipeResource(uri)) {
+                return uri;
+            }
+            // Recipe preview opened for a Markdown recipe
+            if (uri && CooklangUri.isMarkdown(uri) && currentWidget.id.startsWith(RECIPE_PREVIEW_WIDGET_ID)) {
+                return uri;
+            }
+        }
+
+        // 5. Active editor whose language was promoted to cooklang (Markdown recipe)
+        const editor = this.editorManager.currentEditor;
+        if (editor?.editor.document.languageId === COOKLANG_LANGUAGE_ID) {
+            const uri = new URI(editor.editor.document.uri);
+            if (CooklangUri.isRecipe(uri) || CooklangUri.isMarkdown(uri)) {
                 return uri;
             }
         }
 
         return undefined;
+    }
+
+    protected isRecipeResource(uri: URI | undefined): boolean {
+        return this.markdownRecipes.isKnownRecipe(uri);
     }
 
     protected canAddRecipe(args: unknown[] = []): boolean {

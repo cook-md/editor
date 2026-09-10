@@ -17,6 +17,7 @@ export const AISLE_CONF_LANGUAGE_ID = 'aisle-conf';
 export const AISLE_CONF_TEXTMATE_SCOPE = 'source.aisle-conf';
 export { CooklangLanguageService, CooklangLanguageServicePath } from './cooklang-language-service';
 export { CooklangUri } from './cooklang-uri';
+export { RecipeFrontmatter } from './recipe-frontmatter';
 export * from './recipe-types';
 export * from './recipe-images';
 export { CooklangPreferences, bindCooklangPreferences } from './cooklang-preferences';
