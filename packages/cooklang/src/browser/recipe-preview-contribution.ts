@@ -24,8 +24,9 @@ import URI from '@theia/core/lib/common/uri';
 import { OpenerOptions, OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { SelectionService } from '@theia/core/lib/common/selection-service';
 import { UriAwareCommandHandler } from '@theia/core/lib/common/uri-command-handler';
-import { COOKLANG_LANGUAGE_ID, CooklangPreferences, CooklangUri } from '../common';
+import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
 import { EmptyFileDetector } from './empty-file-detector';
+import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { PreviewTabManager } from './preview-tab-manager';
 import {
     RecipePreviewWidget,
@@ -84,6 +85,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     @inject(EmptyFileDetector)
     protected readonly emptyFileDetector: EmptyFileDetector;
 
+    @inject(MarkdownRecipeDetector)
+    protected readonly markdownRecipes: MarkdownRecipeDetector;
+
     @inject(PreviewTabManager)
     protected readonly previewTabs: PreviewTabManager;
 
@@ -91,12 +95,16 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     readonly label = 'Cooklang: Recipe Preview';
 
     async canHandle(uri: URI): Promise<number> {
-        if (uri.scheme === 'file' && CooklangUri.isRecipe(uri) && this.preferences['cooklang.openInPreviewMode']) {
-            // An empty recipe has nothing to preview and no way to type into
-            // one, so a file straight out of `New File...` opens in the editor.
-            return await this.emptyFileDetector.isEmpty(uri) ? 0 : 200;
+        if (uri.scheme !== 'file' || !this.preferences['cooklang.openInPreviewMode']) {
+            return 0;
         }
-        return 0;
+        // Native `.cook` or Obsidian-style `.md` with `recipe: true`. An empty
+        // recipe has nothing to preview and no way to type into one, so a file
+        // straight out of `New File...` opens in the editor.
+        if (!await this.markdownRecipes.isRecipe(uri)) {
+            return 0;
+        }
+        return await this.emptyFileDetector.isEmpty(uri) ? 0 : 200;
     }
 
     async open(uri: URI, options?: OpenerOptions): Promise<RecipePreviewWidget> {
@@ -124,7 +132,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE,
             UriAwareCommandHandler.MonoSelect(this.selectionService, {
                 execute: uri => this.editorManager.open(uri),
-                isEnabled: uri => CooklangUri.isRecipe(uri),
+                isEnabled: uri => this.isRecipeResource(uri),
             })
         );
         commands.registerCommand(CooklangPreviewCommands.OPEN_PREVIEW_AT_SCALE, {
@@ -146,7 +154,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
                     return true;
                 }
                 if (NavigatableWidget.is(widget)) {
-                    return CooklangUri.isRecipe(widget.getResourceUri());
+                    return this.isRecipeResource(widget.getResourceUri());
                 }
                 return false;
             },
@@ -159,6 +167,8 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         menus.registerMenuAction(NavigatorContextMenu.NAVIGATION, {
             commandId: CooklangPreviewCommands.OPEN_SOURCE.id,
             label: 'Open Source',
+            // `.md` recipes are gated in isEnabled via MarkdownRecipeDetector;
+            // the when-clause cannot inspect frontmatter, so keep .cook only.
             when: 'resourceExtname == .cook',
         });
     }
@@ -218,7 +228,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             }
             if (NavigatableWidget.is(args[0])) {
                 const uri = (args[0] as NavigatableWidget).getResourceUri();
-                if (CooklangUri.isRecipe(uri)) {
+                if (this.isRecipeResource(uri)) {
                     return true;
                 }
             }
@@ -245,7 +255,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
             return;
         }
 
-        const uri = (NavigatableWidget.is(target) && CooklangUri.isRecipe(target.getResourceUri()))
+        const uri = (NavigatableWidget.is(target) && this.isRecipeResource(target.getResourceUri()))
             ? target.getResourceUri()!
             : this.getActiveCooklangEditorUri();
         if (!uri) {
@@ -263,7 +273,8 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
      */
     protected async openPreviewAtScale(uri: URI | string, scale: number): Promise<void> {
         const target = typeof uri === 'string' ? new URI(uri) : uri;
-        if (!CooklangUri.isRecipe(target)) {
+        // Timers may reference a Markdown recipe that is not open in an editor.
+        if (!await this.markdownRecipes.isRecipe(target)) {
             return;
         }
         const preview = await this.getOrCreatePreview(target);
@@ -274,23 +285,31 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     }
 
     /**
-     * Resolves a .cook URI from command arguments (context menu, toolbar widget)
-     * or falls back to the active Cooklang editor.
+     * Resolves a recipe URI from command arguments (context menu, toolbar widget)
+     * or falls back to the active Cooklang editor (including Obsidian-style `.md`).
      */
     protected resolveUri(args: unknown[]): URI | undefined {
         if (args.length > 0 && args[0] instanceof URI) {
             const uri = args[0] as URI;
-            if (CooklangUri.isRecipe(uri)) {
+            if (this.isRecipeResource(uri)) {
                 return uri;
             }
         }
         if (args.length > 0 && NavigatableWidget.is(args[0])) {
             const uri = (args[0] as NavigatableWidget).getResourceUri();
-            if (CooklangUri.isRecipe(uri)) {
+            if (this.isRecipeResource(uri)) {
                 return uri;
             }
         }
         return this.getActiveCooklangEditorUri();
+    }
+
+    /**
+     * Sync recipe check: native `.cook`, or a `.md` model already promoted to
+     * the Cooklang language id.
+     */
+    protected isRecipeResource(uri: URI | undefined): boolean {
+        return this.markdownRecipes.isKnownRecipe(uri);
     }
 
     protected canOpenPreview(args: unknown[] = []): boolean {

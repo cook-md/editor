@@ -58,6 +58,8 @@ import { GetPantryTool, CheckPantryTool } from './pantry-tools';
 import { GenerateShoppingListTool } from './generate-shopping-list-tool';
 import { bindCooklangPreferences } from '../common';
 import { EmptyFileDetector } from './empty-file-detector';
+import { MarkdownRecipeDetector } from './markdown-recipe-detector';
+import { MarkdownRecipeLanguageContribution } from './markdown-recipe-language-contribution';
 import { PreviewTabManager } from './preview-tab-manager';
 import { CooklangWorkspaceCommandContribution } from './cooklang-workspace-command-contribution';
 import { createCooklangFileNavigatorWidget } from './cooklang-navigator-widget';
@@ -68,7 +70,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Shared by both preview open handlers: an empty file opens in the editor,
     // and a preview opened by a single click reuses one tab.
     bind(EmptyFileDetector).toSelf().inSingletonScope();
+    bind(MarkdownRecipeDetector).toSelf().inSingletonScope();
     bind(PreviewTabManager).toSelf().inSingletonScope();
+
+    // Obsidian-style `.md` + `recipe: true` → Cooklang language id.
+    bind(MarkdownRecipeLanguageContribution).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(MarkdownRecipeLanguageContribution);
 
     // `New File...` proposes `Untitled.cook` rather than upstream's `Untitled.txt`.
     rebind(WorkspaceCommandContribution).to(CooklangWorkspaceCommandContribution).inSingletonScope();

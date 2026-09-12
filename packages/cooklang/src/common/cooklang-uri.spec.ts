@@ -53,10 +53,23 @@ describe('CooklangUri', () => {
         });
     });
 
+    describe('isMarkdown', () => {
+        it('matches .md case-insensitively', () => {
+            expect(CooklangUri.isMarkdown(new URI('file:///r/notes.md'))).to.be.true;
+            expect(CooklangUri.isMarkdown(new URI('file:///r/Recipe.MD'))).to.be.true;
+        });
+
+        it('rejects cooklang and other extensions', () => {
+            expect(CooklangUri.isMarkdown(new URI('file:///r/bread.cook'))).to.be.false;
+            expect(CooklangUri.isMarkdown(undefined)).to.be.false;
+        });
+    });
+
     describe('isCooklang', () => {
         it('matches both recipe and menu files, any case', () => {
             expect(CooklangUri.isCooklang(new URI('file:///r/bread.COOK'))).to.be.true;
             expect(CooklangUri.isCooklang(new URI('file:///r/dinner.Menu'))).to.be.true;
+            // Markdown may be an Obsidian-style recipe, but extension alone is not enough
             expect(CooklangUri.isCooklang(new URI('file:///r/notes.md'))).to.be.false;
         });
     });
