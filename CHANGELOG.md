@@ -13,6 +13,19 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.44](https://github.com/cook-md/editor/compare/v0.1.0-alpha.43...v0.1.0-alpha.44) (2026-09-16)
+
+
+### Features
+
+* **cooklang:** open recipes the way a recipe editor should ([#126](https://github.com/cook-md/editor/issues/126)) ([04da36d](https://github.com/cook-md/editor/commit/04da36d85a944025694319d7b481207700e7f3a5))
+* **cooklang:** recognize Obsidian-style .md recipes with recipe: true ([#129](https://github.com/cook-md/editor/issues/129)) ([daeaf1f](https://github.com/cook-md/editor/commit/daeaf1f1255c3233a85bc0f3ce1f64fc18645223))
+
+
+### Bug Fixes
+
+* six Sentry issues still firing on alpha.43 ([#130](https://github.com/cook-md/editor/issues/130)) ([212f03c](https://github.com/cook-md/editor/commit/212f03ccacc6a98f40663dbaa98ae0190097831a))
+
 ## [0.1.0-alpha.43](https://github.com/cook-md/editor/compare/v0.1.0-alpha.42...v0.1.0-alpha.43) (2026-09-03)
 
 
