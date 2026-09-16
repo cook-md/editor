@@ -1,0 +1,21 @@
+.cooklang-image-viewer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    overflow: auto;
+    background: var(--theia-editor-background);
+    color: var(--theia-descriptionForeground);
+    outline: none;
+}
+
+.cooklang-image-viewer img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.cooklang-image-viewer-message {
+    padding: var(--theia-ui-padding);
+    font-style: italic;
+}

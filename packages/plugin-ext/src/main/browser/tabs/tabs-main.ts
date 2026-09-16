@@ -113,6 +113,13 @@ export class TabsMainImpl implements TabsMain, Disposable {
                     }
 
                     this.onTabCreated(tabBar, { index: tabBar.titles.indexOf(widget.title), title: widget.title });
+                } else if (oldTabInfo) {
+                    // `addWidget` on a widget that is already open: Lumino moved the existing
+                    // tab next to the current one, without a `tabMoved` signal.
+                    const toIndex = tabBar.titles.indexOf(widget.title);
+                    if (toIndex !== oldTabInfo.tabIndex) {
+                        this.onTabMoved(tabBar, { title: widget.title, fromIndex: oldTabInfo.tabIndex, toIndex });
+                    }
                 }
             }
         });
@@ -286,6 +293,7 @@ export class TabsMainImpl implements TabsMain, Disposable {
         this.tabInfoLookup.set(args.title, { group, tab: tabDto, tabIndex: args.index });
         group.tabs.forEach(tab => tab.isActive = false);
         group.tabs.splice(args.index, 0, tabDto);
+        this.updateTabIndices(group);
         this.proxy.$acceptTabOperation({
             kind: TabModelOperationKind.TAB_OPEN,
             index: args.index,
@@ -329,12 +337,13 @@ export class TabsMainImpl implements TabsMain, Disposable {
     private onTabClosed(tabInfo: TabInfo, title: Title<Widget>): void {
         this.disposableTitleListeners.get(title.owner.id)?.dispose();
         this.disposableTitleListeners.delete(title.owner.id);
-        tabInfo.group.tabs.splice(tabInfo.tabIndex, 1);
+        const index = tabInfo.tabIndex;
+        tabInfo.group.tabs.splice(index, 1);
         this.tabInfoLookup.delete(title);
-        this.updateTabIndices(tabInfo, tabInfo.tabIndex);
+        this.updateTabIndices(tabInfo.group);
         this.proxy.$acceptTabOperation({
             kind: TabModelOperationKind.TAB_CLOSE,
-            index: tabInfo.tabIndex,
+            index,
             tabDto: this.createTabDto(title, tabInfo.group.groupId),
             groupId: tabInfo.group.groupId
         });
@@ -342,17 +351,19 @@ export class TabsMainImpl implements TabsMain, Disposable {
 
     private onTabMoved(tabBar: TabBar<Widget>, args: TabBar.ITabMovedArgs<Widget>): void {
         const tabInfo = this.getOrRebuildModel(this.tabInfoLookup, args.title)!;
-        tabInfo.tabIndex = args.toIndex;
+        // The model is what the plugin host mirrors, so move by the model's own index.
+        const oldIndex = tabInfo.tabIndex;
         const tabDto = this.createTabDto(args.title, tabInfo.group.groupId);
-        tabInfo.group.tabs.splice(args.fromIndex, 1);
+        tabInfo.group.tabs.splice(oldIndex, 1);
         tabInfo.group.tabs.splice(args.toIndex, 0, tabDto);
-        this.updateTabIndices(tabInfo, args.fromIndex);
+        tabInfo.tab = tabDto;
+        this.updateTabIndices(tabInfo.group);
         this.proxy.$acceptTabOperation({
             kind: TabModelOperationKind.TAB_MOVE,
             index: args.toIndex,
             tabDto,
             groupId: tabInfo.group.groupId,
-            oldIndex: args.fromIndex
+            oldIndex
         });
     }
 
@@ -370,10 +381,16 @@ export class TabsMainImpl implements TabsMain, Disposable {
         return;
     }
 
-    updateTabIndices(tabInfo: TabInfo, startIndex: number): void {
+    /**
+     * Re-derive every index in `group` from the model after `group.tabs` changed.
+     * The plugin host applies closes and moves by index, so a stale index removes
+     * the wrong tab there and the next update for the survivor is rejected as
+     * `INVALID tab`.
+     */
+    updateTabIndices(group: TabGroupDto): void {
         for (const tab of this.tabInfoLookup.values()) {
-            if (tab.group === tabInfo.group && tab.tabIndex >= startIndex) {
-                tab.tabIndex = tab.group.tabs.indexOf(tab.tab);
+            if (tab.group === group) {
+                tab.tabIndex = group.tabs.indexOf(tab.tab);
             }
         }
     }

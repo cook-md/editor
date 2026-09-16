@@ -35,6 +35,9 @@ import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-wid
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { RecipeNavigator } from './recipe-navigator';
+import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget';
+import { ImageViewerContribution } from './image-viewer-contribution';
+import { BinaryFileOpenHandler } from './binary-file-open-handler';
 import { ShoppingListContribution } from './shopping-list-contribution';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
@@ -115,6 +118,22 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(OpenHandler).toService(RecipePreviewContribution);
     bind(TabBarToolbarContribution).toService(RecipePreviewContribution);
     bind(MenuContribution).toService(RecipePreviewContribution);
+
+    // Images open in a viewer tab, other binaries in the system application;
+    // neither belongs in the text editor.
+    bind(ImageViewerWidget).toSelf();
+    bind(WidgetFactory).toDynamicValue(ctx => ({
+        id: IMAGE_VIEWER_WIDGET_ID,
+        createWidget: (options: { uri: string }) => {
+            const widget = ctx.container.get(ImageViewerWidget);
+            widget.setUri(new URI(options.uri));
+            return widget;
+        },
+    })).inSingletonScope();
+    bind(ImageViewerContribution).toSelf().inSingletonScope();
+    bind(OpenHandler).toService(ImageViewerContribution);
+    bind(BinaryFileOpenHandler).toSelf().inSingletonScope();
+    bind(OpenHandler).toService(BinaryFileOpenHandler);
 
     // Menu preview widget factory
     bind(WidgetFactory).toDynamicValue(ctx => ({

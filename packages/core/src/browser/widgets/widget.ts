@@ -304,7 +304,16 @@ export function addKeyListener<K extends keyof HTMLElementEventMap = never>(
     })();
 
     toDispose.push(addEventListener(element, 'keydown', e => {
-        const kc = KeyCode.createKeyCode(e);
+        let kc: KeyCode;
+        try {
+            kc = KeyCode.createKeyCode(e);
+        } catch (error) {
+            // Some keyboard layouts and IMEs deliver events with no usable `code`, `keyCode` or
+            // `keyIdentifier`. No key predicate can match such an event, so drop it instead of
+            // throwing out of the listener; `KeybindingRegistry.run` handles the same case alike.
+            console.debug('Ignoring a keyboard event with an undeterminable key.', error);
+            return;
+        }
         if (keyCodePredicate(kc)) {
             const result = action(e as HandledEvent);
             if (typeof result !== 'boolean' || result) {
