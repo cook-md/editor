@@ -28,6 +28,7 @@ import { COOKLANG_LANGUAGE_ID, CooklangPreferences } from '../common';
 import { EmptyFileDetector } from './empty-file-detector';
 import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { PreviewTabManager } from './preview-tab-manager';
+import { RecipeNavigator } from './recipe-navigator';
 import {
     RecipePreviewWidget,
     RECIPE_PREVIEW_WIDGET_ID,
@@ -91,6 +92,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
     @inject(PreviewTabManager)
     protected readonly previewTabs: PreviewTabManager;
 
+    @inject(RecipeNavigator)
+    protected readonly recipeNavigator: RecipeNavigator;
+
     readonly id = 'cooklang-preview-open-handler';
     readonly label = 'Cooklang: Recipe Preview';
 
@@ -131,7 +135,7 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         });
         commands.registerCommand(CooklangPreviewCommands.OPEN_SOURCE,
             UriAwareCommandHandler.MonoSelect(this.selectionService, {
-                execute: uri => this.editorManager.open(uri),
+                execute: uri => this.recipeNavigator.openSource(uri),
                 isEnabled: uri => this.isRecipeResource(uri),
             })
         );
@@ -250,7 +254,9 @@ export class RecipePreviewContribution implements CommandContribution, Keybindin
         if (target instanceof RecipePreviewWidget) {
             const resourceUri = target.getResourceUri();
             if (resourceUri) {
-                await this.editorManager.open(resourceUri);
+                // The preview may outlive its file (iCloud drafts move, drives
+                // disconnect); the navigator tells the user instead of rejecting.
+                await this.recipeNavigator.openSource(resourceUri);
             }
             return;
         }

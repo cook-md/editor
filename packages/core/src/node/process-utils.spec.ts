@@ -45,4 +45,17 @@ describe('ProcessUtils', () => {
         const pids = coreProcessManager['unixGetChildrenRecursive'](2);
         expect(Array.from(pids)).members([40, 5, 6, 7]);
     });
+
+    it('ProcessUtils#winTerminateProcessTree tolerates taskkill failing on an already-exited process', () => {
+        // `taskkill /t` exits non-zero when any process in the tree is already gone, even though
+        // the rest of the tree was killed. Termination is best-effort, as on the unix path, so this
+        // must not escape as an uncaught exception from plugin-host shutdown. (Sentry EDITOR-12)
+        coreProcessManager['spawnSync'] = () => {
+            throw new Error('"taskkill.exe" exited with 255. Output:\n'
+                + '[null,"SUCCESS: The process with PID 41164 (child process of PID 30156) has been terminated.\\r\\n",'
+                + '"ERROR: The process with PID 27048 (child process of PID 41164) could not be terminated.\\r\\n'
+                + 'Reason: There is no running instance of the task.\\r\\r\\n"]');
+        };
+        expect(() => coreProcessManager['winTerminateProcessTree'](41164)).to.not.throw();
+    });
 });

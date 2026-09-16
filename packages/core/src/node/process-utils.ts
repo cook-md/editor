@@ -32,7 +32,13 @@ export class ProcessUtils {
     }
 
     protected winTerminateProcessTree(ppid: number): void {
-        this.spawnSync('taskkill.exe', ['/f', '/t', '/pid', ppid.toString(10)]);
+        try {
+            this.spawnSync('taskkill.exe', ['/f', '/t', '/pid', ppid.toString(10)]);
+        } catch (error) {
+            // `taskkill /t` exits non-zero when any process in the tree is already gone, even
+            // though it terminated the rest. Killing is best-effort, as on the unix path.
+            console.warn(error);
+        }
     }
 
     protected unixTerminateProcessTree(ppid: number): void {
