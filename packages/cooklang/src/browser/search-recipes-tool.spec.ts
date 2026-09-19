@@ -36,16 +36,28 @@ after(() => disableJSDOM());
 
 interface NativeEntry { path: string; name: string | null; title: string | null; tags: string[]; isMenu: boolean; servings: number | null }
 
+/** Shape produced by the native `searchRecipesFiltered` export. */
+interface NativeFilteredEntry extends NativeEntry { metadata: Record<string, unknown> }
+
 interface FakeIngredient { name: string }
 
 class FakeLanguageService {
     entries: NativeEntry[] = [];
     calls: Array<{ baseDir: string; query: string }> = [];
+
+    filteredEntries: NativeFilteredEntry[] = [];
+    filteredCalls: Array<{ baseDir: string; query: string; filterJson: string }> = [];
+
     /** Keyed by recipe content, so `parse` can answer per-file in readIngredients tests. */
     ingredientsByContent = new Map<string, FakeIngredient[]>();
+
     async searchRecipes(baseDir: string, query: string): Promise<string> {
         this.calls.push({ baseDir, query });
         return JSON.stringify(this.entries);
+    }
+    async searchRecipesFiltered(baseDir: string, query: string, filterJson: string): Promise<string> {
+        this.filteredCalls.push({ baseDir, query, filterJson });
+        return JSON.stringify(this.filteredEntries);
     }
     async parse(content: string): Promise<string> {
         const ingredients = this.ingredientsByContent.get(content) ?? [];
@@ -88,7 +100,6 @@ function createTool(): { tool: SearchRecipesTool; ls: FakeLanguageService; ws: F
     (tool as any).workspaceService = ws;
     (tool as any).fileService = fs;
     (metadataSource as any).languageService = ls;
-    (metadataSource as any).fileService = fs;
     (tool as any).metadataSource = metadataSource;
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { tool, ls, ws, fs };
@@ -292,64 +303,90 @@ describe('SearchRecipesTool', () => {
 
     describe('fields / where digest', () => {
 
-        const KIMCHI_CONTENT = '---\ntags: [Korean]\nsource:\n  url: https://koreanbapsang.com/x\ncuisine: Korean\n---\nBody';
+        const KIMCHI: NativeFilteredEntry = {
+            path: '/ws/Banchan/Kimchi.cook', name: 'Kimchi', title: 'Kimchi', tags: ['Korean'], isMenu: false, servings: null,
+            metadata: { tags: ['Korean'], source: { url: 'https://koreanbapsang.com/x' }, cuisine: 'Korean' },
+        };
+        const NAPOLEON: NativeFilteredEntry = {
+            path: '/ws/Napoleon.cook', name: 'Napoleon', title: 'Napoleon', tags: ['French'], isMenu: false, servings: null,
+            metadata: { tags: ['French'], cuisine: 'French' },
+        };
         const NAPOLEON_CONTENT = '---\ntags: [French]\ncuisine: French\n---\nBody';
 
         function withContent(fs: FakeFileService, path: string, content: string): void {
             fs.contents.set(`file:///ws/${path}`, content);
         }
 
-        it('leaves the plain { recipes, total } shape untouched with neither fields nor where', async () => {
+        it('leaves the plain { recipes, total } shape untouched with neither fields nor where, never calling searchRecipesFiltered', async () => {
             const { tool, ls } = createTool();
             ls.entries = [salmon];
             const result = await invoke(tool, { query: 'x' }) as unknown as { columns?: unknown; rows?: unknown };
             expect(result.columns).to.equal(undefined);
             expect(result.rows).to.equal(undefined);
+            expect(ls.filteredCalls).to.deep.equal([]);
         });
 
-        it('switches to { columns, rows, total } when fields is given', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Banchan/Kimchi.cook', title: 'Kimchi', tags: ['Korean'] }];
-            withContent(fs, 'Banchan/Kimchi.cook', KIMCHI_CONTENT);
+        it('switches to { columns, rows, total } when fields is given, with ONE native call', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [KIMCHI];
             const result = await invoke(tool, { fields: ['tags', 'cuisine', 'source'] });
             expect(result.columns).to.deep.equal(['path', 'title', 'tags', 'cuisine', 'source']);
             expect(result.rows).to.deep.equal([['Banchan/Kimchi.cook', 'Kimchi', 'Korean', 'Korean', 'https://koreanbapsang.com/x']]);
             expect(result.total).to.equal(1);
+            expect(ls.filteredCalls).to.have.length(1);
         });
 
         it('switches to { columns, rows, total } when where is given, even without fields', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Napoleon.cook', title: 'Napoleon' }];
-            withContent(fs, 'Napoleon.cook', NAPOLEON_CONTENT);
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [NAPOLEON];
             const result = await invoke(tool, { where: { cuisine: { equals: 'French' } } });
             expect(result.columns).to.deep.equal(['path', 'title']);
             expect(result.rows).to.deep.equal([['Napoleon.cook', 'Napoleon']]);
         });
 
-        it('filters by where, matching nested source.url, and reports total before the limit', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [
-                { ...pancakes, path: '/ws/Banchan/Kimchi.cook', title: 'Kimchi' },
-                { ...pancakes, path: '/ws/Napoleon.cook', title: 'Napoleon' },
-            ];
-            withContent(fs, 'Banchan/Kimchi.cook', KIMCHI_CONTENT);
-            withContent(fs, 'Napoleon.cook', NAPOLEON_CONTENT);
+        it('sends the query and the where clause together in the one native call', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [KIMCHI];
+            await invoke(tool, { query: 'kimchi', where: { source: { contains: 'koreanbapsang' } } });
+            expect(ls.filteredCalls).to.have.length(1);
+            expect(ls.filteredCalls[0].baseDir).to.equal('/ws');
+            expect(ls.filteredCalls[0].query).to.equal('kimchi');
+            expect(JSON.parse(ls.filteredCalls[0].filterJson)).to.deep.equal({ where: { source: { contains: 'koreanbapsang' } } });
+        });
+
+        it('sends a blank filter ("") when neither where nor titleContains narrows the fields-only digest', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [KIMCHI];
+            await invoke(tool, { fields: ['cuisine'] });
+            expect(ls.filteredCalls[0].filterJson).to.equal('');
+        });
+
+        it('reports total/rows exactly as the native call returns them (matching already happened server-side)', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [KIMCHI];
             const result = await invoke(tool, { where: { source: { contains: 'koreanbapsang' } } });
             expect(result.rows?.map(r => r[0])).to.deep.equal(['Banchan/Kimchi.cook']);
             expect(result.total).to.equal(1);
         });
 
+        it('applies the tag filter client-side on top of the native results, after limit accounting', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [KIMCHI, NAPOLEON];
+            const result = await invoke(tool, { fields: ['cuisine'], tag: 'french' });
+            expect(result.rows?.map(r => r[0])).to.deep.equal(['Napoleon.cook']);
+            expect(result.total).to.equal(1);
+        });
+
         it('renders the tags column from the native tags (works for >> metadata too)', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Legacy.cook', title: 'Legacy', tags: ['quick', 'easy'] }];
-            withContent(fs, 'Legacy.cook', '>> title: Legacy\n\nBody');
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [{ ...KIMCHI, path: '/ws/Legacy.cook', title: 'Legacy', tags: ['quick', 'easy'], metadata: {} }];
             const result = await invoke(tool, { fields: ['tags'] });
             expect(result.rows?.[0][2]).to.equal('quick, easy');
         });
 
-        it('renders ingredients as unique names from languageService.parse', async () => {
+        it('renders ingredients as unique names from languageService.parse (the one field that still reads a file)', async () => {
             const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Napoleon.cook', title: 'Napoleon' }];
+            ls.filteredEntries = [NAPOLEON];
             withContent(fs, 'Napoleon.cook', NAPOLEON_CONTENT);
             ls.ingredientsByContent.set(NAPOLEON_CONTENT, [{ name: 'flour' }, { name: 'butter' }, { name: 'flour' }]);
             const result = await invoke(tool, { fields: ['ingredients'] });
@@ -357,42 +394,63 @@ describe('SearchRecipesTool', () => {
         });
 
         it('truncates a cell to 200 chars', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Napoleon.cook', title: 'Napoleon' }];
+            const { tool, ls } = createTool();
             const longDescription = 'x'.repeat(250);
-            withContent(fs, 'Napoleon.cook', `---\ndescription: ${longDescription}\n---\nBody`);
+            ls.filteredEntries = [{ ...NAPOLEON, metadata: { description: longDescription } }];
             const result = await invoke(tool, { fields: ['description'] });
             expect(result.rows?.[0][2]).to.have.length(200);
         });
 
-        it('rejects an unknown field', async () => {
-            const { tool } = createTool();
+        it('rejects an unknown field without calling the native filtered search', async () => {
+            const { tool, ls } = createTool();
             const result = await invoke(tool, { fields: ['nope'] });
             expect(result.error).to.match(/Unknown field "nope"/);
+            expect(ls.filteredCalls).to.deep.equal([]);
         });
 
-        it('rejects a non-object where', async () => {
-            const { tool } = createTool();
+        it('rejects a non-object where without calling the native filtered search', async () => {
+            const { tool, ls } = createTool();
             const result = await invoke(tool, { where: 'nope' as unknown as object });
             expect(result.error).to.match(/where must be an object/);
+            expect(ls.filteredCalls).to.deep.equal([]);
+        });
+
+        it('surfaces a malformed-filter rejection from the native call as a normal tool error', async () => {
+            const { tool, ls } = createTool();
+            ls.searchRecipesFiltered = async () => { throw new Error('searchRecipesFiltered: invalid filter: unknown operator "startsWith"'); };
+            const result = await invoke(tool, { where: { tags: { startsWith: 'x' } as never } });
+            expect(result.error).to.match(/invalid filter/);
         });
 
         it('raises the limit cap to 500 with fields/where', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = Array.from({ length: 600 }, (_, i) => ({ ...pancakes, path: `/ws/r${i}.cook` }));
-            for (let i = 0; i < 600; i++) { withContent(fs, `r${i}.cook`, NAPOLEON_CONTENT); }
+            const { tool, ls } = createTool();
+            ls.filteredEntries = Array.from({ length: 600 }, (_, i) => ({ ...NAPOLEON, path: `/ws/r${i}.cook` }));
             const result = await invoke(tool, { fields: ['cuisine'], limit: 1000 });
             expect(result.rows).to.have.length(500);
         });
 
         it('supports fields/where together with the queries batch', async () => {
-            const { tool, ls, fs } = createTool();
-            ls.entries = [{ ...pancakes, path: '/ws/Napoleon.cook', title: 'Napoleon' }];
-            withContent(fs, 'Napoleon.cook', NAPOLEON_CONTENT);
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [NAPOLEON];
             const raw = await tool.getTool().handler(JSON.stringify({ queries: ['a'], fields: ['cuisine'] }));
             const result = JSON.parse(raw as string) as { searches: SearchResult[] };
             expect(result.searches[0].columns).to.deep.equal(['path', 'title', 'cuisine']);
             expect(result.searches[0].rows?.[0]).to.deep.equal(['Napoleon.cook', 'Napoleon', 'French']);
+            expect(ls.filteredCalls.map(c => c.query)).to.deep.equal(['a']);
+        });
+
+        it('isolates a failing query from the rest in a digest batch', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [NAPOLEON];
+            ls.searchRecipesFiltered = async (baseDir: string, query: string, filterJson: string) => {
+                ls.filteredCalls.push({ baseDir, query, filterJson });
+                if (query === 'bad') { throw new Error('searchRecipesFiltered: invalid filter: boom'); }
+                return JSON.stringify(ls.filteredEntries);
+            };
+            const raw = await tool.getTool().handler(JSON.stringify({ queries: ['bad', 'good'], fields: ['cuisine'] }));
+            const result = JSON.parse(raw as string) as { searches: SearchResult[] };
+            expect(result.searches[0].error).to.match(/boom/);
+            expect(result.searches[1].total).to.equal(1);
         });
     });
 });

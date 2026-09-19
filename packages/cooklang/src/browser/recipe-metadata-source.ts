@@ -13,9 +13,8 @@
 
 import { URI } from '@theia/core';
 import { injectable, inject } from '@theia/core/shared/inversify';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
-import { baseNameWithoutExt, matchesTitleContains, matchesWhere, readFrontmatter, WhereClause } from './metadata-matcher';
+import { WhereClause } from './metadata-matcher';
 
 export interface RecipeMetadataFilter {
     where?: WhereClause;
@@ -24,31 +23,30 @@ export interface RecipeMetadataFilter {
 
 export interface RecipeMetadataEntry {
     path: string;
-    metadata: Record<string, unknown> | undefined;
-    status: 'yaml' | 'deprecated' | 'none' | 'invalid';
-    error?: string;
-    /** Whether this entry satisfies the `filter` it was read with. */
-    matched: boolean;
+    name: string | null;
+    title: string | null;
+    tags: string[];
+    isMenu: boolean;
+    servings: number | null;
+    /** The recipe's frontmatter, `{}` when it has none. */
+    metadata: Record<string, unknown>;
 }
 
-interface NativeRecipeEntry { path: string; title: string | null }
+/** Shape produced by the native `searchRecipesFiltered` export (absolute `path`). */
+interface NativeFilteredEntry extends Omit<RecipeMetadataEntry, 'path'> { path: string }
 
 /**
- * SEAM: the one place that resolves "which recipes match a metadata filter"
- * for both `searchRecipes`'s `fields`/`where` digest (this package) and
- * (this package's sibling copy in `packages/cooklang-ai`)
- * `updateRecipeMetadata`'s `select`. Nothing else in either tool reads
- * frontmatter for selection purposes.
+ * Resolves "which recipes match a metadata filter" for `searchRecipes`'s
+ * `fields`/`where` digest with ONE call to cooklang-find's native
+ * `searchRecipesFiltered` — query, `where`/`titleContains` filtering, ranking
+ * and frontmatter reading all happen server-side in Rust. No per-file reads
+ * happen in this package for selection purposes any more.
  *
- * A follow-up will move this filtering into the Rust `cooklang-find` crate
- * (and `cooklang-native`) and swap `list`'s body for a native call without
- * touching the tools — the `where`/`titleContains` JSON grammar it accepts
- * (see `metadata-matcher.ts`) is mirrored there, so it must not change shape
- * here without updating that crate too.
- *
- * Candidates come from the native `searchRecipes` (cooklang-find) call, so
- * `query` here does real full-text search — unlike the `packages/cooklang-ai`
- * copy, which has no native search and always walks the workspace.
+ * `packages/cooklang-ai`'s `updateRecipeMetadata` keeps a full TypeScript
+ * implementation of the same `where`/`titleContains` grammar (see that
+ * package's `recipe-metadata-source.ts` and `metadata-matcher.ts`): it has no
+ * access to the language-server RPC this class uses, since it has no
+ * `CooklangLanguageService` binding.
  */
 @injectable()
 export class RecipeMetadataSource {
@@ -56,47 +54,26 @@ export class RecipeMetadataSource {
     @inject(CooklangLanguageService)
     protected readonly languageService: CooklangLanguageService;
 
-    @inject(FileService)
-    protected readonly fileService: FileService;
-
     /**
-     * Reads and parses each of `paths`' frontmatter, reporting whether it
-     * satisfies `filter`. Always returns one entry per input path (even non-
-     * matches), so callers that need metadata for reasons other than
-     * filtering (e.g. building a `searchRecipes` digest row) can reuse the read.
+     * `query` and `filter` are sent together in one native call, so ranking
+     * and matching both happen server-side and `total` (the length of the
+     * result) is exact. `filter` is sent as `''` ("no filter") when it has
+     * neither a non-empty `where` nor a `titleContains` — cooklang-find
+     * treats a blank string specially rather than parsing `'{}'`.
+     *
+     * Rejects (does not catch) when the native call rejects, e.g. a
+     * malformed `where` — callers decide how to surface that as a tool result.
      */
-    async filterByMetadata(root: URI, paths: string[], filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
-        const entries: RecipeMetadataEntry[] = [];
-        for (const path of paths) {
-            let content: string;
-            try {
-                content = (await this.fileService.read(root.resolve(path))).value.toString();
-            } catch {
-                entries.push({ path, metadata: undefined, status: 'invalid', error: 'File not found', matched: false });
-                continue;
-            }
-            const result = readFrontmatter(content);
-            const metadata = result.kind === 'yaml' ? result.data : undefined;
-            const matched = matchesWhere(metadata ?? {}, filter.where)
-                && matchesTitleContains(baseNameWithoutExt(path), metadata?.title, filter.titleContains);
-            entries.push({
-                path,
-                metadata,
-                status: result.kind,
-                error: result.kind === 'invalid' ? result.error : undefined,
-                matched,
-            });
-        }
-        return entries;
+    async list(root: URI, query: string | undefined, filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
+        const filterJson = this.isEmptyFilter(filter) ? '' : JSON.stringify(filter);
+        const raw = await this.languageService.searchRecipesFiltered(root.path.fsPath(), query ?? '', filterJson);
+        const entries = JSON.parse(raw) as NativeFilteredEntry[];
+        return entries.map(entry => ({ ...entry, path: this.relativePath(root, entry.path) }));
     }
 
-    /** Seam contract: see the class doc comment. */
-    async list(root: URI, query: string | undefined, filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
-        const raw = await this.languageService.searchRecipes(root.path.fsPath(), query ?? '');
-        const nativeEntries = JSON.parse(raw) as NativeRecipeEntry[];
-        const paths = nativeEntries.map(entry => this.relativePath(root, entry.path));
-        const entries = await this.filterByMetadata(root, paths, filter);
-        return entries.filter(e => e.matched);
+    protected isEmptyFilter(filter: RecipeMetadataFilter): boolean {
+        const hasWhere = filter.where !== undefined && Object.keys(filter.where).length > 0;
+        return !hasWhere && filter.titleContains === undefined;
     }
 
     /**

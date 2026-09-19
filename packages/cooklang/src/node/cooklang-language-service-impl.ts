@@ -291,6 +291,11 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         return native.searchRecipes(baseDir, query);
     }
 
+    async searchRecipesFiltered(baseDir: string, query: string, filterJson: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.searchRecipesFiltered(baseDir, query, filterJson);
+    }
+
     async parsePantry(text: string): Promise<string> {
         const native = require('@theia/cooklang-native');
         return native.parsePantry(text);

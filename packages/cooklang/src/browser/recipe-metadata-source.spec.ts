@@ -11,109 +11,106 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-// The tool imports `FileService`, which needs browser globals at require
-// time. Same jsdom preamble as the sibling tool specs.
-import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
-
-const disableJSDOM = enableJSDOM();
-
-import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
-try {
-    FrontendApplicationConfigProvider.get();
-} catch {
-    FrontendApplicationConfigProvider.set({});
-}
-
 import { expect } from 'chai';
 import { URI } from '@theia/core';
 import { RecipeMetadataSource } from './recipe-metadata-source';
 
-after(() => disableJSDOM());
-
-class FakeLanguageService {
-    entries: Array<{ path: string; title: string | null }> = [];
-    calls: Array<{ baseDir: string; query: string }> = [];
-    async searchRecipes(baseDir: string, query: string): Promise<string> {
-        this.calls.push({ baseDir, query });
-        return JSON.stringify(this.entries);
-    }
+interface NativeFilteredEntry {
+    path: string; name: string | null; title: string | null; tags: string[]; isMenu: boolean; servings: number | null;
+    metadata: Record<string, unknown>;
 }
 
-class FakeFileService {
-    contents = new Map<string, string>();
-    async read(uri: URI): Promise<{ value: { toString(): string } }> {
-        const value = this.contents.get(uri.toString());
-        if (value === undefined) { throw new Error('ENOENT'); }
-        return { value: { toString: () => value } };
+class FakeLanguageService {
+    entries: NativeFilteredEntry[] = [];
+    error: Error | undefined;
+    calls: Array<{ baseDir: string; query: string; filterJson: string }> = [];
+    async searchRecipesFiltered(baseDir: string, query: string, filterJson: string): Promise<string> {
+        this.calls.push({ baseDir, query, filterJson });
+        if (this.error) { throw this.error; }
+        return JSON.stringify(this.entries);
     }
 }
 
 const ROOT = new URI('file:///ws');
 
-function createSource(): { source: RecipeMetadataSource; languageService: FakeLanguageService; fileService: FakeFileService } {
+function createSource(): { source: RecipeMetadataSource; ls: FakeLanguageService } {
     const source = new RecipeMetadataSource();
-    const languageService = new FakeLanguageService();
-    const fileService = new FakeFileService();
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    (source as any).languageService = languageService;
-    (source as any).fileService = fileService;
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { source, languageService, fileService };
+    const ls = new FakeLanguageService();
+    (source as unknown as { languageService: FakeLanguageService }).languageService = ls;
+    return { source, ls };
 }
+
+const KIMCHI: NativeFilteredEntry = {
+    path: '/ws/Banchan/Kimchi.cook', name: 'Kimchi', title: 'Kimchi', tags: ['Korean'], isMenu: false, servings: 4,
+    metadata: { tags: ['Korean'], source: { url: 'https://koreanbapsang.com/x' } },
+};
 
 describe('RecipeMetadataSource', () => {
 
-    describe('filterByMetadata', () => {
-        it('reads and parses frontmatter for every given path', async () => {
-            const { source, fileService } = createSource();
-            fileService.contents.set('file:///ws/Napoleon.cook', '---\ntags: [French]\n---\nBody');
-            const entries = await source.filterByMetadata(ROOT, ['Napoleon.cook'], {});
-            expect(entries[0].status).to.equal('yaml');
-            expect(entries[0].metadata?.tags).to.deep.equal(['French']);
-            expect(entries[0].matched).to.equal(true);
-        });
-
-        it('applies a where filter, matching nested source.url', async () => {
-            const { source, fileService } = createSource();
-            fileService.contents.set('file:///ws/Kimchi.cook', '---\nsource:\n  url: https://koreanbapsang.com/x\n---\nBody');
-            fileService.contents.set('file:///ws/Napoleon.cook', '---\ntags: [French]\n---\nBody');
-            const entries = await source.filterByMetadata(ROOT, ['Kimchi.cook', 'Napoleon.cook'], {
-                where: { source: { contains: 'koreanbapsang' } },
-            });
-            expect(entries.filter(e => e.matched).map(e => e.path)).to.deep.equal(['Kimchi.cook']);
-        });
-
-        it('reports a missing file rather than throwing', async () => {
-            const { source } = createSource();
-            const entries = await source.filterByMetadata(ROOT, ['Nope.cook'], {});
-            expect(entries[0].status).to.equal('invalid');
-            expect(entries[0].matched).to.equal(false);
-        });
-
-        it('reports deprecated >> metadata as not matched by a where condition', async () => {
-            const { source, fileService } = createSource();
-            fileService.contents.set('file:///ws/Legacy.cook', '>> title: Old\n\nBody');
-            const entries = await source.filterByMetadata(ROOT, ['Legacy.cook'], { where: { title: { exists: true } } });
-            expect(entries[0].status).to.equal('deprecated');
-            expect(entries[0].matched).to.equal(false);
-        });
+    it('makes exactly one native call, forwarding baseDir and query', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, 'kimchi', {});
+        expect(ls.calls).to.have.length(1);
+        expect(ls.calls[0].baseDir).to.equal('/ws');
+        expect(ls.calls[0].query).to.equal('kimchi');
     });
 
-    describe('list', () => {
-        it('runs the native search, reads content, and returns only matches', async () => {
-            const { source, languageService, fileService } = createSource();
-            languageService.entries = [{ path: '/ws/Kimchi.cook', title: 'Kimchi' }, { path: '/ws/Napoleon.cook', title: 'Napoleon' }];
-            fileService.contents.set('file:///ws/Kimchi.cook', '---\ncuisine: Korean\n---\nBody');
-            fileService.contents.set('file:///ws/Napoleon.cook', '---\ncuisine: French\n---\nBody');
-            const entries = await source.list(ROOT, 'x', { where: { cuisine: { equals: 'Korean' } } });
-            expect(entries.map(e => e.path)).to.deep.equal(['Kimchi.cook']);
-            expect(languageService.calls).to.deep.equal([{ baseDir: '/ws', query: 'x' }]);
-        });
+    it('sends a blank query when none is given', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, undefined, {});
+        expect(ls.calls[0].query).to.equal('');
+    });
 
-        it('sends a blank query when none is given', async () => {
-            const { source, languageService } = createSource();
-            await source.list(ROOT, undefined, {});
-            expect(languageService.calls[0].query).to.equal('');
-        });
+    it('sends a blank filter ("") when where and titleContains are both absent', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, 'x', {});
+        expect(ls.calls[0].filterJson).to.equal('');
+    });
+
+    it('sends a blank filter for an empty where object', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, 'x', { where: {} });
+        expect(ls.calls[0].filterJson).to.equal('');
+    });
+
+    it('sends the where clause as JSON, combined with the query in the same call', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, 'kimchi', { where: { cuisine: { equals: 'Korean' } } });
+        expect(ls.calls[0].query).to.equal('kimchi');
+        expect(JSON.parse(ls.calls[0].filterJson)).to.deep.equal({ where: { cuisine: { equals: 'Korean' } } });
+    });
+
+    it('sends titleContains in the filter JSON', async () => {
+        const { source, ls } = createSource();
+        await source.list(ROOT, undefined, { titleContains: 'kimchi' });
+        expect(JSON.parse(ls.calls[0].filterJson)).to.deep.equal({ titleContains: 'kimchi' });
+    });
+
+    it('maps native entries to workspace-relative paths, keeping every native field and the metadata object', async () => {
+        const { source, ls } = createSource();
+        ls.entries = [KIMCHI];
+        const entries = await source.list(ROOT, 'x', {});
+        expect(entries).to.deep.equal([{
+            path: 'Banchan/Kimchi.cook', name: 'Kimchi', title: 'Kimchi', tags: ['Korean'], isMenu: false, servings: 4,
+            metadata: { tags: ['Korean'], source: { url: 'https://koreanbapsang.com/x' } },
+        }]);
+    });
+
+    it('falls back to the absolute path for a file outside the workspace root', async () => {
+        const { source, ls } = createSource();
+        ls.entries = [{ ...KIMCHI, path: '/elsewhere/Kimchi.cook' }];
+        const entries = await source.list(ROOT, 'x', {});
+        expect(entries[0].path).to.equal('/elsewhere/Kimchi.cook');
+    });
+
+    it('propagates a native rejection (e.g. a malformed filter) rather than swallowing it', async () => {
+        const { source, ls } = createSource();
+        ls.error = new Error('searchRecipesFiltered: invalid filter: unknown operator "startsWith"');
+        try {
+            await source.list(ROOT, 'x', { where: { tags: { startsWith: 'x' } as never } });
+            expect.fail('expected list() to reject');
+        } catch (e) {
+            expect((e as Error).message).to.match(/invalid filter/);
+        }
     });
 });

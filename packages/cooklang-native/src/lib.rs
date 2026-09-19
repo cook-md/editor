@@ -1088,6 +1088,70 @@ pub async fn search_recipes(base_dir: String, query: String) -> napi::Result<Str
     serde_json::to_string(&entries).map_err(|e| napi::Error::from_reason(e.to_string()))
 }
 
+/// A `search_recipes` entry plus the recipe's whole frontmatter.
+#[derive(Serialize)]
+struct RecipeMetadataEntry {
+    #[serde(flatten)]
+    entry: RecipeSearchEntry,
+    /// The frontmatter as JSON; an empty object when there is none (or it
+    /// holds something JSON cannot express, such as a non-string key).
+    metadata: serde_json::Value,
+}
+
+fn search_recipes_filtered_blocking(
+    base_dir: String,
+    query: String,
+    filter_json: String,
+) -> Result<Vec<RecipeMetadataEntry>, String> {
+    let base = Utf8PathBuf::from(base_dir);
+    if !base.is_dir() {
+        return Err(format!("not a directory: {base}"));
+    }
+    let filter = if filter_json.trim().is_empty() {
+        cooklang_find::MetadataFilter::default()
+    } else {
+        cooklang_find::MetadataFilter::from_json(&filter_json)
+            .map_err(|e| format!("invalid filter: {e}"))?
+    };
+    let found = cooklang_find::search_with_filter(&base, query.trim(), &filter)
+        .map_err(|e| e.to_string())?;
+    Ok(found
+        .iter()
+        .filter_map(|entry| {
+            Some(RecipeMetadataEntry {
+                metadata: serde_json::to_value(entry.metadata())
+                    .unwrap_or_else(|_| serde_json::json!({})),
+                entry: RecipeSearchEntry::from_entry(entry)?,
+            })
+        })
+        .collect())
+}
+
+/// `searchRecipes` with a metadata filter, returning each match's frontmatter.
+///
+/// `filter_json` is `cooklang_find::MetadataFilter`'s JSON — `{ "where": { key:
+/// condition }, "titleContains": string | string[] }` — and may be blank for
+/// "no filter". Only frontmatter is read unless `query` is non-blank, so this
+/// answers "which recipes have metadata X" for a whole library in one call,
+/// without the caller opening a single file. A blank query lists matches
+/// sorted by path; otherwise they come best match first, like `searchRecipes`.
+///
+/// Returns JSON: `[{ path, name, title, tags, isMenu, servings, metadata }]`.
+#[napi(js_name = "searchRecipesFiltered")]
+pub async fn search_recipes_filtered(
+    base_dir: String,
+    query: String,
+    filter_json: String,
+) -> napi::Result<String> {
+    let entries = tokio::task::spawn_blocking(move || {
+        search_recipes_filtered_blocking(base_dir, query, filter_json)
+    })
+    .await
+    .map_err(|e| napi::Error::from_reason(format!("searchRecipesFiltered: {e}")))?
+    .map_err(|e| napi::Error::from_reason(format!("searchRecipesFiltered: {e}")))?;
+    serde_json::to_string(&entries).map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PantryItemJson {
@@ -1471,6 +1535,93 @@ mod workspace_tools_tests {
             .block_on(search_recipes(ws.base_dir(), query.to_string()))
             .unwrap();
         serde_json::from_str(&json).unwrap()
+    }
+
+    fn search_filtered(ws: &TempWs, query: &str, filter: &str) -> serde_json::Value {
+        let json = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(search_recipes_filtered(
+                ws.base_dir(),
+                query.to_string(),
+                filter.to_string(),
+            ))
+            .unwrap();
+        serde_json::from_str(&json).unwrap()
+    }
+
+    fn paths_of(entries: &serde_json::Value) -> Vec<String> {
+        entries
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                let path = e["path"].as_str().unwrap();
+                path.rsplit('/').next().unwrap().to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn search_recipes_filtered_matches_on_frontmatter_and_returns_it() {
+        let ws = temp_workspace();
+        ws.write(
+            "Bulgogi.cook",
+            "---\nsource:\n  url: https://www.koreanbapsang.com/bulgogi\ncuisine: Korean\n---\nGrill @beef{500%g}.\n",
+        );
+
+        let found = search_filtered(
+            &ws,
+            "",
+            r#"{"where": {"source": {"contains": "KoreanBapsang"}, "tags": {"missing": "Korean"}}}"#,
+        );
+
+        assert_eq!(paths_of(&found), ["Bulgogi.cook"]);
+        assert_eq!(found[0]["metadata"]["cuisine"], "Korean");
+        assert_eq!(
+            found[0]["metadata"]["source"]["url"],
+            "https://www.koreanbapsang.com/bulgogi"
+        );
+        assert_eq!(found[0]["isMenu"], false);
+    }
+
+    #[test]
+    fn search_recipes_filtered_with_a_blank_filter_lists_everything_by_path() {
+        let ws = temp_workspace();
+
+        let found = search_filtered(&ws, "  ", "");
+
+        assert_eq!(
+            paths_of(&found),
+            ["Salmon Bowl.cook", "Pancakes.cook", "Week.menu"]
+        );
+        assert_eq!(found[2]["metadata"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn search_recipes_filtered_combines_a_text_query_with_the_filter() {
+        let ws = temp_workspace();
+
+        let found = search_filtered(&ws, "flour", r#"{"where": {"tags": {"has": "breakfast"}}}"#);
+        let none = search_filtered(&ws, "flour", r#"{"where": {"tags": {"has": "fish"}}}"#);
+
+        assert_eq!(paths_of(&found), ["Pancakes.cook"]);
+        assert_eq!(paths_of(&none), Vec::<String>::new());
+    }
+
+    #[test]
+    fn search_recipes_filtered_rejects_a_malformed_filter() {
+        let ws = temp_workspace();
+
+        let err = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(search_recipes_filtered(
+                ws.base_dir(),
+                String::new(),
+                r#"{"where": {"tags": {"startsWith": "x"}}}"#.to_string(),
+            ))
+            .unwrap_err();
+
+        assert!(err.reason.contains("invalid filter"), "{}", err.reason);
     }
 
     #[test]

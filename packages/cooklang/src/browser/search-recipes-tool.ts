@@ -252,10 +252,18 @@ export class SearchRecipesTool implements ToolProvider {
      * native error should not discard the others, which is the saving the batch
      * exists for. The single-query path unwraps it back into a bare `{ error }`
      * so its long-standing result shape is unchanged.
+     *
+     * The digest path (`fields`/`where`) never calls the plain `searchRecipes`
+     * native export — it goes through `RecipeMetadataSource`, which is the ONE
+     * `searchRecipesFiltered` call that does query + where-matching + ranking +
+     * frontmatter reading together, server-side.
      */
     protected async searchOne(
         root: URI, query: string, tag: string, limit: number, digest: boolean, fields: FieldName[], where: WhereClause | undefined,
     ): Promise<SearchResult> {
+        if (digest) {
+            return this.searchOneDigest(root, query, tag, limit, fields, where);
+        }
         let entries: NativeRecipeEntry[];
         try {
             entries = JSON.parse(await this.languageService.searchRecipes(root.path.fsPath(), query));
@@ -268,38 +276,27 @@ export class SearchRecipesTool implements ToolProvider {
         const filtered = tag
             ? entries.filter(entry => entry.tags.some(t => t.toLowerCase() === tag))
             : entries;
-
-        if (!digest) {
-            return {
-                query,
-                recipes: filtered.slice(0, limit).map(entry => this.toRecipe(root, entry)),
-                total: filtered.length,
-            };
-        }
-        return this.searchOneDigest(root, query, filtered, limit, fields, where);
+        return {
+            query,
+            recipes: filtered.slice(0, limit).map(entry => this.toRecipe(root, entry)),
+            total: filtered.length,
+        };
     }
 
     protected async searchOneDigest(
-        root: URI, query: string, filtered: NativeRecipeEntry[], limit: number, fields: FieldName[], where: WhereClause | undefined,
+        root: URI, query: string, tag: string, limit: number, fields: FieldName[], where: WhereClause | undefined,
     ): Promise<SearchResult> {
-        const withPaths = filtered.map(entry => ({ entry, path: this.relativePath(root, entry.path) }));
-        let candidates: Array<{ entry: NativeRecipeEntry; path: string; metadata?: RecipeMetadataEntry }>;
-        let total: number;
-        if (where !== undefined) {
-            const metaEntries = await this.metadataSource.filterByMetadata(root, withPaths.map(w => w.path), { where });
-            const matched = withPaths
-                .map((w, i) => ({ ...w, metadata: metaEntries[i] }))
-                .filter(w => w.metadata.matched);
-            total = matched.length;
-            candidates = matched.slice(0, limit);
-        } else {
-            total = withPaths.length;
-            candidates = withPaths.slice(0, limit);
-            if (fields.length > 0) {
-                const metaEntries = await this.metadataSource.filterByMetadata(root, candidates.map(c => c.path), {});
-                candidates = candidates.map((c, i) => ({ ...c, metadata: metaEntries[i] }));
-            }
+        let entries: RecipeMetadataEntry[];
+        try {
+            entries = await this.metadataSource.list(root, query, { where });
+        } catch (e) {
+            return { query, error: `Search failed: ${e instanceof Error ? e.message : String(e)}` };
         }
+        const tagFiltered = tag
+            ? entries.filter(entry => entry.tags.some(t => t.toLowerCase() === tag))
+            : entries;
+        const total = tagFiltered.length;
+        const candidates = tagFiltered.slice(0, limit);
 
         let ingredientsByPath: Map<string, string[]> | undefined;
         if (fields.includes('ingredients')) {
@@ -307,26 +304,24 @@ export class SearchRecipesTool implements ToolProvider {
         }
 
         const columns = ['path', 'title', ...fields];
-        const rows = candidates.map(c => {
-            const row = [c.path, c.entry.title ?? ''];
+        const rows = candidates.map(entry => {
+            const row = [entry.path, entry.title ?? ''];
             for (const field of fields) {
-                row.push(this.fieldCell(field, c, ingredientsByPath));
+                row.push(this.fieldCell(field, entry, ingredientsByPath));
             }
             return row.map(truncateCell);
         });
         return { query, columns, rows, total };
     }
 
-    protected fieldCell(
-        field: FieldName, candidate: { entry: NativeRecipeEntry; path: string; metadata?: RecipeMetadataEntry }, ingredientsByPath?: Map<string, string[]>,
-    ): string {
+    protected fieldCell(field: FieldName, entry: RecipeMetadataEntry, ingredientsByPath?: Map<string, string[]>): string {
         if (field === 'tags') {
-            return candidate.entry.tags.join(', ');
+            return entry.tags.join(', ');
         }
         if (field === 'ingredients') {
-            return (ingredientsByPath?.get(candidate.path) ?? []).join(', ');
+            return (ingredientsByPath?.get(entry.path) ?? []).join(', ');
         }
-        const value = candidate.metadata?.metadata?.[field];
+        const value = entry.metadata[field];
         return field === 'source' ? sourceCell(value) : cellValue(value);
     }
 
