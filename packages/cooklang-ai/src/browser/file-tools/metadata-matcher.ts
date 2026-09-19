@@ -11,6 +11,9 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+// YAML-sourced frontmatter values (and the `yaml` package's own API) legitimately use null.
+/* eslint-disable no-null/no-null */
+
 // Pure, Theia-free: reading and matching a recipe's YAML frontmatter. Used by
 // `updateRecipeMetadata`'s selector (this package) and `searchRecipes`'s
 // `fields`/`where` digest (`packages/cooklang`). The two packages do not

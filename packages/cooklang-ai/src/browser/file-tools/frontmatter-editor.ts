@@ -11,6 +11,9 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
+// The `yaml` package's Document API uses null (not undefined) for "no contents".
+/* eslint-disable no-null/no-null */
+
 // Pure, Theia-free: edits a recipe's YAML frontmatter in place (tags, set,
 // unset) and re-serializes it, preserving everything the model never asked to
 // change — comments, key order, scalar/flow style, BOM, line endings, and the
@@ -193,7 +196,7 @@ export function editFrontmatter(content: string, ops: MetadataEditOps): Metadata
         }
     } else {
         doc = new Document({});
-        doc.contents = null; // eslint-disable-line no-null/no-null
+        doc.contents = null;
     }
 
     const addTags = ops.addTags ?? [];
