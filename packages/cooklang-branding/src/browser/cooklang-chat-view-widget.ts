@@ -22,9 +22,9 @@ import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Message } from '@theia/core/lib/browser';
 import { ChatModel, ChatResponseModel, isActiveSessionChangedEvent } from '@theia/ai-chat/lib/common';
-import { CookbotUsageService } from '@theia/cooklang-ai/lib/common';
+import { CookbotUsageService, CookbotUsageStats } from '@theia/cooklang-ai/lib/common';
 import { AccountCommands } from '@theia/cooklang-account/lib/browser/account-contribution';
-import { computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
+import { computeExchangeCost, computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
 
 const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
@@ -53,6 +53,9 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
     private quotaBanner: HTMLDivElement;
     private quotaBannerState: CookbotQuotaBannerState | undefined;
+    private exchangeCostNote: HTMLDivElement;
+    /** The reading the next exchange's cost is measured against. */
+    private lastUsage: CookbotUsageStats | undefined;
     private readonly usageTracking = new DisposableCollection();
     private usageRequestSeq = 0;
 
@@ -69,6 +72,10 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.quotaBanner.className = 'ai-chat-quota-banner';
         this.quotaBanner.style.display = 'none';
         this.quotaBanner.setAttribute('role', 'status');
+        this.exchangeCostNote = document.createElement('div');
+        this.exchangeCostNote.className = 'ai-chat-exchange-cost';
+        this.exchangeCostNote.style.display = 'none';
+        this.exchangeCostNote.setAttribute('role', 'status');
 
         this.trackModelForUsage(this.chatSession.model);
         this.toDispose.push(this.chatService.onSessionEvent(event => {
@@ -204,6 +211,9 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         if (!this.quotaBanner.isConnected) {
             this.node.insertBefore(this.quotaBanner, this.inputWidget.node);
         }
+        if (!this.exchangeCostNote.isConnected) {
+            this.node.insertBefore(this.exchangeCostNote, this.quotaBanner);
+        }
         this.refreshUsage();
     }
 
@@ -216,6 +226,8 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.usageTracking.dispose();
         this.usageTracking.push(model.onDidChange(event => {
             if (event.kind === 'addResponse') {
+                // A note about the previous exchange is stale once the next one starts.
+                this.exchangeCostNote.style.display = 'none';
                 this.watchResponseCompletion(event.response);
             }
         }));
@@ -227,21 +239,26 @@ export class CooklangChatViewWidget extends ChatViewWidget {
      */
     private watchResponseCompletion(response: ChatResponseModel): void {
         if (response.isComplete || response.isCanceled || response.isError) {
-            this.refreshUsage();
+            this.refreshUsage(true);
             return;
         }
         const listener = response.onDidChange(() => {
             if (response.isComplete || response.isCanceled || response.isError) {
                 listener.dispose();
-                this.refreshUsage();
+                this.refreshUsage(true);
             }
         });
         this.usageTracking.push(listener);
     }
 
-    private refreshUsage(): void {
+    /**
+     * @param afterExchange the refresh follows a finished exchange, so the
+     * change since the last reading is what that exchange cost.
+     */
+    private refreshUsage(afterExchange = false): void {
         if (this.authState.status !== 'logged-in' || !this.hasAiFeature) {
             this.quotaBanner.style.display = 'none';
+            this.exchangeCostNote.style.display = 'none';
             return;
         }
         const seq = ++this.usageRequestSeq;
@@ -251,11 +268,26 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             }
             this.quotaBannerState = computeQuotaBannerState(usageStats);
             this.renderQuotaBanner();
+            if (afterExchange) {
+                this.renderExchangeCost(usageStats);
+            }
+            this.lastUsage = usageStats ?? this.lastUsage;
         }).catch(error => {
             // The backend already collapses expected failures to undefined;
             // anything surfacing here is RPC noise not worth a banner change.
             console.info('[Chat] Could not refresh Cookbot usage:', error);
         });
+    }
+
+    private renderExchangeCost(usageStats: CookbotUsageStats | undefined): void {
+        const cost = computeExchangeCost(this.lastUsage, usageStats);
+        if (!cost) {
+            this.exchangeCostNote.style.display = 'none';
+            return;
+        }
+        this.exchangeCostNote.textContent = nls.localize('theia/ai-chat/quota/exchangeCost',
+            'That request used {0}% of your monthly Cookbot AI credits · {1}% left.', cost.percentOfCycle, cost.percentLeft);
+        this.exchangeCostNote.style.display = 'block';
     }
 
     private renderQuotaBanner(): void {

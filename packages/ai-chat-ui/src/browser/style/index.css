@@ -1703,6 +1703,13 @@ div:last-child>.theia-ChatNode {
     white-space: nowrap;
 }
 
+.ai-chat-exchange-cost {
+    display: none;
+    margin: 0 12px 4px 12px;
+    font-size: 11px;
+    color: var(--theia-descriptionForeground);
+}
+
 .theia-ChatInputOptions .option.toggled {
   border: var(--theia-border-width) var(--theia-inputOption-activeBorder) solid;
   background-color: var(--theia-inputOption-activeBackground);

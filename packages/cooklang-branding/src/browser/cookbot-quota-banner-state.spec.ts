@@ -13,7 +13,7 @@
 
 import { expect } from 'chai';
 import { CookbotUsageStats } from '@theia/cooklang-ai/lib/common';
-import { computeQuotaBannerState } from './cookbot-quota-banner-state';
+import { computeExchangeCost, computeQuotaBannerState } from './cookbot-quota-banner-state';
 
 function usage(overrides: Partial<CookbotUsageStats> = {}): CookbotUsageStats {
     return {
@@ -63,5 +63,43 @@ describe('computeQuotaBannerState', () => {
     it('omits the reset date when the server did not send one', () => {
         const state = computeQuotaBannerState(usage({ inputTokensUsed: 900_000, billingPeriodEnd: undefined }));
         expect(state).to.deep.equal({ level: 'warning', percentUsed: 90, resetsOn: undefined });
+    });
+});
+
+describe('computeExchangeCost', () => {
+
+    it('is hidden when either reading is unavailable', () => {
+        expect(computeExchangeCost(undefined, usage())).to.equal(undefined);
+        expect(computeExchangeCost(usage(), undefined)).to.equal(undefined);
+    });
+
+    it('is hidden when the limit is missing or zero', () => {
+        expect(computeExchangeCost(usage({ tokenLimit: 0 }), usage({ tokenLimit: 0, inputTokensUsed: 999 }))).to.equal(undefined);
+    });
+
+    it('is hidden for an ordinary exchange', () => {
+        expect(computeExchangeCost(usage({ inputTokensUsed: 100_000 }), usage({ inputTokensUsed: 129_999 }))).to.equal(undefined);
+    });
+
+    it('reports an exchange that used 3% of the cycle or more, input and output together', () => {
+        const cost = computeExchangeCost(
+            usage({ inputTokensUsed: 100_000, outputTokensUsed: 50_000 }),
+            usage({ inputTokensUsed: 170_000, outputTokensUsed: 60_000 }));
+        expect(cost).to.deep.equal({ percentOfCycle: 8, percentLeft: 77 });
+    });
+
+    it('never reports more left than there is', () => {
+        const cost = computeExchangeCost(usage({ inputTokensUsed: 900_000 }), usage({ inputTokensUsed: 1_200_000 }));
+        expect(cost).to.deep.equal({ percentOfCycle: 30, percentLeft: 0 });
+    });
+
+    it('is hidden across a billing-cycle rollover, where the counter restarts', () => {
+        const before = usage({ inputTokensUsed: 900_000, billingPeriodStart: '2026-08-01T00:00:00Z' });
+        const after = usage({ inputTokensUsed: 950_000, billingPeriodStart: '2026-09-01T00:00:00Z' });
+        expect(computeExchangeCost(before, after)).to.equal(undefined);
+    });
+
+    it('is hidden when usage went down', () => {
+        expect(computeExchangeCost(usage({ inputTokensUsed: 500_000 }), usage({ inputTokensUsed: 100_000 }))).to.equal(undefined);
     });
 });
