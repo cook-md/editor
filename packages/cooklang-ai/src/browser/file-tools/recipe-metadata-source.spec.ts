@@ -74,26 +74,16 @@ class FakeWorkspaceScope {
     }
 }
 
-class FakeMonacoWorkspace {
-    open = new Map<string, string>();
-    getTextDocument(uri: string): { getText(): string } | undefined {
-        const value = this.open.get(uri);
-        return value === undefined ? undefined : { getText: () => value };
-    }
-}
-
 const ROOT = new URI('file:///ws');
 
-function createSource(spec: TreeSpec): { source: RecipeMetadataSource; monaco: FakeMonacoWorkspace } {
+function createSource(spec: TreeSpec): { source: RecipeMetadataSource } {
     const { stats, contents } = buildStats(ROOT, spec);
     const source = new RecipeMetadataSource();
-    const monaco = new FakeMonacoWorkspace();
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (source as any).fileService = new FakeFileService(stats, contents);
     (source as any).workspaceScope = new FakeWorkspaceScope();
-    (source as any).monacoWorkspace = monaco;
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { source, monaco };
+    return { source };
 }
 
 const TREE: TreeSpec = {
@@ -154,13 +144,6 @@ describe('RecipeMetadataSource', () => {
             const entries = await source.filterByMetadata(ROOT, ['Legacy/OldFormat.cook'], { where: { title: { exists: true } } });
             expect(entries[0].status).to.equal('deprecated');
             expect(entries[0].matched).to.equal(false);
-        });
-
-        it('reads the open editor content instead of disk when a document is unsaved', async () => {
-            const { source, monaco } = createSource(TREE);
-            monaco.open.set('file:///ws/Napoleon.cook', '---\ntags: [French, Modern]\n---\nBody');
-            const entries = await source.filterByMetadata(ROOT, ['Napoleon.cook'], {});
-            expect(entries[0].metadata?.tags).to.deep.equal(['French', 'Modern']);
         });
 
         it('reports a missing file rather than throwing', async () => {

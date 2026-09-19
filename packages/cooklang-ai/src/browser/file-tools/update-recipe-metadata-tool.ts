@@ -16,6 +16,8 @@ import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest, ToolInvocationContext } from '@theia/ai-core/lib/common';
 import { ChatToolContext } from '@theia/ai-chat/lib/common/chat-tool-request-service';
 import { ChangeSetFileElement, ChangeSetFileElementFactory } from '@theia/ai-chat/lib/browser/change-set-file-element';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { Minimatch } from 'minimatch';
 import { WorkspaceFunctionScope } from './workspace-function-scope';
 import { FileChangeSetTitleProvider } from './file-changeset-functions';
@@ -88,6 +90,12 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
 
     @inject(RecipeMetadataSource)
     protected readonly metadataSource: RecipeMetadataSource;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
+    @inject(MonacoWorkspace)
+    protected readonly monacoWorkspace: MonacoWorkspace;
 
     @inject(ChangeSetFileElementFactory)
     protected readonly fileChangeFactory: ChangeSetFileElementFactory;
@@ -328,7 +336,7 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
                 continue;
             }
 
-            const content = await this.readStartingContent(root, uri, path, ctx);
+            const content = await this.readStartingContent(uri, ctx);
             if (content === undefined) {
                 skipped.push({ path, reason: 'File not found' });
                 continue;
@@ -384,12 +392,24 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
         return JSON.stringify(result);
     }
 
-    /** Pending changeset target state (if any) takes priority over the open-editor/disk content. */
-    protected async readStartingContent(root: URI, uri: URI, path: string, ctx: ChatToolContext): Promise<string | undefined> {
+    /**
+     * Pending changeset target state (if any) takes priority, then the
+     * open-editor content (unsaved changes), then the file on disk — same
+     * priority `getFileContent` uses.
+     */
+    protected async readStartingContent(uri: URI, ctx: ChatToolContext): Promise<string | undefined> {
         const existing = ctx.request.session.changeSet?.getElementByURI(uri);
         if (existing instanceof ChangeSetFileElement && existing.targetState !== undefined) {
             return existing.targetState;
         }
-        return this.metadataSource.readContent(root, path);
+        const openEditorValue = this.monacoWorkspace.getTextDocument(uri.toString())?.getText();
+        if (openEditorValue !== undefined) {
+            return openEditorValue;
+        }
+        try {
+            return (await this.fileService.read(uri)).value.toString();
+        } catch {
+            return undefined;
+        }
     }
 }

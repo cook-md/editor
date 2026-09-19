@@ -14,11 +14,8 @@
 import { URI } from '@theia/core';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { WorkspaceFunctionScope } from './workspace-function-scope';
+import { CooklangLanguageService } from '../common/cooklang-language-service';
 import { baseNameWithoutExt, matchesTitleContains, matchesWhere, readFrontmatter, WhereClause } from './metadata-matcher';
-
-/** Never walk more than this many `.cook` files when enumerating a workspace. */
-const MAX_ENUMERATED_FILES = 5000;
 
 export interface RecipeMetadataFilter {
     where?: WhereClause;
@@ -34,11 +31,14 @@ export interface RecipeMetadataEntry {
     matched: boolean;
 }
 
+interface NativeRecipeEntry { path: string; title: string | null }
+
 /**
  * SEAM: the one place that resolves "which recipes match a metadata filter"
- * for both `updateRecipeMetadata`'s `select` and (this package's sibling
- * copy in `packages/cooklang`) `searchRecipes`'s `fields`/`where`. Nothing
- * else in either tool reads frontmatter for selection purposes.
+ * for both `searchRecipes`'s `fields`/`where` digest (this package) and
+ * (this package's sibling copy in `packages/cooklang-ai`)
+ * `updateRecipeMetadata`'s `select`. Nothing else in either tool reads
+ * frontmatter for selection purposes.
  *
  * A follow-up will move this filtering into the Rust `cooklang-find` crate
  * (and `cooklang-native`) and swap `list`'s body for a native call without
@@ -46,81 +46,32 @@ export interface RecipeMetadataEntry {
  * (see `metadata-matcher.ts`) is mirrored there, so it must not change shape
  * here without updating that crate too.
  *
- * This package has no native full-text search (unlike `@theia/cooklang`'s
- * copy, which delegates to `cooklang-find`'s `searchRecipes`), so `list`'s
- * `query` parameter is accepted for interface parity but unused: candidates
- * always come from a workspace walk.
- *
- * Reads here are disk-only (no open-editor overlay, no pending-ChangeSet
- * overlay) — this is a *selection* helper, not the read path used to build
- * the edited content. `updateRecipeMetadata` applies its edits against the
- * open-editor/pending-ChangeSet-aware content it reads itself; matching a
- * `where`/`titleContains` filter against a slightly stale on-disk read for
- * an unsaved file is an acceptable edge case for selection purposes.
+ * Candidates come from the native `searchRecipes` (cooklang-find) call, so
+ * `query` here does real full-text search — unlike the `packages/cooklang-ai`
+ * copy, which has no native search and always walks the workspace.
  */
 @injectable()
 export class RecipeMetadataSource {
 
+    @inject(CooklangLanguageService)
+    protected readonly languageService: CooklangLanguageService;
+
     @inject(FileService)
     protected readonly fileService: FileService;
-
-    @inject(WorkspaceFunctionScope)
-    protected readonly workspaceScope: WorkspaceFunctionScope;
-
-    /** Every `.cook` file under `root`, workspace-relative, respecting gitignore/exclude preferences. */
-    async listCookPaths(root: URI): Promise<string[]> {
-        const results: string[] = [];
-        await this.walk(root, root, results);
-        return results;
-    }
-
-    protected async walk(currentUri: URI, root: URI, results: string[]): Promise<void> {
-        if (results.length >= MAX_ENUMERATED_FILES) {
-            return;
-        }
-        let stat;
-        try {
-            stat = await this.fileService.resolve(currentUri);
-        } catch {
-            return;
-        }
-        if (!stat?.isDirectory || !stat.children) {
-            return;
-        }
-        for (const child of stat.children) {
-            if (results.length >= MAX_ENUMERATED_FILES) {
-                return;
-            }
-            if (await this.workspaceScope.shouldExclude(child)) {
-                continue;
-            }
-            if (child.isDirectory) {
-                await this.walk(child.resource, root, results);
-            } else if (child.resource.path.ext === '.cook') {
-                const relative = root.relative(child.resource)?.toString();
-                if (relative) {
-                    results.push(relative);
-                }
-            }
-        }
-    }
 
     /**
      * Reads and parses each of `paths`' frontmatter, reporting whether it
      * satisfies `filter`. Always returns one entry per input path (even non-
      * matches), so callers that need metadata for reasons other than
-     * filtering (e.g. building a digest) can reuse the read.
+     * filtering (e.g. building a `searchRecipes` digest row) can reuse the read.
      */
     async filterByMetadata(root: URI, paths: string[], filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
         const entries: RecipeMetadataEntry[] = [];
         for (const path of paths) {
-            let content: string | undefined;
+            let content: string;
             try {
                 content = (await this.fileService.read(root.resolve(path))).value.toString();
             } catch {
-                content = undefined;
-            }
-            if (content === undefined) {
                 entries.push({ path, metadata: undefined, status: 'invalid', error: 'File not found', matched: false });
                 continue;
             }
@@ -140,9 +91,20 @@ export class RecipeMetadataSource {
     }
 
     /** Seam contract: see the class doc comment. */
-    async list(root: URI, _query: string | undefined, filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
-        const allPaths = await this.listCookPaths(root);
-        const entries = await this.filterByMetadata(root, allPaths, filter);
+    async list(root: URI, query: string | undefined, filter: RecipeMetadataFilter): Promise<RecipeMetadataEntry[]> {
+        const raw = await this.languageService.searchRecipes(root.path.fsPath(), query ?? '');
+        const nativeEntries = JSON.parse(raw) as NativeRecipeEntry[];
+        const paths = nativeEntries.map(entry => this.relativePath(root, entry.path));
+        const entries = await this.filterByMetadata(root, paths, filter);
         return entries.filter(e => e.matched);
+    }
+
+    /**
+     * Workspace-relative path when the file is under the root, else the absolute path.
+     * `withPath` sets the path verbatim (keeping the root's scheme/authority) —
+     * `new URI(fsPath)` would *parse* it and truncate names containing `#` or `?`.
+     */
+    protected relativePath(root: URI, fsPath: string): string {
+        return root.relative(root.withPath(fsPath))?.toString() ?? fsPath;
     }
 }

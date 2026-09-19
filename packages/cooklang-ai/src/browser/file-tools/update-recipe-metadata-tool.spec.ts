@@ -48,6 +48,7 @@ class FakeScope {
 
 class FakeMetadataSource {
     allCookPaths: string[] = [];
+    /** Shared with FakeFileService so tests set file content in one place. */
     contents = new Map<string, string>();
     filterCalls: Array<{ paths: string[]; filter: RecipeMetadataFilter }> = [];
     /** Simple where support for tests: 'tags contains X' via a marker in content. */
@@ -66,9 +67,23 @@ class FakeMetadataSource {
             matched: this.matches.has(path),
         }));
     }
+}
 
-    async readContent(_root: URI, path: string): Promise<string | undefined> {
-        return this.contents.get(path);
+class FakeFileService {
+    constructor(private readonly contents: Map<string, string>) { }
+    async read(uri: URI): Promise<{ value: { toString(): string } }> {
+        const key = uri.toString().replace('file:///ws/', '');
+        const value = this.contents.get(key);
+        if (value === undefined) { throw new Error('ENOENT'); }
+        return { value: { toString: () => value } };
+    }
+}
+
+class FakeMonacoWorkspace {
+    open = new Map<string, string>();
+    getTextDocument(uri: string): { getText(): string } | undefined {
+        const value = this.open.get(uri);
+        return value === undefined ? undefined : { getText: () => value };
     }
 }
 
@@ -92,17 +107,24 @@ function createContext(): { ctx: object; staged: StagedElement[]; titles: string
     return { ctx, staged, titles, pending: new Map() };
 }
 
-function createTool(): { tool: UpdateRecipeMetadataTool; scope: FakeScope; metadataSource: FakeMetadataSource } {
+function createTool(): {
+    tool: UpdateRecipeMetadataTool; scope: FakeScope; metadataSource: FakeMetadataSource;
+    fileService: FakeFileService; monacoWorkspace: FakeMonacoWorkspace;
+} {
     const tool = new UpdateRecipeMetadataTool();
     const scope = new FakeScope();
     const metadataSource = new FakeMetadataSource();
+    const fileService = new FakeFileService(metadataSource.contents);
+    const monacoWorkspace = new FakeMonacoWorkspace();
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (tool as any).workspaceFunctionScope = scope;
     (tool as any).metadataSource = metadataSource;
+    (tool as any).fileService = fileService;
+    (tool as any).monacoWorkspace = monacoWorkspace;
     (tool as any).fileChangeFactory = (element: StagedElement) => element;
     (tool as any).fileChangeSetTitleProvider = { getChangeSetTitle: () => 'Changes proposed' };
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { tool, scope, metadataSource };
+    return { tool, scope, metadataSource, fileService, monacoWorkspace };
 }
 
 async function invoke(tool: UpdateRecipeMetadataTool, args: object, ctx: object): Promise<Record<string, unknown>> {
@@ -358,6 +380,17 @@ describe('UpdateRecipeMetadataTool', () => {
             const result = await invoke(tool, { select: { glob: '**/*.cook' }, addTags: ['x'], dryRun: true }, ctx);
             expect((result.paths as unknown[]).length).to.equal(50);
             expect(result.wouldStage).to.equal(60);
+        });
+    });
+
+    describe('content priority', () => {
+        it('edits the open-editor (unsaved) content instead of disk', async () => {
+            const { tool, metadataSource, monacoWorkspace } = createTool();
+            metadataSource.contents.set('Napoleon.cook', NAPOLEON);
+            monacoWorkspace.open.set('file:///ws/Napoleon.cook', '---\ntags: [French, Modern]\n---\nBody');
+            const { ctx, staged } = createContext();
+            await invoke(tool, { select: { paths: ['Napoleon.cook'] }, addTags: ['Spicy'] }, ctx);
+            expect(staged[0].targetState).to.equal('---\ntags: [French, Modern, Spicy]\n---\nBody');
         });
     });
 
