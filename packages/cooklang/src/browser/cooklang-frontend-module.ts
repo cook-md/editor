@@ -57,6 +57,7 @@ import { bindToolProvider } from '@theia/ai-core/lib/common';
 import { RenderTemplateTool } from './render-template-tool';
 import { ListReportTemplatesTool } from './list-report-templates-tool';
 import { SearchRecipesTool } from './search-recipes-tool';
+import { RecipeMetadataSource } from './recipe-metadata-source';
 import { GetPantryTool, CheckPantryTool } from './pantry-tools';
 import { GenerateShoppingListTool } from './generate-shopping-list-tool';
 import { bindCooklangPreferences } from '../common';
@@ -171,6 +172,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bindToolProvider(ListReportTemplatesTool, bind);
 
     // Workspace tools for cookbot (issue #82): recipe search, pantry, shopping list
+    bind(RecipeMetadataSource).toSelf().inSingletonScope();
     bindToolProvider(SearchRecipesTool, bind);
     bindToolProvider(GetPantryTool, bind);
     bindToolProvider(CheckPantryTool, bind);
