@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.45](https://github.com/cook-md/editor/compare/v0.1.0-alpha.44...v0.1.0-alpha.45) (2026-09-20)
+
+
+### Features
+
+* **cooklang-ai,cooklang:** bulk recipe metadata tools so CookBot stops reading files to tag them ([#134](https://github.com/cook-md/editor/issues/134)) ([c5451a9](https://github.com/cook-md/editor/commit/c5451a9a66203fa363af999f188ef8b97204366a))
+
 ## [0.1.0-alpha.44](https://github.com/cook-md/editor/compare/v0.1.0-alpha.43...v0.1.0-alpha.44) (2026-09-16)
 
 
