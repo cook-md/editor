@@ -357,6 +357,15 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder refuses to upload into a release published more than
+          # two hours ago ("skipped publishing … existing release published more
+          # than 2 hours ago") — and still exits 0, so the run looks green with
+          # nothing attached. A manual `publish=true` dispatch is by definition a
+          # re-publish of an existing release (e.g. after one platform failed),
+          # usually hours later, so lift the rule there. Same-named assets are
+          # overwritten. Left off for the release-please path, where the release
+          # is minutes old and the guard is doing its job.
+          EP_GH_IGNORE_TIME: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           # Code signing. Exported as CSC_LINK / CSC_KEY_PASSWORD by the script
           # on Windows/Linux only (where they are ignored, as before); macOS
           # signs from CSC_KEYCHAIN instead — see the script and the Quick Look step.
