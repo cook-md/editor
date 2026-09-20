@@ -103,6 +103,19 @@ export interface CooklangLanguageService {
     searchRecipes(baseDir: string, query: string): Promise<string>;
 
     /**
+     * `searchRecipes` with a metadata filter, returning each match's frontmatter
+     * (cooklang-find >= 0.8 `search_with_filter`). `filterJson` is
+     * `{ "where": { key: condition }, "titleContains": string | string[] }` and
+     * may be blank for "no filter". Only frontmatter is read unless `query` is
+     * non-blank, so one call answers "which recipes have metadata X" for a whole
+     * library. A blank query lists matches sorted by path. Rejects on a malformed
+     * filter. Same disk-access caveat as `findRecipe` (OS path, Electron-only).
+     *
+     * Returns JSON: `[{ path, name, title, tags, isMenu, servings, metadata }]`.
+     */
+    searchRecipesFiltered(baseDir: string, query: string, filterJson: string): Promise<string>;
+
+    /**
      * Parse a `pantry.conf` (TOML). Returns JSON
      * `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }], lowStock: [...] }`.
      * Rejects on an unparseable file.

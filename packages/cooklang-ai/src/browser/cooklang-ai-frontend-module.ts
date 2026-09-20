@@ -43,6 +43,8 @@ import {
     ClearFileChanges,
     GetProposedFileState,
 } from './file-tools/file-changeset-functions';
+import { RecipeMetadataSource } from './file-tools/recipe-metadata-source';
+import { UpdateRecipeMetadataTool } from './file-tools/update-recipe-metadata-tool';
 
 export default new ContainerModule(bind => {
     // Chat agent
@@ -87,6 +89,10 @@ export default new ContainerModule(bind => {
     bindToolProvider(SuggestFileReplacements, bind);
     bindToolProvider(ClearFileChanges, bind);
     bindToolProvider(GetProposedFileState, bind);
+
+    // File tools — bulk recipe metadata edits (stages via the same ChangeSet as above)
+    bind(RecipeMetadataSource).toSelf().inSingletonScope();
+    bindToolProvider(UpdateRecipeMetadataTool, bind);
 
     // Server-side tool providers (execute via gRPC)
     bindToolProvider(CookbotSearchWebTool, bind);

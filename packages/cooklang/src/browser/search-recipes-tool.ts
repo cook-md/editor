@@ -14,15 +14,20 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 import { MAX_BATCH_ITEMS, parseBatchArg } from './batch-args';
+import { RecipeMetadataSource, RecipeMetadataEntry } from './recipe-metadata-source';
+import { WhereClause } from './metadata-matcher';
 
 interface SearchRecipesArgs {
     query?: string;
     queries?: string[];
     tag?: string;
     limit?: number;
+    fields?: string[];
+    where?: WhereClause;
 }
 
 /** One query's outcome in a batched search. */
@@ -31,6 +36,8 @@ interface SearchResult {
     recipes?: ReturnType<SearchRecipesTool['toRecipe']>[];
     total?: number;
     error?: string;
+    columns?: string[];
+    rows?: string[][];
 }
 
 /** Shape produced by the native `searchRecipes` export. */
@@ -45,6 +52,54 @@ interface NativeRecipeEntry {
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const MAX_LIMIT_DIGEST = 500;
+const MAX_CELL_LENGTH = 200;
+
+/** Frontmatter keys `fields` may request — kept in step with the tool description. */
+const FIELD_NAMES = ['tags', 'source', 'cuisine', 'course', 'time', 'servings', 'diet', 'description', 'ingredients'] as const;
+type FieldName = typeof FIELD_NAMES[number];
+
+function truncateCell(value: string): string {
+    return value.length > MAX_CELL_LENGTH ? value.slice(0, MAX_CELL_LENGTH) : value;
+}
+
+/** Renders an arbitrary YAML-sourced value as one compact cell string. */
+function cellValue(value: unknown): string {
+    if (value === undefined || value === null) { // eslint-disable-line no-null/no-null
+        return '';
+    }
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+    }
+    if (Array.isArray(value)) {
+        return value.map(cellValue).join(', ');
+    }
+    if (typeof value === 'object') {
+        return JSON.stringify(value);
+    }
+    return String(value);
+}
+
+/** `source` renders as the URL or name string, never the map. */
+function sourceCell(value: unknown): string {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        if (typeof obj.url === 'string') {
+            return obj.url;
+        }
+        if (typeof obj.name === 'string') {
+            return obj.name;
+        }
+        return '';
+    }
+    return cellValue(value);
+}
 
 /**
  * AI tool: search the user's own recipes the way `cook search` does
@@ -62,6 +117,12 @@ export class SearchRecipesTool implements ToolProvider {
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
 
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
+    @inject(RecipeMetadataSource)
+    protected readonly metadataSource: RecipeMetadataSource;
+
     getTool(): ToolRequest {
         return {
             id: SearchRecipesTool.ID,
@@ -72,7 +133,17 @@ export class SearchRecipesTool implements ToolProvider {
                 + 'Optionally keep only recipes carrying a tag. With neither query nor tag it lists every recipe. '
                 + 'Prefer this over findFilesByPattern + getFileContent for "which of my recipes…" questions. '
                 + 'Returns { recipes: [{ path (workspace-relative — pass it to getFileContent, renderTemplate or generateShoppingList), '
-                + 'name, title, tags, isMenu, servings }], total }.',
+                + 'name, title, tags, isMenu, servings }], total }.\n\n'
+                + 'To answer "which of my recipes have X" (a metadata digest) WITHOUT reading file bodies, pass `fields` and/or '
+                + '`where`: the response switches to a compact table `{ columns, rows, total }` (one row per matched recipe, cells '
+                + `truncated to ${MAX_CELL_LENGTH} chars) and the max \`limit\` rises to ${MAX_LIMIT_DIGEST}. `
+                + `\`fields\` (array, from ${FIELD_NAMES.map(f => `"${f}"`).join(', ')}) picks extra columns beyond path/title — `
+                + '"source" is rendered as its URL or name (never the raw map), "ingredients" is the recipe\'s unique ingredient '
+                + 'names. `where` filters by frontmatter, every key ANDed, case-insensitive: { contains: string|string[] } (ANY '
+                + 'needle is a substring of ANY string leaf of the field — a map like source:{url,name,author} or an array is '
+                + 'matched leaf-by-leaf), { equals: string }, { has: string } / { missing: string } (array membership and its '
+                + 'inverse), { exists: boolean }. Never read file bodies to answer a "which recipes have/are/contain X" question '
+                + '— use fields/where here instead.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -94,7 +165,18 @@ export class SearchRecipesTool implements ToolProvider {
                     },
                     limit: {
                         type: 'integer',
-                        description: 'Maximum number of recipes to return. Default 20, max 100.',
+                        description: `Maximum number of recipes to return. Default 20, max 100 (${MAX_LIMIT_DIGEST} with fields/where).`,
+                    },
+                    fields: {
+                        type: 'array',
+                        items: { type: 'string', enum: [...FIELD_NAMES] },
+                        description: 'Extra frontmatter columns to include (switches the response to the compact { columns, rows, total } '
+                            + 'shape). See the tool description.',
+                    },
+                    where: {
+                        type: 'object',
+                        description: 'Frontmatter key -> condition, ANDed (switches the response to the compact { columns, rows, total } '
+                            + 'shape). See the tool description for the condition grammar.',
                     },
                 },
             },
@@ -118,8 +200,25 @@ export class SearchRecipesTool implements ToolProvider {
             return this.fail('No workspace is open.');
         }
 
+        const digest = args.fields !== undefined || args.where !== undefined;
+        let fields: FieldName[] = [];
+        if (args.fields !== undefined) {
+            if (!Array.isArray(args.fields)) {
+                return this.fail('fields must be an array of strings.');
+            }
+            for (const f of args.fields) {
+                if (!(FIELD_NAMES as readonly string[]).includes(f)) {
+                    return this.fail(`Unknown field "${f}". Valid fields: ${FIELD_NAMES.join(', ')}.`);
+                }
+            }
+            fields = args.fields as FieldName[];
+        }
+        if (args.where !== undefined && (typeof args.where !== 'object' || args.where === null || Array.isArray(args.where))) { // eslint-disable-line no-null/no-null
+            return this.fail('where must be an object of frontmatter key -> condition.');
+        }
+
         const tag = typeof args.tag === 'string' ? args.tag.trim().toLowerCase() : '';
-        const limit = this.normaliseLimit(args.limit);
+        const limit = this.normaliseLimit(args.limit, digest ? MAX_LIMIT_DIGEST : MAX_LIMIT);
 
         if (args.queries !== undefined) {
             if (typeof args.query === 'string' && args.query.trim()) {
@@ -131,15 +230,18 @@ export class SearchRecipesTool implements ToolProvider {
             }
             const searches: SearchResult[] = [];
             for (const each of queries) {
-                searches.push(await this.searchOne(root, each, tag, limit));
+                searches.push(await this.searchOne(root, each, tag, limit, digest, fields, args.where));
             }
             return JSON.stringify({ searches });
         }
 
         const query = typeof args.query === 'string' ? args.query.trim() : '';
-        const single = await this.searchOne(root, query, tag, limit);
-        return single.error !== undefined
-            ? this.fail(single.error)
+        const single = await this.searchOne(root, query, tag, limit, digest, fields, args.where);
+        if (single.error !== undefined) {
+            return this.fail(single.error);
+        }
+        return digest
+            ? JSON.stringify({ columns: single.columns, rows: single.rows, total: single.total })
             : JSON.stringify({ recipes: single.recipes, total: single.total });
     }
 
@@ -150,8 +252,18 @@ export class SearchRecipesTool implements ToolProvider {
      * native error should not discard the others, which is the saving the batch
      * exists for. The single-query path unwraps it back into a bare `{ error }`
      * so its long-standing result shape is unchanged.
+     *
+     * The digest path (`fields`/`where`) never calls the plain `searchRecipes`
+     * native export — it goes through `RecipeMetadataSource`, which is the ONE
+     * `searchRecipesFiltered` call that does query + where-matching + ranking +
+     * frontmatter reading together, server-side.
      */
-    protected async searchOne(root: URI, query: string, tag: string, limit: number): Promise<SearchResult> {
+    protected async searchOne(
+        root: URI, query: string, tag: string, limit: number, digest: boolean, fields: FieldName[], where: WhereClause | undefined,
+    ): Promise<SearchResult> {
+        if (digest) {
+            return this.searchOneDigest(root, query, tag, limit, fields, where);
+        }
         let entries: NativeRecipeEntry[];
         try {
             entries = JSON.parse(await this.languageService.searchRecipes(root.path.fsPath(), query));
@@ -171,6 +283,65 @@ export class SearchRecipesTool implements ToolProvider {
         };
     }
 
+    protected async searchOneDigest(
+        root: URI, query: string, tag: string, limit: number, fields: FieldName[], where: WhereClause | undefined,
+    ): Promise<SearchResult> {
+        let entries: RecipeMetadataEntry[];
+        try {
+            entries = await this.metadataSource.list(root, query, { where });
+        } catch (e) {
+            return { query, error: `Search failed: ${e instanceof Error ? e.message : String(e)}` };
+        }
+        const tagFiltered = tag
+            ? entries.filter(entry => entry.tags.some(t => t.toLowerCase() === tag))
+            : entries;
+        const total = tagFiltered.length;
+        const candidates = tagFiltered.slice(0, limit);
+
+        let ingredientsByPath: Map<string, string[]> | undefined;
+        if (fields.includes('ingredients')) {
+            ingredientsByPath = await this.readIngredients(root, candidates.map(c => c.path));
+        }
+
+        const columns = ['path', 'title', ...fields];
+        const rows = candidates.map(entry => {
+            const row = [entry.path, entry.title ?? ''];
+            for (const field of fields) {
+                row.push(this.fieldCell(field, entry, ingredientsByPath));
+            }
+            return row.map(truncateCell);
+        });
+        return { query, columns, rows, total };
+    }
+
+    protected fieldCell(field: FieldName, entry: RecipeMetadataEntry, ingredientsByPath?: Map<string, string[]>): string {
+        if (field === 'tags') {
+            return entry.tags.join(', ');
+        }
+        if (field === 'ingredients') {
+            return (ingredientsByPath?.get(entry.path) ?? []).join(', ');
+        }
+        const value = entry.metadata[field];
+        return field === 'source' ? sourceCell(value) : cellValue(value);
+    }
+
+    protected async readIngredients(root: URI, paths: string[]): Promise<Map<string, string[]>> {
+        const result = new Map<string, string[]>();
+        for (const path of paths) {
+            try {
+                const content = (await this.fileService.read(root.resolve(path))).value.toString();
+                const parsed = JSON.parse(await this.languageService.parse(content)) as {
+                    recipe?: { ingredients?: Array<{ name?: string }> } | null;
+                };
+                const names = parsed.recipe?.ingredients?.map(i => i.name).filter((n): n is string => typeof n === 'string' && n.length > 0) ?? [];
+                result.set(path, [...new Set(names)]);
+            } catch {
+                result.set(path, []);
+            }
+        }
+        return result;
+    }
+
     protected toRecipe(root: URI, entry: NativeRecipeEntry): {
         path: string; name: string | null; title: string | null; tags: string[]; isMenu: boolean; servings: number | null;
     } {
@@ -184,12 +355,12 @@ export class SearchRecipesTool implements ToolProvider {
         };
     }
 
-    protected normaliseLimit(value: unknown): number {
+    protected normaliseLimit(value: unknown, maxLimit: number): number {
         const n = typeof value === 'number' ? value : Number(value);
         if (!Number.isFinite(n) || n < 1) {
-            return DEFAULT_LIMIT;
+            return Math.min(DEFAULT_LIMIT, maxLimit);
         }
-        return Math.min(Math.floor(n), MAX_LIMIT);
+        return Math.min(Math.floor(n), maxLimit);
     }
 
     /**

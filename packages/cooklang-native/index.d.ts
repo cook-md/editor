@@ -94,6 +94,19 @@ export declare function compactChecked(entriesJson: string, currentIngredients: 
  */
 export declare function searchRecipes(baseDir: string, query: string): Promise<string>
 /**
+ * `searchRecipes` with a metadata filter, returning each match's frontmatter.
+ *
+ * `filter_json` is `cooklang_find::MetadataFilter`'s JSON — `{ "where": { key:
+ * condition }, "titleContains": string | string[] }` — and may be blank for
+ * "no filter". Only frontmatter is read unless `query` is non-blank, so this
+ * answers "which recipes have metadata X" for a whole library in one call,
+ * without the caller opening a single file. A blank query lists matches
+ * sorted by path; otherwise they come best match first, like `searchRecipes`.
+ *
+ * Returns JSON: `[{ path, name, title, tags, isMenu, servings, metadata }]`.
+ */
+export declare function searchRecipesFiltered(baseDir: string, query: string, filterJson: string): Promise<string>
+/**
  * Parse a `config/pantry.conf` (TOML) and return its sections and items.
  *
  * Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }],

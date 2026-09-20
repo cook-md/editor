@@ -46,3 +46,48 @@ export function computeQuotaBannerState(usage: CookbotUsageStats | undefined): C
         resetsOn: usage.billingPeriodEnd,
     };
 }
+
+/**
+ * Share of the cycle one exchange has to use before it is worth a line in the
+ * chat. 3% is roughly one ordinary CookBot conversation: below that the note
+ * would appear after every message and stop being read.
+ */
+export const EXCHANGE_COST_NOTICE_THRESHOLD = 0.03;
+
+/** What one chat exchange cost, in whole percent of the cycle's allowance. */
+export interface CookbotExchangeCost {
+    percentOfCycle: number;
+    /** Rounded down, never negative. */
+    percentLeft: number;
+}
+
+/**
+ * The cost of the exchange between two usage readings, or `undefined` when it
+ * is not worth mentioning or cannot be known.
+ *
+ * The 80% banner only speaks up once most of the allowance is gone. A single
+ * bulk request can use a fifth of a month, and nothing said so until it was
+ * too late to stop.
+ */
+export function computeExchangeCost(
+    before: CookbotUsageStats | undefined,
+    after: CookbotUsageStats | undefined,
+): CookbotExchangeCost | undefined {
+    if (!before || !after || after.tokenLimit <= 0) {
+        return undefined;
+    }
+    // A new cycle restarts the counter; the difference means nothing.
+    if (before.billingPeriodStart !== after.billingPeriodStart) {
+        return undefined;
+    }
+    const usedBefore = before.inputTokensUsed + before.outputTokensUsed;
+    const usedAfter = after.inputTokensUsed + after.outputTokensUsed;
+    const fraction = (usedAfter - usedBefore) / after.tokenLimit;
+    if (fraction < EXCHANGE_COST_NOTICE_THRESHOLD) {
+        return undefined;
+    }
+    return {
+        percentOfCycle: Math.round(fraction * 100),
+        percentLeft: Math.max(0, Math.floor((1 - usedAfter / after.tokenLimit) * 100)),
+    };
+}

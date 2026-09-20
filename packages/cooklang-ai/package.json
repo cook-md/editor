@@ -15,7 +15,8 @@
     "@grpc/proto-loader": "^0.7.0",
     "ignore": "^5.0.0",
     "minimatch": "^9.0.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.6.2",
+    "yaml": "^2.8.0"
   },
   "main": "lib/common",
   "theiaExtensions": [
