@@ -312,10 +312,22 @@ jobs:
           rc=$?
           set -e
 
-          # Restore the original search list so electron-builder's later signing isn't
-          # confused by two keychains holding the same identity (ambiguous match).
-          security list-keychains -d user -s $ORIG_KEYCHAINS
-          exit $rc
+          if [ $rc -ne 0 ]; then
+            security list-keychains -d user -s $ORIG_KEYCHAINS
+            exit $rc
+          fi
+
+          # Keep this keychain in the search list and hand it to electron-builder
+          # (CSC_KEYCHAIN in the next step) instead of letting it import the cert
+          # into a keychain of its own. electron-builder's importCerts() calls
+          # `security set-key-partition-list -k <CERTIFICATE password>` where
+          # macOS expects the KEYCHAIN password. Older macOS never checked it on
+          # an unlocked keychain; macOS 26.6 (runner image 20260828+) does, and
+          # every arm64 release since alpha.44 died there with "SecKeychainUnlock:
+          # The user name or passphrase you entered is not correct". This keychain
+          # was unlocked and partition-listed above with the right password, and
+          # being the only one holding the identity there is no ambiguous match.
+          echo "MAC_SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Package & Publish
         working-directory: app
@@ -326,6 +338,18 @@ jobs:
         shell: bash
         run: |
           PUBLISH="${{ (needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish == 'true') && 'always' || 'never' }}"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # Sign from the keychain the Quick Look step prepared. CSC_LINK must
+            # stay UNSET here (not merely empty): electron-builder treats any
+            # non-null CSC_LINK as "import this into my own keychain".
+            if [ -z "${MAC_SIGNING_KEYCHAIN:-}" ]; then
+              echo "::error::MAC_SIGNING_KEYCHAIN is not set — the Quick Look signing step did not hand over its keychain"; exit 1
+            fi
+            export CSC_KEYCHAIN="$MAC_SIGNING_KEYCHAIN"
+          else
+            export CSC_LINK="$MAC_CSC_LINK"
+            export CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+          fi
           if [ -n "${{ matrix.electron_arch }}" ]; then
             npx electron-builder --mac --${{ matrix.electron_arch }} --publish "$PUBLISH"
           else
@@ -333,10 +357,11 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Code signing — electron-builder reads these automatically on macOS.
-          # Harmless on Windows/Linux matrix rows (ignored).
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Code signing. Exported as CSC_LINK / CSC_KEY_PASSWORD by the script
+          # on Windows/Linux only (where they are ignored, as before); macOS
+          # signs from CSC_KEYCHAIN instead — see the script and the Quick Look step.
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           # Notarization — electron-builder reads these when mac.notarize is true
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
