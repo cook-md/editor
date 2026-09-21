@@ -394,6 +394,17 @@ jobs:
           fi
           echo "Quick Look extension embedded: $APPEX"
 
+      # Each mac job writes its own latest-mac.yml listing only its own
+      # architecture. Hand it to merge-mac-update-manifest below as a tiny
+      # artifact of its own, so that job does not have to pull ~600 MB of dmg/zip.
+      - name: Upload macOS update manifest
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-mac-${{ matrix.platform }}
+          path: app/dist/latest-mac.yml
+          if-no-files-found: error
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -416,8 +427,67 @@ jobs:
   # previous non-prerelease one. After all platform builds have uploaded
   # their assets, clear the pre-release flag and set the release as Latest so
   # it surfaces automatically — the step we used to do by hand in the UI.
-  promote-latest:
+  # The two mac jobs each publish a latest-mac.yml naming only their own
+  # architecture, and the last upload wins — in practice x64, from the slower
+  # Intel runner. electron-updater on Apple Silicon falls back to the x64 zip
+  # when the manifest lists no arm64 one, so auto-updating arm64 users were
+  # being moved onto the Intel build. Replace it with one manifest listing both.
+  merge-mac-update-manifest:
     needs: [release-please, build]
+    # Only when every platform built: a manifest for a release that is missing
+    # an architecture is the bug. Runs on every dispatch so a `publish=false`
+    # test run exercises the merge too; the upload below is what is gated.
+    if: ${{ always() && needs.build.result == 'success' && (needs.release-please.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            app/scripts
+            app/package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+
+      - name: Download the per-architecture manifests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: latest-mac-*
+          path: manifests
+
+      - name: Merge and publish latest-mac.yml
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          PUBLISH: ${{ (needs.release-please.outputs.release_created == 'true' || github.event.inputs.publish == 'true') && 'always' || 'never' }}
+        run: |
+          set -euo pipefail
+          # js-yaml is all the script needs; a full `npm ci` of the monorepo is not.
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/yml" js-yaml@4.1.1
+          export NODE_PATH="$RUNNER_TEMP/yml/node_modules"
+
+          node app/scripts/merge-latest-mac-yml.spec.js
+
+          # A manual dispatch has no release-please output: the tag is the app version.
+          TAG="${RELEASE_TAG:-v$(node -p "require('./app/package.json').version")}"
+          node app/scripts/merge-latest-mac-yml.js latest-mac.yml \
+            manifests/latest-mac-mac-x64/latest-mac.yml \
+            manifests/latest-mac-mac-arm64/latest-mac.yml
+          if [ "$PUBLISH" = "always" ]; then
+            gh release upload "$TAG" latest-mac.yml --clobber --repo "${{ github.repository }}"
+          else
+            echo "publish=false: merged manifest for $TAG not uploaded"
+          fi
+
+  promote-latest:
+    needs: [release-please, build, merge-mac-update-manifest]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     permissions:
