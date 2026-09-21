@@ -176,6 +176,15 @@ nsis:
 linux:
   icon: resources/icon-256.png
   category: Utility
+  # Names the tar.gz, the one Linux target without an artifactName of its own
+  # (AppImage and deb set the same pattern below). Left to the default it became
+  # "${name}-${version}.tar.gz", and the npm name is scoped: the file was
+  # "@cook-md/editor-app-<version>.tar.gz". GitHub stores that with the slash
+  # turned into a dot, so electron-builder could never find the asset again to
+  # overwrite it — any re-publish died with a 422 before latest-linux.yml was
+  # uploaded, leaving a manifest that no longer matched the new AppImage. The
+  # README has always called this file Cook-Editor.tar.gz.
+  artifactName: Cook-Editor.${ext}
   target:
     - AppImage
     - deb
