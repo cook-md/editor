@@ -81,8 +81,10 @@ class FakeFileService {
     }
 }
 
+interface TrimmedRecipe { path: string; title?: string; tags?: string[]; isMenu?: boolean; servings?: number }
+
 interface SearchResult {
-    recipes?: Array<{ path: string; name: string | null; title: string | null; tags: string[]; isMenu: boolean; servings: number | null }>;
+    recipes?: TrimmedRecipe[];
     total?: number;
     error?: string;
     columns?: string[];
@@ -134,13 +136,13 @@ describe('SearchRecipesTool', () => {
         expect(ls.calls[0].query).to.equal('');
     });
 
-    it('returns workspace-relative paths and the recipe metadata', async () => {
+    it('returns workspace-relative paths and the trimmed recipe metadata', async () => {
         const { tool, ls } = createTool();
         ls.entries = [salmon, menu];
         const result = await invoke(tool, { query: 'x' });
         expect(result.recipes).to.deep.equal([
-            { path: 'Dinner/Salmon.cook', name: 'Salmon', title: 'Salmon Bowl', tags: ['Fish', 'quick'], isMenu: false, servings: 2 },
-            { path: 'Plans/Week.menu', name: 'Week', title: null, tags: [], isMenu: true, servings: null },
+            { path: 'Dinner/Salmon.cook', title: 'Salmon Bowl', tags: ['Fish', 'quick'], servings: 2 },
+            { path: 'Plans/Week.menu', isMenu: true },
         ]);
         expect(result.total).to.equal(2);
     });
@@ -298,6 +300,90 @@ describe('SearchRecipesTool', () => {
             expect(result.recipes).to.have.length(1);
             expect(result.total).to.equal(1);
             expect((result as unknown as { searches?: unknown }).searches).to.equal(undefined);
+        });
+    });
+
+    describe('trimmed recipe payload', () => {
+
+        it('never includes name on a recipe entry', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon, pancakes, menu];
+            const result = await invoke(tool, { query: 'x' });
+            for (const recipe of result.recipes ?? []) {
+                expect(recipe).to.not.have.property('name');
+            }
+        });
+
+        it('serialises an entry with null title, no tags, no servings and isMenu false as just { path }', async () => {
+            const { tool, ls } = createTool();
+            const blank: NativeEntry = { path: '/ws/Blank.cook', name: 'Blank', title: null, tags: [], isMenu: false, servings: null };
+            ls.entries = [blank];
+            const result = await invoke(tool, { query: 'x' });
+            expect(result.recipes).to.deep.equal([{ path: 'Blank.cook' }]);
+        });
+
+        it('omits title when it equals the file stem of path', async () => {
+            const { tool, ls } = createTool();
+            const sameAsStem: NativeEntry = { path: '/ws/Blank.cook', name: 'Blank', title: 'Blank', tags: [], isMenu: false, servings: null };
+            ls.entries = [sameAsStem];
+            const result = await invoke(tool, { query: 'x' });
+            expect(result.recipes).to.deep.equal([{ path: 'Blank.cook' }]);
+        });
+
+        it('keeps title when it differs from the file stem of path', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon];
+            const result = await invoke(tool, { query: 'x' });
+            expect(result.recipes?.[0].title).to.equal('Salmon Bowl');
+        });
+
+        it('keeps isMenu: true on a .menu entry, but omits isMenu entirely when false', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon, menu];
+            const result = await invoke(tool, { query: 'x' });
+            expect(result.recipes?.[0]).to.not.have.property('isMenu');
+            expect(result.recipes?.[1].isMenu).to.equal(true);
+        });
+
+        it('applies the same trimming to batched queries results', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [menu];
+            const result = await invoke(tool, { queries: ['a'] }) as unknown as { searches: Array<{ recipes?: TrimmedRecipe[] }> };
+            expect(result.searches[0].recipes).to.deep.equal([{ path: 'Plans/Week.menu', isMenu: true }]);
+        });
+
+        it('shrinks payload size by at least 25% versus the full shape', async () => {
+            const { tool, ls } = createTool();
+            // 20 entries: 40% carry a title (most of those equal the file stem), 35% carry tags, 50% carry servings.
+            const entries: NativeEntry[] = Array.from({ length: 20 }, (_, i) => {
+                const stem = `Recipe${i}`;
+                const path = `/ws/${stem}.cook`;
+                const hasTitle = i % 5 < 2; // 8/20 = 40%
+                const titleDiffers = hasTitle && i % 10 === 0; // a minority of the titled ones differ from the stem
+                const title = hasTitle ? (titleDiffers ? `${stem} Special` : stem) : null;
+                const hasTags = i % 20 < 7; // 7/20 = 35%
+                const tags = hasTags ? ['weeknight', 'quick'] : [];
+                const hasServings = i % 2 === 0; // 10/20 = 50%
+                const servings = hasServings ? 4 : null;
+                return { path, name: stem, title, tags, isMenu: false, servings };
+            });
+            ls.entries = entries;
+
+            const raw = await tool.getTool().handler(JSON.stringify({ query: 'x', limit: 100 })) as string;
+            const newSize = raw.length;
+
+            const oldShape = {
+                recipes: entries.map(e => ({
+                    path: e.path.replace('/ws/', ''), name: e.name, title: e.title, tags: e.tags, isMenu: e.isMenu, servings: e.servings,
+                })),
+                total: entries.length,
+            };
+            const oldSize = JSON.stringify(oldShape).length;
+            const reduction = 1 - newSize / oldSize;
+
+            // eslint-disable-next-line no-console
+            console.log(`    searchRecipes payload: old=${oldSize}B new=${newSize}B reduction=${(reduction * 100).toFixed(1)}%`);
+            expect(reduction).to.be.at.least(0.25);
         });
     });
 

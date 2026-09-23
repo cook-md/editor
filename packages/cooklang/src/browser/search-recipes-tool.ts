@@ -40,14 +40,22 @@ interface SearchResult {
     rows?: string[][];
 }
 
-/** Shape produced by the native `searchRecipes` export. */
+/** Shape produced by the native `searchRecipes` export. `name` is always `path`'s file stem — not read here. */
 interface NativeRecipeEntry {
     path: string;
-    name: string | null;
     title: string | null;
     tags: string[];
     isMenu: boolean;
     servings: number | null;
+}
+
+/** Trimmed recipe entry returned to the model: fields that would just repeat a default are omitted. */
+interface TrimmedRecipe {
+    path: string;
+    title?: string;
+    tags?: string[];
+    isMenu?: boolean;
+    servings?: number;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -133,7 +141,8 @@ export class SearchRecipesTool implements ToolProvider {
                 + 'Optionally keep only recipes carrying a tag. With neither query nor tag it lists every recipe. '
                 + 'Prefer this over findFilesByPattern + getFileContent for "which of my recipes…" questions. '
                 + 'Returns { recipes: [{ path (workspace-relative — pass it to getFileContent, renderTemplate or generateShoppingList), '
-                + 'name, title, tags, isMenu, servings }], total }.\n\n'
+                + 'title?, tags?, isMenu?, servings? }], total }. A missing field means empty/false/unknown; a missing title means '
+                + 'it is the same as the file name.\n\n'
                 + 'To answer "which of my recipes have X" (a metadata digest) WITHOUT reading file bodies, pass `fields` and/or '
                 + '`where`: the response switches to a compact table `{ columns, rows, total }` (one row per matched recipe, cells '
                 + `truncated to ${MAX_CELL_LENGTH} chars) and the max \`limit\` rises to ${MAX_LIMIT_DIGEST}. `
@@ -342,17 +351,29 @@ export class SearchRecipesTool implements ToolProvider {
         return result;
     }
 
-    protected toRecipe(root: URI, entry: NativeRecipeEntry): {
-        path: string; name: string | null; title: string | null; tags: string[]; isMenu: boolean; servings: number | null;
-    } {
-        return {
-            path: this.relativePath(root, entry.path),
-            name: entry.name,
-            title: entry.title,
-            tags: entry.tags,
-            isMenu: entry.isMenu,
-            servings: entry.servings,
-        };
+    protected toRecipe(root: URI, entry: NativeRecipeEntry): TrimmedRecipe {
+        const path = this.relativePath(root, entry.path);
+        const recipe: TrimmedRecipe = { path };
+        if (entry.title && entry.title !== this.fileStem(path)) {
+            recipe.title = entry.title;
+        }
+        if (entry.tags.length > 0) {
+            recipe.tags = entry.tags;
+        }
+        if (entry.isMenu) {
+            recipe.isMenu = true;
+        }
+        if (entry.servings !== null && entry.servings !== undefined) { // eslint-disable-line no-null/no-null
+            recipe.servings = entry.servings;
+        }
+        return recipe;
+    }
+
+    /** The file name without its final extension, e.g. `Dinner/Salmon.cook` -> `Salmon`. */
+    protected fileStem(path: string): string {
+        const name = path.split('/').pop() ?? path;
+        const dot = name.lastIndexOf('.');
+        return dot > 0 ? name.slice(0, dot) : name;
     }
 
     protected normaliseLimit(value: unknown, maxLimit: number): number {
