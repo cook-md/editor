@@ -117,21 +117,21 @@ mac:
         CFBundleTypeRole: Editor
         LSHandlerRank: Owner
         LSItemContentTypes:
-          - md.cook.editor.cook
+          - md.cook.cook
       - CFBundleTypeName: Cooklang Menu
         CFBundleTypeRole: Editor
         LSHandlerRank: Owner
         LSItemContentTypes:
-          - md.cook.editor.menu
+          - md.cook.menu
     UTExportedTypeDeclarations:
-      - UTTypeIdentifier: md.cook.editor.cook
+      - UTTypeIdentifier: md.cook.cook
         UTTypeDescription: Cooklang Recipe
         UTTypeConformsTo:
           - public.plain-text
         UTTypeTagSpecification:
           public.filename-extension:
             - cook
-      - UTTypeIdentifier: md.cook.editor.menu
+      - UTTypeIdentifier: md.cook.menu
         UTTypeDescription: Cooklang Menu
         UTTypeConformsTo:
           - public.plain-text
