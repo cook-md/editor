@@ -26,16 +26,40 @@ try {
 }
 
 import { expect } from 'chai';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as markdownit from '@theia/core/shared/markdown-it';
 import URI from '@theia/core/lib/common/uri';
+import { parseCookLink } from '../common/cook-link';
 import { CookUrlOpenHandler } from './cook-url-open-handler';
 
 const ROOT = new URI('file:///Users/alex/Recipes');
 const INVALID = 'This Cook link could not be opened.';
 const MOBILE_ONLY = 'This link opens in the Cook mobile app.';
 
-function underRoot(path: string): string {
-    return ROOT.resolve(path).toString();
+function underRoot(relative: string): string {
+    return ROOT.resolve(relative).toString();
 }
+
+/** Mirrors `NotificationContentRenderer.renderMessage` in `@theia/messages`. */
+const notificationMarkdown = markdownit({ html: false });
+function renderNotification(message: string): string {
+    return notificationMarkdown.renderInline(message.replace(/((\r)?\n)+/gm, ' '));
+}
+
+/** Reaches the protected members the specs drive directly. */
+interface HandlerInternals {
+    openRecipe(linkPath: string): Promise<void>;
+    resolveUnder(root: URI, linkPath: string): URI | undefined;
+    toLinkString(uri: URI): string;
+}
+function internals(handler: CookUrlOpenHandler): HandlerInternals {
+    return handler as unknown as HandlerInternals;
+}
+
+/** `__dirname` is `lib/browser` once compiled, so the corpus sits two levels up. */
+const corpusPath = path.join(__dirname, '..', '..', 'deeplinks.json');
+const corpus: { cases: { url: string }[] } = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
 
 interface HandlerFixture {
     handler: CookUrlOpenHandler;
@@ -152,7 +176,33 @@ describe('CookUrlOpenHandler', () => {
         const { handler, opened, messages } = handlerWith([]);
         await follow(handler, 'cook://my/Breakfast/Nope.cook');
         expect(opened).to.be.empty;
-        expect(messages.join(' ')).to.contain('Nope.cook');
+        expect(messages.map(renderNotification)).to.deep.equal(['Nope.cook is not in this folder yet.']);
+    });
+
+    it('keeps an ordinary name readable in the rendered notification', async () => {
+        const { handler, messages } = handlerWith([]);
+        await follow(handler, 'cook://my/Sides%20%26%20Drinks/Grandma%27s%20Punch%20(v2).cook');
+        // `&amp;` is how the HTML spells a literal `&`.
+        expect(messages.map(renderNotification)).to.deep.equal(["Grandma's Punch (v2).cook is not in this folder yet."]);
+        await follow(handler, 'cook://my/Sides%20%26%20Drinks.cook');
+        expect(renderNotification(messages[1])).to.equal('Sides &amp; Drinks.cook is not in this folder yet.');
+    });
+
+    it('never renders a link from a link-derived name', async () => {
+        const { handler, messages } = handlerWith([]);
+        const raw = 'cook://my/%5BOpen%20recipe%5D(command%3Aworkbench.action.terminal.new%3F%5B%5D).cook';
+        await follow(handler, raw);
+        await follow(handler, 'cook://my/%3Ccommand%3Aworkbench.action.terminal.new%3E.cook');
+        await follow(handler, 'cook://my/%3Chttps%3A%2F%2Fevil.example%3E.cook');
+        expect(messages).to.have.length(3);
+        // Guard the guard: unescaped, the first name really would render a link.
+        expect(renderNotification(new URI(raw).path.base)).to.contain('<a');
+        for (const message of messages) {
+            expect(renderNotification(message), message).not.to.contain('<a');
+        }
+        expect(renderNotification(messages[0])).to.equal(
+            '[Open recipe](command:workbench.action.terminal.new?[]).cook is not in this folder yet.'
+        );
     });
 
     it('asks for a folder when none is open', async () => {
@@ -197,6 +247,48 @@ describe('CookUrlOpenHandler', () => {
         expect(fixture.revealed).to.be.empty;
     });
 
+    it('opens a menu, in any case', async () => {
+        const menu = underRoot('Week 1.menu');
+        const upper = underRoot('Week 2.MENU');
+        const { handler, opened } = handlerWith([menu, upper]);
+        await follow(handler, 'cook://my/Week%201.menu');
+        await follow(handler, 'cook://my/Week%202.MENU');
+        expect(opened).to.deep.equal([menu, upper]);
+    });
+
+    it('opens an upper-case .COOK recipe', async () => {
+        const target = underRoot('PANCAKES.COOK');
+        const { handler, opened } = handlerWith([target]);
+        await follow(handler, 'cook://my/PANCAKES.COOK');
+        expect(opened).to.deep.equal([target]);
+    });
+
+    it('opens nothing but recipes and menus, however they are named', async () => {
+        const files = ['Taxes.docx', 'Archive.zip', 'run.sh', 'README'].map(underRoot);
+        const { handler, opened, messages } = handlerWith(files);
+        for (const name of ['Taxes.docx', 'Archive.zip', 'run.sh', 'README', 'Missing.app']) {
+            await follow(handler, `cook://my/${name}`);
+        }
+        expect(opened).to.be.empty;
+        expect(messages).to.deep.equal(Array(5).fill(INVALID));
+    });
+
+    it('refuses segments that Windows would trim to something else', async () => {
+        const files = ['Breakfast./Pancakes.cook', 'Pancakes.cook ', 'Pancakes.cook.', 'Pancakes.cook'].map(underRoot);
+        const { handler, opened, messages } = handlerWith(files, [ROOT], [underRoot('.. ')]);
+        for (const raw of [
+            'cook://my/..%20/Pancakes.cook',
+            'cook://my/Breakfast./Pancakes.cook',
+            'cook://my/Pancakes.cook%20',
+            'cook://my/Pancakes.cook.'
+        ]) {
+            await follow(handler, raw);
+        }
+        await internals(handler).openRecipe('./Pancakes.cook');
+        expect(opened).to.be.empty;
+        expect(messages).to.deep.equal(Array(5).fill(INVALID));
+    });
+
     it('refuses to walk out of the workspace root', async () => {
         const { handler, opened, messages } = handlerWith(['file:///Users/alex/secret.txt']);
         await follow(handler, 'cook://my/../secret.txt');
@@ -211,19 +303,41 @@ describe('CookUrlOpenHandler', () => {
         expect(messages).to.deep.equal([INVALID]);
     });
 
-    it('refuses backslash separators, which Windows would treat as traversal', async () => {
-        const { handler, opened, messages } = handlerWith(['file:///Users/alex/secret.txt']);
-        await follow(handler, 'cook://my/a%5C..%5C..%5Csecret.txt');
+    it('refuses an encoded-backslash traversal end to end', async () => {
+        // Theia's `Path` turns `\` into `/` before the handler sees the URI, so this is
+        // refused by the parser's `..` check, not by the handler's backslash guard.
+        const { handler, opened, messages } = handlerWith(['file:///Users/alex/secret.cook']);
+        await follow(handler, 'cook://my/a%5C..%5C..%5Csecret.cook');
         expect(opened).to.be.empty;
         expect(messages).to.deep.equal([INVALID]);
     });
 
-    it('keeps the containment check even if the parser let a traversal through', async () => {
-        // Second layer: call past the parser to prove the root check stands on its own.
-        const { handler, opened, messages } = handlerWith(['file:///Users/alex/secret.txt']);
-        await (handler as unknown as { openRecipe(path: string): Promise<void> }).openRecipe('a/../../secret.txt');
+    it('refuses a parsed path that still contains a backslash', async () => {
+        // The guard itself, called past URI parsing: on Windows `\` is a separator.
+        const { handler, opened, messages } = handlerWith([underRoot('a\\b.cook'), 'file:///Users/alex/secret.cook']);
+        await internals(handler).openRecipe('a\\b.cook');
+        await internals(handler).openRecipe('a\\..\\..\\secret.cook');
         expect(opened).to.be.empty;
-        expect(messages).to.deep.equal([INVALID]);
+        expect(messages).to.deep.equal([INVALID, INVALID]);
+    });
+
+    it('keeps the containment check even if the parser let a traversal through', () => {
+        // Second layer: past the parser and the segment guard, the root check stands on its own.
+        const { handler } = handlerWith([]);
+        expect(internals(handler).resolveUnder(ROOT, 'a/../../secret.cook')).to.equal(undefined);
+        expect(internals(handler).resolveUnder(ROOT, 'a/../secret.cook')?.toString()).to.equal(underRoot('secret.cook'));
+    });
+
+    it('does not wait for a notification to be dismissed', async () => {
+        const { handler } = handlerWith([]);
+        const messages: string[] = [];
+        Object.assign(handler, {
+            messageService: { info: (text: string) => { messages.push(text); return new Promise(() => { }); } }
+        });
+        await follow(handler, 'cook://my/Nope.cook');
+        await follow(handler, 'cook://pantry/items');
+        await follow(handler, 'cook://share');
+        expect(messages).to.have.length(3);
     });
 
     it('claims timer links and points at the mobile app, opening nothing', async () => {
@@ -257,4 +371,19 @@ describe('CookUrlOpenHandler', () => {
         expect(opened).to.be.empty;
         expect(messages).to.deep.equal([INVALID]);
     });
+});
+
+describe('CookUrlOpenHandler.toLinkString (golden corpus round trip)', () => {
+    const { handler } = handlerWith([]);
+    const ownLinks = corpus.cases.filter(testCase => /^(cook|cooklang):/.test(testCase.url));
+
+    it('has cook: and cooklang: cases to check', () => {
+        expect(ownLinks.length).to.be.greaterThan(0);
+    });
+
+    for (const { url } of ownLinks) {
+        it(url, () => {
+            expect(parseCookLink(internals(handler).toLinkString(new URI(url)))).to.deep.equal(parseCookLink(url));
+        });
+    }
 });

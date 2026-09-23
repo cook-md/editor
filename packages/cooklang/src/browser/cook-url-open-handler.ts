@@ -21,6 +21,7 @@ import { FileStat } from '@theia/filesystem/lib/common/files';
 import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { CookLink, parseCookLink } from '../common/cook-link';
+import { CooklangUri } from '../common/cooklang-uri';
 
 const COOK_URL_SCHEMES = new Set(['cook', 'cooklang']);
 
@@ -60,6 +61,10 @@ export class CookUrlOpenHandler implements OpenHandler {
         return COOK_URL_SCHEMES.has(uri.scheme.toLowerCase()) ? CookUrlOpenHandler.PRIORITY : 0;
     }
 
+    /**
+     * Resolves once the link has been acted on, without waiting for any notification
+     * to be dismissed: the Electron main process holds its `open-url` reply until then.
+     */
     async open(uri: URI): Promise<undefined> {
         const link = parseCookLink(this.toLinkString(uri));
         await this.dispatch(link);
@@ -75,19 +80,15 @@ export class CookUrlOpenHandler implements OpenHandler {
             case 'share':
             case 'clip':
                 // Both belong to the import widget.
-                await this.messageService.info(
-                    nls.localize('theia/cooklang/cookUrl/useImport', 'Use File → Import Recipe… to bring this recipe in.')
-                );
+                this.notify(nls.localize('theia/cooklang/cookUrl/useImport', 'Use File → Import Recipe… to bring this recipe in.'));
                 return;
             case 'timer':
             case 'unsupported':
-                await this.messageService.info(
-                    nls.localize('theia/cooklang/cookUrl/mobileOnly', 'This link opens in the Cook mobile app.')
-                );
+                this.notify(nls.localize('theia/cooklang/cookUrl/mobileOnly', 'This link opens in the Cook mobile app.'));
                 return;
             default:
                 // Deliberately generic: a traversal attempt gets no echo of its path.
-                await this.showInvalid();
+                this.showInvalid();
         }
     }
 
@@ -111,18 +112,19 @@ export class CookUrlOpenHandler implements OpenHandler {
         return `${uri.scheme}://${uri.authority}${path}${query}`;
     }
 
+    /**
+     * Opens a recipe or menu under the first workspace root, or reveals a folder.
+     * Links reach this from any web page, so nothing else is opened: another file type
+     * would go to its system application (`BinaryFileOpenHandler`).
+     */
     protected async openRecipe(path: string): Promise<void> {
-        // A backslash is a separator on Windows, so `a\..\..\secret` would walk out of
-        // the root there even though the parser saw no `..` segment.
-        if (path.includes('\\')) {
-            await this.showInvalid();
+        if (!this.isSafeLinkPath(path)) {
+            this.showInvalid();
             return;
         }
         const roots = await this.workspaceService.roots;
         if (roots.length === 0) {
-            await this.messageService.info(
-                nls.localize('theia/cooklang/cookUrl/noWorkspace', 'Open a folder before following recipe links.')
-            );
+            this.notify(nls.localize('theia/cooklang/cookUrl/noWorkspace', 'Open a folder before following recipe links.'));
             return;
         }
         const root = roots[0].resource;
@@ -133,7 +135,7 @@ export class CookUrlOpenHandler implements OpenHandler {
         }
         const target = this.resolveUnder(root, path);
         if (!target) {
-            await this.showInvalid();
+            this.showInvalid();
             return;
         }
         // Folder links are real (`cook://my/Sides%20%26%20Drinks`). No opener takes a
@@ -143,20 +145,35 @@ export class CookUrlOpenHandler implements OpenHandler {
             await this.revealFolder(target);
             return;
         }
-        if (stat) {
-            await open(this.openerService, target);
-            return;
-        }
-        if (!target.path.ext) {
-            const withExtension = this.resolveUnder(root, `${path}.cook`);
+        if (CooklangUri.isRecipe(target) || CooklangUri.isMenu(target)) {
+            if (stat) {
+                await open(this.openerService, target);
+                return;
+            }
+        } else if (!target.path.ext && !stat) {
+            const withExtension = this.resolveUnder(root, `${path}${CooklangUri.RECIPE_EXTENSION}`);
             if (withExtension && (await this.statOf(withExtension))?.isFile) {
                 await open(this.openerService, withExtension);
                 return;
             }
+        } else {
+            this.showInvalid();
+            return;
         }
-        await this.messageService.info(
-            nls.localize('theia/cooklang/cookUrl/notHere', '{0} is not in this folder yet.', target.path.base)
-        );
+        this.notify(nls.localize('theia/cooklang/cookUrl/notHere', '{0} is not in this folder yet.', this.escapeMarkdown(target.path.base)));
+    }
+
+    /**
+     * Rejects what the root containment check cannot see on every platform:
+     * - a backslash, a separator on Windows, so `a\..\..\secret` walks out of the root
+     *   there even though the parser saw no `..` segment;
+     * - a segment ending in `.` or a space, which Win32 trims, so `..%20` becomes `..`.
+     */
+    protected isSafeLinkPath(path: string): boolean {
+        if (path.includes('\\')) {
+            return false;
+        }
+        return !path.split('/').some(segment => segment.endsWith('.') || segment.endsWith(' '));
     }
 
     /**
@@ -186,9 +203,23 @@ export class CookUrlOpenHandler implements OpenHandler {
         return root.isEqualOrParent(target) && !root.isEqual(target) ? target : undefined;
     }
 
-    protected async showInvalid(): Promise<void> {
-        await this.messageService.info(
-            nls.localize('theia/cooklang/cookUrl/invalid', 'This Cook link could not be opened.')
-        );
+    protected showInvalid(): void {
+        this.notify(nls.localize('theia/cooklang/cookUrl/invalid', 'This Cook link could not be opened.'));
+    }
+
+    /** Fire-and-forget: `info` only settles when the notification is dismissed. */
+    protected notify(message: string): void {
+        this.messageService.info(message).catch(error => console.error('Failed to show a Cook link notification:', error));
+    }
+
+    /**
+     * Notifications render their text as inline markdown, and a `command:` link in it
+     * runs that command when clicked. Link-derived names must therefore stay literal
+     * text: every markdown-significant character is backslash-escaped. `<` covers
+     * autolinks; `:` is escaped too, although linkify is off in the notification renderer.
+     * (`escapeMarkdownSyntaxTokens` from core misses `<`, `>`, `~`, `|` and `&`.)
+     */
+    protected escapeMarkdown(text: string): string {
+        return text.replace(/[\\`*_{}[\]()#+\-.!|<>~:&]/g, '\\$&');
     }
 }
