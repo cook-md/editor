@@ -186,6 +186,12 @@ export class ElectronMainApplication {
     protected didUseNativeWindowFrameOnStart = new Map<number, boolean>();
     protected windows = new Map<number, TheiaElectronWindow>();
     protected activeWindowStack: number[] = [];
+    /**
+     * URLs that arrived while no window had a ready frontend to hand them to, e.g. the `open-url` event of a
+     * macOS cold start, which Electron emits before any window exists. They are opened, in order, as soon as a
+     * window's frontend becomes ready (see {@link openPendingUrls}).
+     */
+    protected pendingUrls: string[] = [];
     protected restarting = false;
 
     /** Used to temporarily store the reference to an early created main window */
@@ -232,7 +238,8 @@ export class ElectronMainApplication {
                     this.useNativeWindowFrame = this.getTitleBarStyle(config) === 'native';
                     this._config = config;
                     this.hookApplicationEvents();
-                    this.showInitialWindow(argv.includes('--open-url') ? argv[argv.length - 1] : undefined);
+                    const urlToOpen = this.getUrlArgument(argv);
+                    this.showInitialWindow(urlToOpen);
                     const port = await this.startBackend();
                     this._backendPort.resolve(port);
                     await app.whenReady();
@@ -240,7 +247,8 @@ export class ElectronMainApplication {
                     await this.startContributions();
 
                     this.handleMainCommand({
-                        file: args.file,
+                        // On Linux the URL arrives as the positional argument; it is not a workspace.
+                        file: args.file === urlToOpen ? undefined : args.file,
                         cwd: process.cwd(),
                         secondInstance: false
                     });
@@ -326,6 +334,11 @@ export class ElectronMainApplication {
     }
 
     protected showInitialWindow(urlToOpen: string | undefined): void {
+        if (urlToOpen) {
+            // No window is ready yet, so this queues the URL until the first frontend is - whether or not
+            // the initial window is shown early.
+            this.openUrl(urlToOpen);
+        }
         if (this.isShowWindowEarly() || this.isShowSplashScreen()) {
             app.whenReady().then(async () => {
                 const options = await this.getLastWindowOptions();
@@ -334,11 +347,6 @@ export class ElectronMainApplication {
                     options.preventAutomaticShow = true;
                 }
                 this.initialWindow = await this.createWindow({ ...options });
-                TheiaRendererAPI.onApplicationStateChanged(this.initialWindow.webContents, state => {
-                    if (state === 'ready' && urlToOpen) {
-                        this.openUrl(urlToOpen);
-                    }
-                });
                 if (this.isShowSplashScreen()) {
                     console.log('Showing splash screen');
                     this.configureAndShowSplashScreen(this.initialWindow);
@@ -429,7 +437,14 @@ export class ElectronMainApplication {
         const id = electronWindow.window.webContents.id;
         this.activeWindowStack.push(id);
         this.windows.set(id, electronWindow);
+        // Registered after the window's own state tracking, so `electronWindow.isReady` is already true here.
+        const readyListener = TheiaRendererAPI.onApplicationStateChanged(electronWindow.window.webContents, state => {
+            if (state === 'ready') {
+                this.openPendingUrls();
+            }
+        });
         electronWindow.onDidClose(() => {
+            readyListener.dispose();
             const stackIndex = this.activeWindowStack.indexOf(id);
             if (stackIndex >= 0) {
                 this.activeWindowStack.splice(stackIndex, 1);
@@ -565,12 +580,37 @@ export class ElectronMainApplication {
         }
     }
 
+    /**
+     * Offers `url` to the windows, most recently focused first, until one of them opens it.
+     *
+     * Only windows whose frontend is ready are asked: a frontend that is still starting has no handler yet and
+     * would silently drop the URL. When no window is ready (a cold start, or the only window is still loading),
+     * the URL is kept and opened once one is. When ready windows exist but none opens it, nothing handles it
+     * and it is dropped.
+     */
     async openUrl(url: string): Promise<void> {
+        let offered = false;
         for (const id of this.activeWindowStack) {
             const window = this.windows.get(id);
-            if (window && await window.openUrl(url)) {
-                break;
+            if (window?.isReady) {
+                offered = true;
+                if (await window.openUrl(url)) {
+                    return;
+                }
             }
+        }
+        if (!offered) {
+            this.pendingUrls.push(url);
+        }
+    }
+
+    /**
+     * Opens the URLs that arrived before any window was ready. Called whenever a window's frontend becomes ready.
+     */
+    protected async openPendingUrls(): Promise<void> {
+        const urls = this.pendingUrls.splice(0);
+        for (const url of urls) {
+            await this.openUrl(url);
         }
     }
 
@@ -812,11 +852,28 @@ export class ElectronMainApplication {
         }
     }
 
+    /**
+     * The URL this process was launched to open, if any. On Windows the protocol handler registered in
+     * {@link hookApplicationEvents} passes `--open-url <url>`. On Linux the desktop entry's
+     * `x-scheme-handler` passes the URL bare (`Exec=... %U`), so any argument in our own scheme counts.
+     * macOS delivers URLs through the `open-url` event instead.
+     */
+    protected getUrlArgument(argv: string[]): string | undefined {
+        // Match the scheme first: Chromium may append its own switches after the URL, so "last argument" alone
+        // is not reliable once the command line has been through it.
+        const schemePrefix = `${this.config.electron.uriScheme.toLowerCase()}:`;
+        const url = argv.find(arg => arg.toLowerCase().startsWith(schemePrefix));
+        if (url !== undefined) {
+            return url;
+        }
+        return argv.includes('--open-url') ? argv[argv.length - 1] : undefined;
+    }
+
     protected onWillQuit(event: ElectronEvent): void {
         this.stopContributions();
     }
 
-    protected async onSecondInstance(event: ElectronEvent, _: string[], cwd: string, originalArgv: string[]): Promise<void> {
+    protected async onSecondInstance(event: ElectronEvent, commandLine: string[], cwd: string, originalArgv: string[]): Promise<void> {
         // the second instance passes it's original argument array as the fourth argument to this method
         // The `argv` second parameter is not usable for us since it is mangled by electron before being passed here
 
@@ -827,8 +884,10 @@ export class ElectronMainApplication {
         // arguments", which still focuses the running window.
         const argv = Array.isArray(originalArgv) ? originalArgv : [];
 
-        if (argv.includes('--open-url')) {
-            this.openUrl(argv[argv.length - 1]);
+        // A link must not be lost with it, though: the mangled `commandLine` still carries the URL itself.
+        const url = this.getUrlArgument(argv) ?? (Array.isArray(commandLine) ? this.getUrlArgument(commandLine) : undefined);
+        if (url !== undefined) {
+            this.openUrl(url);
         } else {
             createYargs(this.processArgv.getProcessArgvWithoutBin(argv), cwd)
                 .help(false)

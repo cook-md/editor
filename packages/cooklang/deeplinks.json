@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "description": "Golden corpus for the unified cook:// URL scheme. Every Cooklang client (iOS, Android, Cook Editor) vendors this file and runs it as a table-driven test. See docs/superpowers/specs/2026-09-18-unified-cook-url-scheme-design.md. Parsing is PURE: it never touches the filesystem, so `route: my` does not say whether the target is a recipe or a folder. That is the resolver's job.",
+  "routes": {
+    "my": "A path in the user's own collection. Fields: path (verbatim, percent-decoded, no leading slash), mode (null | \"cooking\"), timer (string | null).",
+    "timer": "Fields: id (uuid string | null). null means the timer screen itself.",
+    "clip": "Fields: url (string | null), batch (string | null). Exactly one is non-null.",
+    "share": "Fields: token (string).",
+    "unsupported": "A well-formed cook:// URL in a namespace this table does not define. Fields: namespace. Clients show a message; they never crash or silently dismiss.",
+    "invalid": "Not a Cooklang link at all, or malformed beyond use. Fields: reason. Clients ignore it."
+  },
+  "cases": [
+    {"url": "cook://my/Breakfast/Pancakes.cook", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "cooklang://my/Breakfast/Pancakes.cook", "note": "permanent scheme alias", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "cook://MY/Breakfast/Pancakes.cook", "note": "host is case-insensitive per RFC 3986; the path is not", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "cook://my/Pancakes.cook", "expect": {"route": "my", "path": "Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "cook://my/Breakfast", "note": "no extension; the resolver decides folder vs recipe", "expect": {"route": "my", "path": "Breakfast", "mode": null, "timer": null}},
+    {"url": "cook://my", "note": "collection root", "expect": {"route": "my", "path": "", "mode": null, "timer": null}},
+    {"url": "cook://my/", "expect": {"route": "my", "path": "", "mode": null, "timer": null}},
+    {"url": "cook://my/Breakfast/Pancakes.cook?mode=cooking", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": "cooking", "timer": null}},
+    {"url": "cook://my/Breakfast/Pancakes.cook?mode=cooking&timer=42", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": "cooking", "timer": "42"}},
+    {"url": "cook://my/Breakfast/Pancakes.cook?mode=shopping", "note": "forward compatibility: an unknown mode is ignored, not rejected, so an older client still opens the recipe", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "cook://my/Cr%C3%AApes/P%C3%A2te%20%C3%A0%20cr%C3%AApes.cook", "expect": {"route": "my", "path": "Crêpes/Pâte à crêpes.cook", "mode": null, "timer": null}},
+    {"url": "cook://my/Drafts%2FPancakes.cook", "note": "a percent-encoded separator decodes to a separator; filenames cannot contain '/' on any supported filesystem", "expect": {"route": "my", "path": "Drafts/Pancakes.cook", "mode": null, "timer": null}},
+
+    {"url": "cook://my/../../Documents/secret.txt", "note": "SECURITY: a deeplink must never escape the recipe root", "expect": {"route": "invalid", "reason": "path-traversal"}},
+    {"url": "cook://my/Breakfast/../../../etc/passwd", "expect": {"route": "invalid", "reason": "path-traversal"}},
+    {"url": "cook://my/Breakfast/%2E%2E/%2E%2E/etc/passwd", "note": "traversal is checked AFTER percent-decoding", "expect": {"route": "invalid", "reason": "path-traversal"}},
+    {"url": "cook://my//Pancakes.cook", "note": "empty segments collapse", "expect": {"route": "my", "path": "Pancakes.cook", "mode": null, "timer": null}},
+
+    {"url": "cook://timer/550e8400-e29b-41d4-a716-446655440000", "expect": {"route": "timer", "id": "550e8400-e29b-41d4-a716-446655440000"}},
+    {"url": "cook://timer", "note": "the timer screen itself; what Android's notification links to", "expect": {"route": "timer", "id": null}},
+    {"url": "cook://timer/not-a-uuid", "note": "liberal: an unusable id degrades to the timer screen rather than failing", "expect": {"route": "timer", "id": null}},
+
+    {"url": "cook://clip?url=https%3A%2F%2Fexample.com%2Frecipes%2F1", "expect": {"route": "clip", "url": "https://example.com/recipes/1", "batch": null}},
+    {"url": "cook://clip?batch=b47ac10b", "expect": {"route": "clip", "url": null, "batch": "b47ac10b"}},
+    {"url": "cook://clip", "expect": {"route": "invalid", "reason": "clip-without-source"}},
+    {"url": "cook://clip?url=&batch=", "expect": {"route": "invalid", "reason": "clip-without-source"}},
+
+    {"url": "cook://share/9fK2mQ", "expect": {"route": "share", "token": "9fK2mQ"}},
+    {"url": "cook://share/", "expect": {"route": "invalid", "reason": "share-without-token"}},
+    {"url": "https://cook.md/shares/9fK2mQ", "note": "the shareable form; universal link on iOS, verified app link on Android", "expect": {"route": "share", "token": "9fK2mQ"}},
+    {"url": "https://www.cook.md/shares/9fK2mQ", "expect": {"route": "share", "token": "9fK2mQ"}},
+    {"url": "https://cook.md/recipes/9fK2mQ", "expect": {"route": "invalid", "reason": "not-a-share-link"}},
+    {"url": "https://example.com/shares/9fK2mQ", "expect": {"route": "invalid", "reason": "not-a-share-link"}},
+
+    {"url": "https://cook.md/my/Breakfast/Pancakes.cook", "note": "v2. The form a user copies: calendars, notes and chats only make http(s) tappable, and nothing on Android linkifies cook:// at all. Means exactly what cook://my/<path> means", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "https://www.cook.md/my/Breakfast/Pancakes.cook", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "https://cook.md/my/Breakfast/Pancakes.cook?mode=cooking&timer=42", "expect": {"route": "my", "path": "Breakfast/Pancakes.cook", "mode": "cooking", "timer": "42"}},
+    {"url": "https://cook.md/my/Sides%20%26%20Drinks", "expect": {"route": "my", "path": "Sides & Drinks", "mode": null, "timer": null}},
+    {"url": "https://cook.md/my", "note": "collection root", "expect": {"route": "my", "path": "", "mode": null, "timer": null}},
+    {"url": "https://cook.md/my/Pancakes.cook#method", "note": "a fragment is never part of the path", "expect": {"route": "my", "path": "Pancakes.cook", "mode": null, "timer": null}},
+    {"url": "https://cook.md/my/Breakfast/%2E%2E/%2E%2E/etc/passwd", "note": "SECURITY: the same traversal rule as cook://my", "expect": {"route": "invalid", "reason": "path-traversal"}},
+    {"url": "https://example.com/my/Pancakes.cook", "note": "only cook.md and www.cook.md are ours", "expect": {"route": "invalid", "reason": "not-a-share-link"}},
+
+    {"url": "cooklang://screen/timer", "note": "LEGACY Android route; still parsed so notifications scheduled before the upgrade survive", "expect": {"route": "timer", "id": null}},
+    {"url": "cooklang://screen/cookingMode/Drafts%2FPancakes.cook?timerId=123", "note": "LEGACY Android route", "expect": {"route": "my", "path": "Drafts/Pancakes.cook", "mode": "cooking", "timer": "123"}},
+    {"url": "cooklang://screen/cookingMode/Pancakes.cook?timerId=123", "note": "LEGACY Android route", "expect": {"route": "my", "path": "Pancakes.cook", "mode": "cooking", "timer": "123"}},
+    {"url": "cooklang://clip_images?batch=b47ac10b", "note": "LEGACY iOS route", "expect": {"route": "clip", "url": null, "batch": "b47ac10b"}},
+    {"url": "cooklang://clip?url=https%3A%2F%2Fexample.com%2Frecipes%2F1", "note": "LEGACY iOS route, unchanged in shape", "expect": {"route": "clip", "url": "https://example.com/recipes/1", "batch": null}},
+    {"url": "cooklang://share_import?url=https%3A%2F%2Fcook.md%2Fshares%2F9fK2mQ", "note": "LEGACY iOS route", "expect": {"route": "share", "token": "9fK2mQ"}},
+    {"url": "cooklang://timer/550e8400-e29b-41d4-a716-446655440000", "note": "LEGACY iOS route, unchanged in shape", "expect": {"route": "timer", "id": "550e8400-e29b-41d4-a716-446655440000"}},
+
+    {"url": "cook://nope/whatever", "expect": {"route": "unsupported", "namespace": "nope"}},
+    {"url": "cook://screen/settings", "note": "`screen` is legacy and only defines timer and cookingMode; anything else under it is unsupported", "expect": {"route": "unsupported", "namespace": "screen"}},
+    {"url": "cook://", "expect": {"route": "invalid", "reason": "no-namespace"}},
+    {"url": "cook:", "expect": {"route": "invalid", "reason": "no-namespace"}},
+    {"url": "cookmd://my/Pancakes.cook", "note": "not one of ours", "expect": {"route": "invalid", "reason": "foreign-scheme"}},
+    {"url": "not a url at all", "expect": {"route": "invalid", "reason": "unparseable"}}
+  ]
+}

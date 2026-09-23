@@ -213,6 +213,15 @@ export class TheiaElectronWindow {
         this.toDispose.push(TheiaRendererAPI.onRequestReload(this.window.webContents, (newUrl?: string) => this.reload(newUrl)));
     }
 
+    /**
+     * Whether the frontend in this window has finished starting. Only then has it registered its handler
+     * for {@link openUrl}; before that, a URL sent to it is answered with `false` or, while the page is still
+     * loading, not answered at all.
+     */
+    get isReady(): boolean {
+        return this.applicationState === 'ready';
+    }
+
     openUrl(url: string): Promise<boolean> {
         return TheiaRendererAPI.openUrl(this.window.webContents, url);
     }

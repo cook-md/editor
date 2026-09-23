@@ -36,8 +36,8 @@
         <dict>
             <key>QLSupportedContentTypes</key>
             <array>
-                <string>md.cook.editor.cook</string>
-                <string>md.cook.editor.menu</string>
+                <string>md.cook.cook</string>
+                <string>md.cook.menu</string>
             </array>
             <key>QLSupportsSearchableItems</key>
             <false/>
