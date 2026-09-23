@@ -12,7 +12,14 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { LanguageModelMessage, LanguageModelStreamResponse, LanguageModelStreamResponsePart, UserRequest } from '@theia/ai-core/lib/common';
+import {
+    isToolCallResponsePart,
+    LanguageModelMessage,
+    LanguageModelStreamResponse,
+    LanguageModelStreamResponsePart,
+    UserRequest,
+} from '@theia/ai-core/lib/common';
+import { CancellationTokenSource } from '@theia/core/lib/common/cancellation';
 import { CookbotChatChunk, CookbotInitResult, CookbotMessageParam } from '../common/cookbot-protocol';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotSessionInitializer } from './cookbot-session-initializer';
@@ -102,6 +109,20 @@ function toolResultSentIn(grpcClient: FakeGrpcClient, n: number): string {
     const history = grpcClient.sentMessages[n];
     const last = history[history.length - 1];
     return last.content.find(part => part.type === 'tool_result')?.toolResultContent ?? '';
+}
+
+/** The finished tool_calls entry for `toolUseId` among the yielded stream parts, if any. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function finishedCall(parts: LanguageModelStreamResponsePart[], toolUseId: string): any {
+    for (const part of parts) {
+        if (isToolCallResponsePart(part)) {
+            const call = part.tool_calls.find(tc => tc.id === toolUseId && tc.finished);
+            if (call) {
+                return call;
+            }
+        }
+    }
+    return undefined;
 }
 
 class FakeGrpcClient {
@@ -611,7 +632,7 @@ describe('CookbotLanguageModel tool loop guarantees', () => {
 
         const parts = await collectRequest(model, requestWithTools({ slowTool: () => new Promise(() => { /* never */ }) }));
 
-        expect(toolResultSentIn(grpcClient, 1)).to.contain('did not finish within');
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('did not answer within');
         expect(textsOf(parts)).to.deep.equal(['Sorry, that timed out.']);
     });
 
@@ -642,10 +663,59 @@ describe('CookbotLanguageModel tool loop guarantees', () => {
 
         expect(runs).to.equal(3);
         expect(grpcClient.sendMessageCalls).to.equal(4);
+
+        const notRun = finishedCall(parts, 't4');
+        expect(notRun).to.not.be.undefined;
+        expect(notRun.finished).to.equal(true);
+        const notRunText = notRun.result.content.find((part: { type: string }) => part.type === 'error')?.data;
+        expect(notRunText).to.contain('Not run');
+
         const lastHistory = grpcClient.sentMessages[3];
         const note = lastHistory[lastHistory.length - 1].content.find(part => part.type === 'text');
         expect(note?.text).to.contain('Tool-round limit reached');
         expect(textsOf(parts).join('')).to.contain('step limit');
+
+        // The round-limit note is only added to the tool-result message sent
+        // with the final round, not to the earlier ones.
+        for (const n of [1, 2]) {
+            const history = grpcClient.sentMessages[n];
+            const lastMessage = history[history.length - 1];
+            expect(lastMessage.content.some(part => part.type === 'text')).to.equal(false);
+        }
+    });
+
+    it('turns a thrown handler into a tool_result instead of failing the turn', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'risky'), () => textStream('Handled that.')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            risky: async () => { throw new Error('boom'); },
+        }));
+
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('failed');
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('boom');
+        expect(textsOf(parts)).to.deep.equal(['Handled that.']);
+    });
+
+    it('cancels a hanging tool instead of waiting out the timeout', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'slowTool'), () => textStream('Cancelled that.')];
+        const model = tuned(createModel(grpcClient), { toolTimeoutMs: 10_000 });
+        const tokenSource = new CancellationTokenSource();
+        setTimeout(() => tokenSource.cancel(), 10);
+
+        const request = requestWithTools({ slowTool: () => new Promise(() => { /* never */ }) });
+        request.cancellationToken = tokenSource.token;
+
+        const start = Date.now();
+        const parts = await collectRequest(model, request);
+        const elapsed = Date.now() - start;
+
+        // Cancellation must win the race, not the 10 s timeout.
+        expect(elapsed).to.be.lessThan(1000);
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('cancelled');
+        expect(parts).to.not.be.undefined;
     });
 
     it('adds a closing line instead of failing when tools ran but no reply followed', async () => {

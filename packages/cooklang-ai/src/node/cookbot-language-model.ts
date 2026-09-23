@@ -29,6 +29,7 @@ import {
     isToolCallResponsePart,
 } from '@theia/ai-core/lib/common';
 import { CancellationToken } from '@theia/core/lib/common/cancellation';
+import { Disposable } from '@theia/core/lib/common/disposable';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 import { CookbotSessionInitializer } from './cookbot-session-initializer';
 import {
@@ -217,7 +218,7 @@ export class CookbotLanguageModel implements LanguageModel {
                             tool_calls: toolCalls.map(tc => ({
                                 finished: true as const,
                                 id: tc.id,
-                                result: 'Not run: step limit reached.',
+                                result: createToolCallError('Not run: step limit reached.'),
                                 function: { name: tc.name, arguments: tc.args || '{}' },
                             })),
                         };
@@ -230,7 +231,7 @@ export class CookbotLanguageModel implements LanguageModel {
                         const tool = request.tools?.find(t => t.name === tc.name);
                         const argsObject = tc.args.length === 0 ? '{}' : tc.args;
                         const handlerResult: ToolCallResult = tool
-                            ? await that.runTool(tool, argsObject, tc.id)
+                            ? await that.runTool(tool, argsObject, tc.id, token)
                             : createToolCallError(`Tool '${tc.name}' not found in the available tools for this request.`, 'tool-not-available');
                         return { name: tc.name, result: handlerResult, id: tc.id, arguments: argsObject };
                     }));
@@ -339,26 +340,52 @@ export class CookbotLanguageModel implements LanguageModel {
 
     /**
      * Runs one tool handler, giving up after `toolTimeoutMs` so a handler that
-     * never resolves cannot stall the turn forever. The handler keeps running;
-     * its late result is ignored.
+     * never resolves cannot stall the turn forever, and racing `token` so a
+     * cancelled request does not wait for it either. The handler keeps
+     * running in both cases - Theia's wrapper still calls `complete()` on it
+     * when it eventually resolves, so it may still stage changes - only its
+     * result is no longer awaited here. A handler that throws is turned into
+     * a tool_result error instead of failing the whole turn.
      */
-    protected async runTool(tool: ToolRequest, args: string, toolUseId: string): Promise<ToolCallResult> {
-        const call = tool.handler(args, ToolInvocationContext.create(toolUseId));
+    protected async runTool(tool: ToolRequest, args: string, toolUseId: string, token?: CancellationToken): Promise<ToolCallResult> {
+        const call = tool.handler(args, ToolInvocationContext.create(toolUseId))
+            .catch((error: unknown) => createToolCallError(`${tool.name} failed: ${CookbotLanguageModel.errorMessage(error)}`));
         if (UNTIMED_TOOLS.has(tool.name)) {
             return call;
         }
+
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeout = new Promise<ToolCallResult>(resolve => {
             timer = setTimeout(() => resolve(createToolCallError(
-                `${tool.name} did not finish within ${Math.max(1, Math.round(this.toolTimeoutMs / 1000))} s. `
-                + 'Tell the user it timed out; do not retry it automatically.'
+                `${tool.name} did not answer within ${Math.max(1, Math.round(this.toolTimeoutMs / 1000))} s `
+                + 'and may still finish in the background. Tell the user it is taking too long and to check '
+                + 'the Changes panel; do not retry it automatically.'
             )), this.toolTimeoutMs);
         });
+
+        let cancelListener: Disposable | undefined;
+        const cancellation = new Promise<ToolCallResult>(resolve => {
+            if (!token) {
+                return;
+            }
+            if (token.isCancellationRequested) {
+                resolve(createToolCallError(`${tool.name} was cancelled.`));
+                return;
+            }
+            cancelListener = token.onCancellationRequested(() => resolve(createToolCallError(`${tool.name} was cancelled.`)));
+        });
+
         try {
-            return await Promise.race([call, timeout]);
+            return await Promise.race([call, timeout, cancellation]);
         } finally {
             clearTimeout(timer);
+            cancelListener?.dispose();
         }
+    }
+
+    /** Renders a caught value as a message, whether or not it is an `Error`. */
+    private static errorMessage(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 
     /**
