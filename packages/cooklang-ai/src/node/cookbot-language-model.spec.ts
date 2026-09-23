@@ -12,8 +12,16 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { LanguageModelMessage, LanguageModelStreamResponse, LanguageModelStreamResponsePart, UserRequest } from '@theia/ai-core/lib/common';
+import {
+    isToolCallResponsePart,
+    LanguageModelMessage,
+    LanguageModelStreamResponse,
+    LanguageModelStreamResponsePart,
+    UserRequest,
+} from '@theia/ai-core/lib/common';
+import { CancellationTokenSource } from '@theia/core/lib/common/cancellation';
 import { CookbotChatChunk, CookbotInitResult, CookbotMessageParam } from '../common/cookbot-protocol';
+import { RECIPE_FOLDER_RELOADING } from '../common/tool-markers';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotSessionInitializer } from './cookbot-session-initializer';
 
@@ -59,12 +67,74 @@ async function* emptyStream(): AsyncIterable<CookbotChatChunk> {
     yield { type: 'message_stop' };
 }
 
+/** One model round that asks for a single tool call and stops for its result. */
+async function* toolUseStream(id: string, name: string, args = '{}'): AsyncIterable<CookbotChatChunk> {
+    yield { type: 'content_block_start', index: 0, blockType: 'tool_use', id, name };
+    yield { type: 'content_block_delta', index: 0, deltaType: 'input_json_delta', partialJson: args };
+    yield { type: 'content_block_stop', index: 0 };
+    yield { type: 'message_delta', stopReason: 'tool_use', outputTokens: 5 };
+    yield { type: 'message_stop' };
+}
+
+type FakeHandler = (args: string) => Promise<unknown>;
+
+function requestWithTools(handlers: Record<string, FakeHandler>): UserRequest {
+    return {
+        messages: [{ actor: 'user', type: 'text', text: 'hi' }],
+        tools: Object.entries(handlers).map(([name, handler]) => ({
+            id: name,
+            name,
+            description: name,
+            parameters: { type: 'object', properties: {} },
+            handler,
+        })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+}
+
+async function collectRequest(model: CookbotLanguageModel, request: UserRequest): Promise<LanguageModelStreamResponsePart[]> {
+    const response = await model.request(request) as LanguageModelStreamResponse;
+    const parts: LanguageModelStreamResponsePart[] = [];
+    for await (const part of response.stream) {
+        parts.push(part);
+    }
+    return parts;
+}
+
+function textsOf(parts: LanguageModelStreamResponsePart[]): string[] {
+    return parts.filter(p => 'content' in p).map(p => (p as { content: string }).content);
+}
+
+/** The tool_result text sent back to the model in request `n` (0-based). */
+function toolResultSentIn(grpcClient: FakeGrpcClient, n: number): string {
+    const history = grpcClient.sentMessages[n];
+    const last = history[history.length - 1];
+    return last.content.find(part => part.type === 'tool_result')?.toolResultContent ?? '';
+}
+
+/** The finished tool_calls entry for `toolUseId` among the yielded stream parts, if any. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function finishedCall(parts: LanguageModelStreamResponsePart[], toolUseId: string): any {
+    for (const part of parts) {
+        if (isToolCallResponsePart(part)) {
+            const call = part.tool_calls.find(tc => tc.id === toolUseId && tc.finished);
+            if (call) {
+                return call;
+            }
+        }
+    }
+    return undefined;
+}
+
 class FakeGrpcClient {
     initializeCalls = 0;
     reconnectCalls = 0;
     sendMessageCalls = 0;
     streams: Array<() => AsyncIterable<CookbotChatChunk>> = [];
     initializeError: Error | undefined;
+
+    /** The message history sent with each request, in order. */
+    sentMessages: CookbotMessageParam[][] = [];
 
     async initialize(): Promise<CookbotInitResult> {
         this.initializeCalls++;
@@ -80,7 +150,8 @@ class FakeGrpcClient {
         this.reconnectCalls++;
     }
 
-    sendMessage(): { stream: AsyncIterable<CookbotChatChunk> } {
+    sendMessage(messages: CookbotMessageParam[] = []): { stream: AsyncIterable<CookbotChatChunk> } {
+        this.sentMessages.push(messages);
         const factory = this.streams[this.sendMessageCalls++];
         if (!factory) {
             throw new Error('Unexpected sendMessage call');
@@ -543,5 +614,168 @@ describe('CookbotLanguageModel tool error detection', () => {
         expect(hasError('Common error: adding the salt too early.')).to.equal(false);
         expect(hasError('{not json')).to.equal(false);
         expect(hasError(undefined)).to.equal(false);
+    });
+});
+
+describe('CookbotLanguageModel tool loop guarantees', () => {
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    function tuned(model: CookbotLanguageModel, settings: { toolTimeoutMs?: number; maxToolRounds?: number }): CookbotLanguageModel {
+        Object.assign(model as any, settings);
+        return model;
+    }
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    it('reports a tool that never answers as timed out and carries on', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'slowTool'), () => textStream('Sorry, that timed out.')];
+        const model = tuned(createModel(grpcClient), { toolTimeoutMs: 20 });
+
+        const parts = await collectRequest(model, requestWithTools({ slowTool: () => new Promise(() => { /* never */ }) }));
+
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('did not answer within');
+        expect(textsOf(parts)).to.deep.equal(['Sorry, that timed out.']);
+    });
+
+    it('never times out openRecipeFolder, which waits on the user', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'openRecipeFolder'), () => textStream('Opened.')];
+        const model = tuned(createModel(grpcClient), { toolTimeoutMs: 20 });
+
+        await collectRequest(model, requestWithTools({
+            openRecipeFolder: () => new Promise(resolve => setTimeout(() => resolve('folder opened'), 60)),
+        }));
+
+        expect(toolResultSentIn(grpcClient, 1)).to.equal('folder opened');
+    });
+
+    it('ends the turn immediately once openRecipeFolder starts the reload, no further round or closing line', async () => {
+        const grpcClient = new FakeGrpcClient();
+        // No second stream: a reload result must stop the loop before it
+        // recurses, so a second sendMessage call would fail with
+        // "Unexpected sendMessage call".
+        grpcClient.streams = [() => toolUseStream('t1', 'openRecipeFolder')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            openRecipeFolder: async () => `Opening /Users/greg/Cook as the recipe folder. ${RECIPE_FOLDER_RELOADING} `
+                + 'Do not reply further and do not call any more tools.',
+        }));
+
+        expect(grpcClient.sendMessageCalls).to.equal(1);
+        expect(textsOf(parts).join('')).to.not.contain('stopped without a reply');
+        expect(textsOf(parts)).to.be.empty;
+    });
+
+    it('continues the loop as usual when openRecipeFolder does not report a reload (e.g. dismissed)', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'openRecipeFolder'), () => textStream('No worries, ask any time.')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            openRecipeFolder: async () => 'The user dismissed the folder picker without choosing one. '
+                + 'Do not ask again unless they bring it up — answer what you can without files.',
+        }));
+
+        expect(grpcClient.sendMessageCalls).to.equal(2);
+        expect(textsOf(parts)).to.deep.equal(['No worries, ask any time.']);
+    });
+
+    it('tells the model to wrap up on the last round and does not run tools past the cap', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [
+            () => toolUseStream('t1', 'step'),
+            () => toolUseStream('t2', 'step'),
+            () => toolUseStream('t3', 'step'),
+            () => toolUseStream('t4', 'step'),
+        ];
+        const model = tuned(createModel(grpcClient), { maxToolRounds: 3 });
+        let runs = 0;
+
+        const parts = await collectRequest(model, requestWithTools({ step: async () => { runs++; return 'ok'; } }));
+
+        expect(runs).to.equal(3);
+        expect(grpcClient.sendMessageCalls).to.equal(4);
+
+        const notRun = finishedCall(parts, 't4');
+        expect(notRun).to.not.be.undefined;
+        expect(notRun.finished).to.equal(true);
+        const notRunText = notRun.result.content.find((part: { type: string }) => part.type === 'error')?.data;
+        expect(notRunText).to.contain('Not run');
+
+        const lastHistory = grpcClient.sentMessages[3];
+        const note = lastHistory[lastHistory.length - 1].content.find(part => part.type === 'text');
+        expect(note?.text).to.contain('Tool-round limit reached');
+        expect(textsOf(parts).join('')).to.contain('step limit');
+
+        // The round-limit note is only added to the tool-result message sent
+        // with the final round, not to the earlier ones.
+        for (const n of [1, 2]) {
+            const history = grpcClient.sentMessages[n];
+            const lastMessage = history[history.length - 1];
+            expect(lastMessage.content.some(part => part.type === 'text')).to.equal(false);
+        }
+    });
+
+    it('turns a thrown handler into a tool_result instead of failing the turn', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'risky'), () => textStream('Handled that.')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            risky: async () => { throw new Error('boom'); },
+        }));
+
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('failed');
+        expect(toolResultSentIn(grpcClient, 1)).to.contain('boom');
+        expect(textsOf(parts)).to.deep.equal(['Handled that.']);
+    });
+
+    it('cancels a hanging tool instead of waiting out the timeout, and does not spend another round', async () => {
+        const grpcClient = new FakeGrpcClient();
+        // No second stream: cancellation must stop the loop before it recurses,
+        // so a second sendMessage call would fail with "Unexpected sendMessage call".
+        grpcClient.streams = [() => toolUseStream('t1', 'slowTool')];
+        const model = tuned(createModel(grpcClient), { toolTimeoutMs: 10_000 });
+        const tokenSource = new CancellationTokenSource();
+        setTimeout(() => tokenSource.cancel(), 10);
+
+        const request = requestWithTools({ slowTool: () => new Promise(() => { /* never */ }) });
+        request.cancellationToken = tokenSource.token;
+
+        const start = Date.now();
+        const parts = await collectRequest(model, request);
+        const elapsed = Date.now() - start;
+
+        // Cancellation must win the race, not the 10 s timeout.
+        expect(elapsed).to.be.lessThan(1000);
+        const cancelledCall = finishedCall(parts, 't1');
+        expect(cancelledCall).to.not.be.undefined;
+        const cancelledText = cancelledCall.result.content.find((part: { type: string }) => part.type === 'error')?.data;
+        expect(cancelledText).to.contain('cancelled');
+        // The user just tried to stop - don't spend another model call.
+        expect(grpcClient.sendMessageCalls).to.equal(1);
+    });
+
+    it('adds a closing line instead of failing when tools ran but no reply followed', async () => {
+        // The nested round used to throw emptyResponse ("start a new chat")
+        // even though the tools had already staged changes.
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'stage'), () => emptyStream()];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({ stage: async () => 'Proposed writing to file a.cook.' }));
+
+        expect(textsOf(parts).join('')).to.contain('stopped without a reply');
+    });
+
+    it('adds nothing when the model replied after its tools', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'stage'), () => textStream('Staged a.cook.')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({ stage: async () => 'ok' }));
+
+        expect(textsOf(parts)).to.deep.equal(['Staged a.cook.']);
     });
 });

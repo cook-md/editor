@@ -305,4 +305,39 @@ describe('FindFilesByPattern', () => {
         const batched = wire(new FindFilesByPattern(), TREE, true);
         expect((await callJson<{ error: string }>(batched.tool, { patterns: ['**/*'] })).error).to.match(/No workspace open/);
     });
+
+    /** A flat library of `count` recipes, plus one menu. */
+    function library(count: number): TreeSpec {
+        const tree: TreeSpec = { Plans: { 'Week.menu': 'Day 1' } };
+        for (let i = 0; i < count; i++) {
+            tree[`Recipe ${i}.cook`] = 'Add @salt';
+        }
+        return tree;
+    }
+
+    it('says so when more than 200 files match', async () => {
+        // The walk used to stop at exactly 200, so `truncated` could never be
+        // set and the model took 200 for the whole library.
+        const { tool } = wire(new FindFilesByPattern(), library(250));
+        const result = await callJson<{ files: string[]; truncated?: boolean; note?: string }>(tool, { pattern: '**/*.cook' });
+        expect(result.files).to.have.length(200);
+        expect(result.truncated).to.equal(true);
+        expect(result.note).to.match(/More than 200/);
+    });
+
+    it('does not flag exactly 200 matches', async () => {
+        const { tool } = wire(new FindFilesByPattern(), library(200));
+        const result = await callJson<{ files: string[]; truncated?: boolean }>(tool, { pattern: '**/*.cook' });
+        expect(result.files).to.have.length(200);
+        expect(result.truncated).to.be.undefined;
+    });
+
+    it('flags each pattern of a batch on its own', async () => {
+        const { tool } = wire(new FindFilesByPattern(), library(250));
+        const result = await callJson<{ patterns: Array<{ files: string[]; truncated?: boolean }> }>(
+            tool, { patterns: ['**/*.cook', '**/*.menu'] });
+        expect(result.patterns[0].truncated).to.equal(true);
+        expect(result.patterns[1].truncated).to.be.undefined;
+        expect(result.patterns[1].files).to.deep.equal(['Plans/Week.menu']);
+    });
 });
