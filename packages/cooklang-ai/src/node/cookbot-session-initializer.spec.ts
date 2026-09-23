@@ -311,6 +311,37 @@ describe('CookbotSessionInitializer COOK.md', () => {
         expect(grpcClient.initializeCalls).to.equal(2);
         expect(grpcClient.calls[1].instructions).to.equal('new');
     });
+
+    it('does not queue a duplicate re-init for each caller that arrives while one is already pending', async () => {
+        // Three callers racing in behind a held Initialize call, after COOK.md
+        // changed, used to each detect the change and queue their own
+        // re-init: calls ended up ["old", "new", "new", "new"].
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'old');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        let releaseFirst!: () => void;
+        grpcClient.nextInitializeBlocksOn = new Promise<void>(resolve => { releaseFirst = resolve; });
+        const first = initializer.ensureInitialized();
+
+        // The first call goes through real fs I/O before it reaches
+        // grpcClient.initialize(), so wait for it to actually be in flight
+        // (and blocked) before mutating COOK.md.
+        while (grpcClient.initializeCalls < 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'new');
+        const second = initializer.ensureInitialized();
+        const third = initializer.ensureInitialized();
+        const fourth = initializer.ensureInitialized();
+
+        releaseFirst();
+        await Promise.all([first, second, third, fourth]);
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+        expect(grpcClient.calls[1].instructions).to.equal('new');
+    });
 });
 
 describe('pickCookMdName', () => {

@@ -72,26 +72,39 @@ export class CookbotSessionInitializer {
         // so the new one can be chained after it (see below).
         let previous: Promise<void> | undefined;
         if (this.initPromise) {
+            // Snapshotted before the awaits below, which do real I/O: several
+            // callers can each be mid-check here concurrently, and only the
+            // first to actually observe a change should queue a re-init.
+            // Comparing identity against this snapshot after each await lets
+            // every later caller notice that one of the others already
+            // queued one (`this.initPromise` no longer `=== pendingInit`) and
+            // fall through to just await it, instead of also detecting the
+            // same change and queuing a redundant re-init behind it.
+            const pendingInit = this.initPromise;
             const currentDir = await this.resolveRecipesDir();
             if (currentDir !== this.initializedDir) {
-                console.info(
-                    `[Cookbot] Recipe folder changed (${this.initializedDir || 'none'} -> ${currentDir || 'none'}), re-initializing the session`
-                );
-                previous = this.initPromise;
-                this.initPromise = undefined;
+                if (this.initPromise === pendingInit) {
+                    console.info(
+                        `[Cookbot] Recipe folder changed (${this.initializedDir || 'none'} -> ${currentDir || 'none'}), re-initializing the session`
+                    );
+                    previous = this.initPromise;
+                    this.initPromise = undefined;
+                    this.initializedInstructions = undefined;
+                }
             } else if (this.initializedInstructions !== undefined) {
                 const cookMd = await this.readCookMd(currentDir);
                 // `undefined` means COOK.md could not be read for some reason
                 // other than it not existing (e.g. a permissions error) - keep
                 // the current session rather than treating "unreadable" as
                 // "removed".
-                if (cookMd !== undefined && cookMd !== this.initializedInstructions) {
+                if (this.initPromise === pendingInit && cookMd !== undefined && cookMd !== this.initializedInstructions) {
                     // COOK.md is only sent at Initialize, so a file added or
                     // edited mid-session (including one the onboarding skill
                     // just staged) was ignored until the editor restarted.
                     console.info('[Cookbot] COOK.md changed, re-initializing the session');
                     previous = this.initPromise;
                     this.initPromise = undefined;
+                    this.initializedInstructions = undefined;
                 }
             }
         }
