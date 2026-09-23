@@ -21,13 +21,14 @@ import { CookbotGrpcClient } from './cookbot-grpc-client';
 /**
  * Which directory entry is the user's COOK.md. An exact `COOK.md` wins; any
  * other casing (`cook.md`, `Cook.md`) is accepted, so the file is found on
- * case-sensitive filesystems too.
+ * case-sensitive filesystems too - picked deterministically (alphabetically
+ * among ties) rather than depending on directory listing order.
  */
 export function pickCookMdName(names: string[]): string | undefined {
     if (names.includes('COOK.md')) {
         return 'COOK.md';
     }
-    return names.find(name => name.toLowerCase() === 'cook.md');
+    return [...names].sort().find(name => name.toLowerCase() === 'cook.md');
 }
 
 /**
@@ -55,8 +56,8 @@ export class CookbotSessionInitializer {
 
     /**
      * The COOK.md text the current session was created with. `undefined`
-     * while the first initialization is still reading it, so a concurrent
-     * caller does not mistake "not read yet" for "changed".
+     * while an initialization is still reading it, so a concurrent caller
+     * does not mistake "not read yet" for "changed".
      */
     private initializedInstructions: string | undefined;
 
@@ -66,20 +67,32 @@ export class CookbotSessionInitializer {
         // files. Opening (or closing) a folder therefore invalidates it - and
         // that happens routinely, because the panel can be used before any
         // folder is open.
+        //
+        // `previous` is the in-flight init being replaced, if any - captured
+        // so the new one can be chained after it (see below).
+        let previous: Promise<void> | undefined;
         if (this.initPromise) {
             const currentDir = await this.resolveRecipesDir();
             if (currentDir !== this.initializedDir) {
                 console.info(
                     `[Cookbot] Recipe folder changed (${this.initializedDir || 'none'} -> ${currentDir || 'none'}), re-initializing the session`
                 );
+                previous = this.initPromise;
                 this.initPromise = undefined;
-            } else if (this.initializedInstructions !== undefined
-                && await this.readCookMd(currentDir) !== this.initializedInstructions) {
-                // COOK.md is only sent at Initialize, so a file added or edited
-                // mid-session (including one the onboarding skill just staged)
-                // was ignored until the editor restarted.
-                console.info('[Cookbot] COOK.md changed, re-initializing the session');
-                this.initPromise = undefined;
+            } else if (this.initializedInstructions !== undefined) {
+                const cookMd = await this.readCookMd(currentDir);
+                // `undefined` means COOK.md could not be read for some reason
+                // other than it not existing (e.g. a permissions error) - keep
+                // the current session rather than treating "unreadable" as
+                // "removed".
+                if (cookMd !== undefined && cookMd !== this.initializedInstructions) {
+                    // COOK.md is only sent at Initialize, so a file added or
+                    // edited mid-session (including one the onboarding skill
+                    // just staged) was ignored until the editor restarted.
+                    console.info('[Cookbot] COOK.md changed, re-initializing the session');
+                    previous = this.initPromise;
+                    this.initPromise = undefined;
+                }
             }
         }
 
@@ -91,12 +104,19 @@ export class CookbotSessionInitializer {
             // replaced it by the time this stale promise settles, and
             // clobbering that newer promise would let a third caller start a
             // redundant, concurrent initialization.
-            const promise: Promise<void> = this.doInitialize().catch(error => {
-                if (this.initPromise === promise) {
-                    this.initPromise = undefined;
-                }
-                throw error;
-            });
+            //
+            // Chained after `previous` (when this is replacing an in-flight
+            // init) rather than fired in parallel with it: the server keeps
+            // whichever Initialize response arrives last, so a slow, stale
+            // call finishing after this one would silently win and leave the
+            // session on the old COOK.md.
+            const promise: Promise<void> = (previous ? previous.catch(() => undefined).then(() => this.doInitialize()) : this.doInitialize())
+                .catch(error => {
+                    if (this.initPromise === promise) {
+                        this.initPromise = undefined;
+                    }
+                    throw error;
+                });
             this.initPromise = promise;
         }
         await this.initPromise;
@@ -135,22 +155,51 @@ export class CookbotSessionInitializer {
         // rather than comparing against a stale value. Set before the COOK.md
         // read so concurrent callers see the folder as unchanged.
         this.initializedDir = recipesDir;
-        const customInstructions = await this.readCookMd(recipesDir);
+        // An unreadable COOK.md (rather than a missing one) has no "previous"
+        // value to fall back to here, so it is treated the same as absent.
+        const customInstructions = await this.readCookMd(recipesDir) ?? '';
         this.initializedInstructions = customInstructions;
         await this.grpcClient.initialize(recipesDir, customInstructions);
     }
 
-    /** The COOK.md at the folder root, in any casing, or `''` when there is none. */
-    private async readCookMd(recipesDir: string): Promise<string> {
+    /**
+     * The COOK.md at the folder root, in any casing.
+     *
+     * Returns `''` when there is no folder or no matching entry - both mean
+     * "no instructions". Returns `undefined` only when a matching entry
+     * exists but could not be read for some other reason (e.g. a permissions
+     * error), so callers can tell "empty" apart from "could not check".
+     *
+     * A read landing mid-save (a truncate-then-write) can briefly observe an
+     * empty file; that is indistinguishable from a genuinely empty COOK.md
+     * here and corrects itself on the next request once the write completes.
+     */
+    private async readCookMd(recipesDir: string): Promise<string | undefined> {
         if (!recipesDir) {
             return '';
         }
+        let name: string | undefined;
         try {
-            const name = pickCookMdName(await fs.promises.readdir(recipesDir));
-            return name ? await fs.promises.readFile(path.join(recipesDir, name), 'utf-8') : '';
-        } catch {
-            // Folder unreadable or COOK.md vanished between listing and reading.
+            name = pickCookMdName(await fs.promises.readdir(recipesDir));
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return '';
+            }
+            console.warn(`[Cookbot] Could not list ${recipesDir} to look for COOK.md`, error);
+            return undefined;
+        }
+        if (!name) {
             return '';
+        }
+        try {
+            return await fs.promises.readFile(path.join(recipesDir, name), 'utf-8');
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                // Vanished between listing and reading.
+                return '';
+            }
+            console.warn(`[Cookbot] Could not read ${name} in ${recipesDir}`, error);
+            return undefined;
         }
     }
 }

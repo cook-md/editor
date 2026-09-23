@@ -250,6 +250,67 @@ describe('CookbotSessionInitializer COOK.md', () => {
 
         expect(grpcClient.calls[0].instructions).to.equal('No dairy.');
     });
+
+    it('initializes only once when two concurrent callers race with a real COOK.md on disk', async () => {
+        // The race that made "initializes only once" fail while the folder
+        // resolution and COOK.md read went through real fs I/O.
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'We are 2 people.');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await Promise.all([initializer.ensureInitialized(), initializer.ensureInitialized()]);
+
+        expect(grpcClient.initializeCalls).to.equal(1);
+    });
+
+    it('re-initializes with empty instructions when COOK.md is removed', async () => {
+        const cookMdPath = path.join(dir, 'COOK.md');
+        fs.writeFileSync(cookMdPath, 'We are 2 people.');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        fs.unlinkSync(cookMdPath);
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+        expect(grpcClient.calls[1].instructions).to.equal('');
+    });
+
+    it('serializes a re-init behind a stale in-flight one, so the newer COOK.md wins', async () => {
+        // The server keeps whichever Initialize response arrives last. Without
+        // serialization, a slow first call could finish after this one and
+        // silently leave the session on the old COOK.md.
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'old');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        let releaseFirst!: () => void;
+        grpcClient.nextInitializeBlocksOn = new Promise<void>(resolve => { releaseFirst = resolve; });
+        const first = initializer.ensureInitialized();
+
+        // The first call goes through real fs I/O before it reaches
+        // grpcClient.initialize(), so wait for it to actually be in flight
+        // (and blocked) before mutating COOK.md.
+        while (grpcClient.initializeCalls < 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'new');
+        const second = initializer.ensureInitialized();
+
+        // Give the re-init a chance to jump ahead if it were going to - it
+        // must not call grpc initialize a second time until the first settles.
+        await new Promise(resolve => setImmediate(resolve));
+        expect(grpcClient.initializeCalls).to.equal(1);
+
+        releaseFirst();
+        await first;
+        await second;
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+        expect(grpcClient.calls[1].instructions).to.equal('new');
+    });
 });
 
 describe('pickCookMdName', () => {
