@@ -40,6 +40,11 @@ interface BatchFileEntry {
 /** Maximum files reported per glob. */
 const MAX_FIND_RESULTS = 200;
 
+/** Told to the model when a glob matched more than MAX_FIND_RESULTS files. */
+const TRUNCATION_NOTE =
+    `More than ${MAX_FIND_RESULTS} files match; only the first ${MAX_FIND_RESULTS} are listed. ` +
+    'Narrow the pattern (e.g. a sub-folder) or use searchRecipes with fields/where for library-wide questions.';
+
 /** One glob and the files it has matched so far during a workspace walk. */
 interface PatternBucket {
     pattern: string;
@@ -563,7 +568,8 @@ export class FindFilesByPattern implements ToolProvider {
                 'Find files in the workspace that match a given glob pattern. ' +
                 'This function allows efficient discovery of files using patterns like \'**/*.ts\' for all TypeScript files or ' +
                 '\'src/**/*.js\' for JavaScript files in the src directory. The function respects gitignore patterns and user exclusions, ' +
-                'returns relative paths from the workspace root, and limits results to 200 files maximum. ' +
+                'returns relative paths from the workspace root, and lists at most 200 files per pattern — when more match, ' +
+                'the result carries truncated: true and a note, so never treat a 200-file list as the whole library. ' +
                 'Performance note: This traverses directories recursively which may be slow in large workspaces. ' +
                 'For better performance, use specific subdirectory patterns (e.g., \'src/**/*.ts\' instead of \'**/*.ts\'). ' +
                 'Use this to find files by name/extension.',
@@ -585,7 +591,7 @@ export class FindFilesByPattern implements ToolProvider {
                             `Match several globs in one call (max ${MAX_BATCH_ITEMS}), e.g. ['**/*.cook', '**/*.menu']. ` +
                             'Much cheaper than one call per pattern: the workspace is walked ONCE and every pattern is tested ' +
                             'against each file, rather than a fresh recursive traversal per glob. Returns ' +
-                            '{ patterns: [{ pattern, files, totalFound?, truncated? }] } in the order given. ' +
+                            '{ patterns: [{ pattern, files, truncated?, note? }] } in the order given. ' +
                             'Mutually exclusive with `pattern`; `exclude` applies to every pattern.',
                     },
                     exclude: {
@@ -645,7 +651,7 @@ export class FindFilesByPattern implements ToolProvider {
             }
             const excludeMatchers = allExcludes.map(ep => new Minimatch(ep, { dot: true }));
             const buckets = [this.bucketFor(pattern)];
-            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS, cancellationToken);
+            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS + 1, cancellationToken);
             if (cancellationToken?.isCancellationRequested) {
                 return JSON.stringify({ error: 'Operation cancelled by user' });
             }
@@ -690,7 +696,7 @@ export class FindFilesByPattern implements ToolProvider {
             const allExcludes = [...ignorePatterns, ...(excludePatterns ?? [])];
             const excludeMatchers = allExcludes.map(ep => new Minimatch(ep, { dot: true }));
             const buckets = globs.map(glob => this.bucketFor(glob));
-            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS, cancellationToken);
+            await this.traverseDirectory(workspaceRoot, workspaceRoot, buckets, excludeMatchers, MAX_FIND_RESULTS + 1, cancellationToken);
             if (cancellationToken?.isCancellationRequested) {
                 return JSON.stringify({ error: 'Operation cancelled by user' });
             }
@@ -706,9 +712,11 @@ export class FindFilesByPattern implements ToolProvider {
 
     protected summarise(bucket: PatternBucket): Record<string, unknown> {
         const result: Record<string, unknown> = { files: bucket.results.slice(0, MAX_FIND_RESULTS) };
+        // The walk fills each bucket to MAX_FIND_RESULTS + 1, so a result past
+        // the cap means "more than", not an exact count (that needs a full walk).
         if (bucket.results.length > MAX_FIND_RESULTS) {
-            result.totalFound = bucket.results.length;
             result.truncated = true;
+            result.note = TRUNCATION_NOTE;
         }
         return result;
     }
