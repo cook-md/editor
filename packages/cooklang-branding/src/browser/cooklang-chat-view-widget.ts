@@ -23,6 +23,7 @@ import { DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Message } from '@theia/core/lib/browser';
 import { ChatModel, ChatResponseModel, isActiveSessionChangedEvent } from '@theia/ai-chat/lib/common';
 import { CookbotUsageService, CookbotUsageStats } from '@theia/cooklang-ai/lib/common';
+import { takePendingPrompt } from '@theia/cooklang-ai/lib/browser/pending-prompt';
 import { AccountCommands } from '@theia/cooklang-account/lib/browser/account-contribution';
 import { computeExchangeCost, computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
 
@@ -62,6 +63,13 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     @postConstruct()
     protected override init(): void {
         super.init();
+
+        // A question asked before a recipe folder was open survives the
+        // reload that opening one causes. Prefill only; never auto-send.
+        const pendingPrompt = typeof window !== 'undefined' ? takePendingPrompt(window.localStorage) : undefined;
+        if (pendingPrompt) {
+            this.inputWidget.initialValue = pendingPrompt;
+        }
 
         this.gateOverlay = document.createElement('div');
         this.gateOverlay.className = 'ai-chat-gate-overlay';
