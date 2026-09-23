@@ -698,9 +698,11 @@ describe('CookbotLanguageModel tool loop guarantees', () => {
         expect(textsOf(parts)).to.deep.equal(['Handled that.']);
     });
 
-    it('cancels a hanging tool instead of waiting out the timeout', async () => {
+    it('cancels a hanging tool instead of waiting out the timeout, and does not spend another round', async () => {
         const grpcClient = new FakeGrpcClient();
-        grpcClient.streams = [() => toolUseStream('t1', 'slowTool'), () => textStream('Cancelled that.')];
+        // No second stream: cancellation must stop the loop before it recurses,
+        // so a second sendMessage call would fail with "Unexpected sendMessage call".
+        grpcClient.streams = [() => toolUseStream('t1', 'slowTool')];
         const model = tuned(createModel(grpcClient), { toolTimeoutMs: 10_000 });
         const tokenSource = new CancellationTokenSource();
         setTimeout(() => tokenSource.cancel(), 10);
@@ -714,8 +716,12 @@ describe('CookbotLanguageModel tool loop guarantees', () => {
 
         // Cancellation must win the race, not the 10 s timeout.
         expect(elapsed).to.be.lessThan(1000);
-        expect(toolResultSentIn(grpcClient, 1)).to.contain('cancelled');
-        expect(parts).to.not.be.undefined;
+        const cancelledCall = finishedCall(parts, 't1');
+        expect(cancelledCall).to.not.be.undefined;
+        const cancelledText = cancelledCall.result.content.find((part: { type: string }) => part.type === 'error')?.data;
+        expect(cancelledText).to.contain('cancelled');
+        // The user just tried to stop - don't spend another model call.
+        expect(grpcClient.sendMessageCalls).to.equal(1);
     });
 
     it('adds a closing line instead of failing when tools ran but no reply followed', async () => {

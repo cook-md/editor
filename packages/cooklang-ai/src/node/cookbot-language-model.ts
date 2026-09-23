@@ -280,6 +280,13 @@ export class CookbotLanguageModel implements LanguageModel {
                         content: assistantContent,
                     };
 
+                    // The user pressed stop while a tool was running (or right
+                    // after). Its result is already yielded above; don't spend
+                    // another model call the user just tried to cancel.
+                    if (token?.isCancellationRequested) {
+                        return;
+                    }
+
                     // Recurse with accumulated messages
                     const result = await that.handleStreamingRequest(
                         request,
