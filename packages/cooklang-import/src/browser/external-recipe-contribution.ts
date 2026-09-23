@@ -65,15 +65,22 @@ export class ExternalRecipeContribution implements FrontendApplicationContributi
         if (this.offered.has(key)) {
             return;
         }
+        // Marked before the await: two `onCreated` events for one file would otherwise
+        // both get past the check above. A file inside the collection stays marked.
+        this.offered.add(key);
         const roots = await this.workspaceService.roots;
-        if (roots.length === 0 || roots.some(root => root.resource.isEqualOrParent(uri))) {
+        if (roots.length === 0) {
+            // Nothing to compare against yet; offer again once a folder is open.
+            this.offered.delete(key);
             return;
         }
-        this.offered.add(key);
+        if (roots.some(root => root.resource.isEqualOrParent(uri))) {
+            return;
+        }
 
         const saveAction = nls.localize('theia/cooklang-import/saveToDrafts', 'Save to Drafts');
         const answer = await this.messageService.info(
-            nls.localize('theia/cooklang-import/externalRecipe', '{0} is not in your collection.', uri.path.base),
+            nls.localize('theia/cooklang-import/externalRecipe', '{0} is not in your collection.', this.escapeMarkdown(uri.path.base)),
             saveAction
         );
         if (answer !== saveAction) {
@@ -81,5 +88,16 @@ export class ExternalRecipeContribution implements FrontendApplicationContributi
         }
         const content = await this.fileService.read(uri);
         await this.draftSaver.saveRaw(content.value, uri.path.name);
+    }
+
+    /**
+     * Notifications render their text as inline markdown, and a `command:` link in it
+     * runs that command when clicked. A file name must therefore stay literal text:
+     * every markdown-significant character is backslash-escaped. `<` covers autolinks;
+     * `:` is escaped too, although linkify is off in the notification renderer.
+     * (`escapeMarkdownSyntaxTokens` from core misses `<`, `>`, `~`, `|` and `&`.)
+     */
+    protected escapeMarkdown(text: string): string {
+        return text.replace(/[\\`*_{}[\]()#+\-.!|<>~:&]/g, '\\$&');
     }
 }

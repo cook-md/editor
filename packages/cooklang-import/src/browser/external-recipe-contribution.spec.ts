@@ -26,12 +26,19 @@ try {
 }
 
 import { expect } from 'chai';
+import * as markdownit from '@theia/core/shared/markdown-it';
 import URI from '@theia/core/lib/common/uri';
 import { ExternalRecipeContribution } from './external-recipe-contribution';
 import { DraftSaver } from './draft-saver';
 
 const ROOT = new URI('file:///Users/alex/Recipes');
 const SAVE = 'Save to Drafts';
+
+/** Mirrors `NotificationContentRenderer.renderMessage` in `@theia/messages`. */
+const notificationMarkdown = markdownit({ html: false });
+function renderNotification(message: string): string {
+    return notificationMarkdown.renderInline(message.replace(/((\r)?\n)+/gm, ' '));
+}
 
 interface ContributionFixture {
     contribution: ExternalRecipeContribution;
@@ -74,7 +81,34 @@ describe('ExternalRecipeContribution', () => {
     it('offers to save a .cook file opened from outside the collection', async () => {
         const fixture = contributionWith(undefined);
         await fixture.offer(new URI('file:///Users/alex/Downloads/Pancakes.cook'));
-        expect(fixture.prompts).to.deep.equal(['Pancakes.cook is not in your collection.']);
+        expect(fixture.prompts.map(renderNotification)).to.deep.equal(['Pancakes.cook is not in your collection.']);
+    });
+
+    it('never renders a link from the file name', async () => {
+        const fixture = contributionWith(undefined);
+        const uri = new URI('file:///Users/alex/Downloads/').resolve('[Save](command:x?%5B%5D).cook');
+        await fixture.offer(uri);
+        await fixture.offer(new URI('file:///Users/alex/Downloads/').resolve('<command:x>.cook'));
+        expect(fixture.prompts).to.have.length(2);
+        // Guard the guard: unescaped, the name really would render a link.
+        expect(renderNotification(uri.path.base)).to.contain('<a');
+        for (const prompt of fixture.prompts) {
+            expect(renderNotification(prompt), prompt).not.to.contain('<a');
+        }
+        expect(renderNotification(fixture.prompts[0])).to.equal('[Save](command:x?%5B%5D).cook is not in your collection.');
+    });
+
+    it('keeps an ordinary name readable', async () => {
+        const fixture = contributionWith(undefined);
+        await fixture.offer(new URI('file:///Users/alex/Downloads/').resolve('Sides & Drinks.cook'));
+        expect(fixture.prompts.map(renderNotification)).to.deep.equal(['Sides &amp; Drinks.cook is not in your collection.']);
+    });
+
+    it('asks once when the same file is reported twice at the same time', async () => {
+        const fixture = contributionWith(undefined);
+        const uri = new URI('file:///Users/alex/Downloads/Pancakes.cook');
+        await Promise.all([fixture.offer(uri), fixture.offer(new URI(uri.toString()))]);
+        expect(fixture.prompts).to.have.length(1);
     });
 
     it('offers for an upper-case .COOK file outside the collection', async () => {
@@ -103,11 +137,15 @@ describe('ExternalRecipeContribution', () => {
         expect(fixture.prompts).to.be.empty;
     });
 
-    it('does not offer when no folder is open', async () => {
+    it('does not offer when no folder is open, but does once one is', async () => {
         const fixture = contributionWith(SAVE, []);
-        await fixture.offer(new URI('file:///Users/alex/Downloads/Pancakes.cook'));
+        const uri = new URI('file:///Users/alex/Downloads/Pancakes.cook');
+        await fixture.offer(uri);
         expect(fixture.prompts).to.be.empty;
         expect(fixture.saved).to.be.empty;
+        Object.assign(fixture.contribution, { workspaceService: { roots: Promise.resolve([{ resource: ROOT }]) } });
+        await fixture.offer(uri);
+        expect(fixture.prompts).to.have.length(1);
     });
 
     it('offers only once per file', async () => {
@@ -116,7 +154,7 @@ describe('ExternalRecipeContribution', () => {
         await fixture.offer(uri);
         await fixture.offer(uri);
         await fixture.offer(new URI('file:///Users/alex/Downloads/Waffles.cook'));
-        expect(fixture.prompts).to.deep.equal([
+        expect(fixture.prompts.map(renderNotification)).to.deep.equal([
             'Pancakes.cook is not in your collection.',
             'Waffles.cook is not in your collection.'
         ]);
