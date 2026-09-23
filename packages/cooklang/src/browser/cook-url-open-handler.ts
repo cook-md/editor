@@ -17,6 +17,8 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { FileStat } from '@theia/filesystem/lib/common/files';
+import { FileNavigatorContribution } from '@theia/navigator/lib/browser/navigator-contribution';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { CookLink, parseCookLink } from '../common/cook-link';
 
@@ -50,6 +52,9 @@ export class CookUrlOpenHandler implements OpenHandler {
 
     @inject(MessageService)
     protected readonly messageService: MessageService;
+
+    @inject(FileNavigatorContribution)
+    protected readonly navigator: FileNavigatorContribution;
 
     canHandle(uri: URI): number {
         return COOK_URL_SCHEMES.has(uri.scheme.toLowerCase()) ? CookUrlOpenHandler.PRIORITY : 0;
@@ -107,10 +112,6 @@ export class CookUrlOpenHandler implements OpenHandler {
     }
 
     protected async openRecipe(path: string): Promise<void> {
-        if (!path) {
-            // `cook://my` alone names the collection root: nothing to open.
-            return;
-        }
         // A backslash is a separator on Windows, so `a\..\..\secret` would walk out of
         // the root there even though the parser saw no `..` segment.
         if (path.includes('\\')) {
@@ -125,18 +126,30 @@ export class CookUrlOpenHandler implements OpenHandler {
             return;
         }
         const root = roots[0].resource;
+        if (!path) {
+            // `cook://my` alone names the collection root.
+            await this.revealFolder(root);
+            return;
+        }
         const target = this.resolveUnder(root, path);
         if (!target) {
             await this.showInvalid();
             return;
         }
-        if (await this.fileService.exists(target)) {
+        // Folder links are real (`cook://my/Sides%20%26%20Drinks`). No opener takes a
+        // directory, and the rejection would be swallowed upstream: reveal it instead.
+        const stat = await this.statOf(target);
+        if (stat?.isDirectory) {
+            await this.revealFolder(target);
+            return;
+        }
+        if (stat) {
             await open(this.openerService, target);
             return;
         }
         if (!target.path.ext) {
             const withExtension = this.resolveUnder(root, `${path}.cook`);
-            if (withExtension && await this.fileService.exists(withExtension)) {
+            if (withExtension && (await this.statOf(withExtension))?.isFile) {
                 await open(this.openerService, withExtension);
                 return;
             }
@@ -144,6 +157,23 @@ export class CookUrlOpenHandler implements OpenHandler {
         await this.messageService.info(
             nls.localize('theia/cooklang/cookUrl/notHere', '{0} is not in this folder yet.', target.path.base)
         );
+    }
+
+    /**
+     * Selects the folder in the file navigator and brings the navigator forward.
+     * `openView` rather than `toggleView`: toggling collapses an already-active view.
+     */
+    protected async revealFolder(folder: URI): Promise<void> {
+        await this.navigator.selectFileNode(folder);
+        await this.navigator.openView({ activate: true, reveal: true });
+    }
+
+    protected async statOf(uri: URI): Promise<FileStat | undefined> {
+        try {
+            return await this.fileService.resolve(uri);
+        } catch {
+            return undefined;
+        }
     }
 
     /**

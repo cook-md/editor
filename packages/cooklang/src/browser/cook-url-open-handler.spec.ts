@@ -41,22 +41,47 @@ interface HandlerFixture {
     handler: CookUrlOpenHandler;
     opened: string[];
     messages: string[];
+    /** Folders selected in the navigator, and whether the navigator was then brought forward. */
+    revealed: string[];
+    navigatorShown: number;
 }
 
-function handlerWith(files: string[], roots: URI[] = [ROOT]): HandlerFixture {
+function handlerWith(files: string[], roots: URI[] = [ROOT], folders: string[] = []): HandlerFixture {
     const opened: string[] = [];
     const messages: string[] = [];
+    const revealed: string[] = [];
+    const fixture = { navigatorShown: 0 };
 
     const handler = new CookUrlOpenHandler();
     Object.assign(handler, {
         workspaceService: { roots: Promise.resolve(roots.map(resource => ({ resource }))) },
-        fileService: { exists: async (uri: URI) => files.includes(uri.toString()) },
+        fileService: {
+            resolve: async (uri: URI) => {
+                const key = uri.toString();
+                const isDirectory = folders.includes(key) || roots.some(root => root.toString() === key);
+                if (!isDirectory && !files.includes(key)) {
+                    throw new Error(`not found: ${key}`);
+                }
+                return { resource: uri, isDirectory, isFile: !isDirectory };
+            }
+        },
+        navigator: {
+            selectFileNode: async (uri: URI) => { revealed.push(uri.toString()); return true; },
+            openView: async (options: { activate?: boolean }) => {
+                expect(options.activate).to.equal(true);
+                fixture.navigatorShown++;
+                return undefined;
+            }
+        },
         openerService: {
             getOpener: async () => ({ open: async (target: URI) => { opened.push(target.toString()); return undefined; } })
         },
         messageService: { info: (text: string) => { messages.push(text); return Promise.resolve(undefined); } }
     });
-    return { handler, opened, messages };
+    return {
+        handler, opened, messages, revealed,
+        get navigatorShown(): number { return fixture.navigatorShown; }
+    };
 }
 
 /** Exactly what `ElectronUriHandlerContribution` does with the raw OS string. */
@@ -137,11 +162,39 @@ describe('CookUrlOpenHandler', () => {
         expect(messages).to.have.length(1);
     });
 
-    it('does nothing for the bare collection root', async () => {
-        const { handler, opened, messages } = handlerWith([]);
-        await follow(handler, 'cook://my');
-        expect(opened).to.be.empty;
-        expect(messages).to.be.empty;
+    it('reveals the workspace root for the bare collection link', async () => {
+        const fixture = handlerWith([]);
+        await follow(fixture.handler, 'cook://my');
+        expect(fixture.opened).to.be.empty;
+        expect(fixture.messages).to.be.empty;
+        expect(fixture.revealed).to.deep.equal([ROOT.toString()]);
+        expect(fixture.navigatorShown).to.equal(1);
+    });
+
+    it('reveals a folder link in the navigator instead of opening it', async () => {
+        const folder = underRoot('Sides & Drinks');
+        const fixture = handlerWith([], [ROOT], [folder]);
+        await follow(fixture.handler, 'cook://my/Sides%20%26%20Drinks');
+        expect(fixture.opened).to.be.empty;
+        expect(fixture.messages).to.be.empty;
+        expect(fixture.revealed).to.deep.equal([folder]);
+        expect(fixture.navigatorShown).to.equal(1);
+    });
+
+    it('prefers a same-named folder over appending .cook', async () => {
+        const folder = underRoot('Pancakes');
+        const fixture = handlerWith([underRoot('Pancakes.cook')], [ROOT], [folder]);
+        await follow(fixture.handler, 'cook://my/Pancakes');
+        expect(fixture.opened).to.be.empty;
+        expect(fixture.revealed).to.deep.equal([folder]);
+    });
+
+    it('does not reveal anything when opening a recipe', async () => {
+        const target = underRoot('Breakfast/Pancakes.cook');
+        const fixture = handlerWith([target], [ROOT], [underRoot('Breakfast')]);
+        await follow(fixture.handler, 'cook://my/Breakfast/Pancakes.cook');
+        expect(fixture.opened).to.deep.equal([target]);
+        expect(fixture.revealed).to.be.empty;
     });
 
     it('refuses to walk out of the workspace root', async () => {
