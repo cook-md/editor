@@ -555,7 +555,8 @@ export const MetadataPills = ({ meta }: MetadataPillsProps): React.ReactElement 
 
 export interface RecipeViewProps {
     recipe: Recipe;
-    fileName: string;
+    /** The recipe's display name: its `title:` metadata, or the file name without extension. */
+    title: string;
     images?: ResolvedRecipeImages;
     scale: number;
     onScaleChange: (scale: number) => void;
@@ -566,7 +567,7 @@ export interface RecipeViewProps {
 
 export const RecipeView = ({
     recipe,
-    fileName,
+    title,
     images,
     scale,
     onScaleChange,
@@ -575,11 +576,6 @@ export const RecipeView = ({
     onNavigateToRecipe,
 }: RecipeViewProps): React.ReactElement => {
     const meta = recipe.metadata.map;
-
-    // Derive title from metadata or strip the .cook extension from the filename.
-    const title = meta['name']
-        ? String(meta['name'])
-        : fileName.replace(/\.cook$/i, '');
 
     // Tags can be a single string or an array; try both 'tags' and 'tag'.
     const rawTags = meta['tags'] ?? meta['tag'];

@@ -111,7 +111,7 @@ describe('RecipeView link wiring', () => {
         const markup = renderToStaticMarkup(
             React.createElement(RecipeView, {
                 recipe: recipeWith({ description: 'Adapted from https://cook.md/original' }),
-                fileName: 'Soup.cook',
+                title: 'Soup',
                 scale: 1,
                 onScaleChange: () => undefined,
             })

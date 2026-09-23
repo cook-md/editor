@@ -23,7 +23,7 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
-import { Recipe } from '../common/recipe-types';
+import { ParseResult, Recipe } from '../common/recipe-types';
 import {
     RecipeImages,
     ResolvedRecipeImages,
@@ -88,6 +88,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
+    /** The `title` the native parser resolved from the recipe's metadata, if any. */
+    protected recipeTitle: string | undefined;
     protected scale = 1;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -141,7 +143,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     setUri(uri: URI): void {
         this.uri = uri;
         this.id = createRecipePreviewWidgetId(uri);
-        this.title.label = `Preview: ${uri.path.base}`;
+        this.recipeTitle = undefined;
+        this.updateTitleLabel();
         this.title.caption = `Recipe preview for ${uri.toString()}`;
         this.title.closable = true;
         this.title.iconClass = 'codicon codicon-open-preview';
@@ -225,8 +228,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 return;
             }
             try {
-                const result = JSON.parse(json);
+                const result: ParseResult = JSON.parse(json);
                 this.recipe = result.recipe ?? undefined;
+                this.recipeTitle = result.title ?? undefined;
                 this.parseErrors = [
                     ...((result.errors ?? []) as Array<{ message: string }>).map(e => e.message),
                     ...((result.warnings ?? []) as Array<{ message: string }>).map(w => w.message),
@@ -235,6 +239,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 this.recipe = undefined;
                 this.parseErrors = [`Failed to parse response: ${e}`];
             }
+            this.updateTitleLabel();
             this.refreshImages();
             this.update();
         }).catch(e => {
@@ -401,13 +406,16 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.windowService.openNewWindow(url, { external: true });
     };
 
-    /** The recipe's display name, used to label timers in the Timers panel. */
+    /**
+     * The recipe's display name — its `title:` metadata, or the file name
+     * without extension — used for the heading, the tab and timer labels.
+     */
     protected recipeName(): string {
-        const name = this.recipe?.metadata.map['name'];
-        if (name !== undefined && name !== '') {
-            return String(name);
-        }
-        return (this.uri?.path.base ?? '').replace(/\.cook$/i, '');
+        return this.recipeTitle ?? this.uri?.path.name ?? '';
+    }
+
+    protected updateTitleLabel(): void {
+        this.title.label = `Preview: ${this.recipeName()}`;
     }
 
     // A property initializer, not a method: its arrow functions close over
@@ -438,7 +446,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                     <LinkOpenerProvider value={this.handleOpenLink}>
                         <RecipeView
                             recipe={this.recipe}
-                            fileName={this.uri?.path.base ?? ''}
+                            title={this.recipeName()}
                             images={this.images}
                             scale={this.scale}
                             onScaleChange={this.handleScaleChange}
