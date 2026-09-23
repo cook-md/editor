@@ -21,6 +21,7 @@ import {
     LanguageModelMessage,
     ToolCallResult,
     ToolInvocationContext,
+    ToolRequest,
     createToolCallError,
     isToolCallContent,
     isTextResponsePart,
@@ -46,6 +47,22 @@ interface ToolCallback {
     args: string;
 }
 
+/** Sent with the last tool round a single user message may use. */
+const ROUND_LIMIT_NOTE =
+    'Tool-round limit reached for this request. Do not call more tools. Reply to the user now: '
+    + 'what is done, what is staged for review, and what is left for them to ask next.';
+
+/** Shown when the model still asks for tools after the round limit. */
+const STEP_LIMIT_TEXT =
+    'CookBot hit its step limit for one message. Anything it proposed is in the Changes panel — ask it to continue.';
+
+/** Shown when tools ran but the model ended the turn without a reply. */
+const NO_REPLY_TEXT =
+    '_CookBot stopped without a reply. Anything it proposed is in the Changes panel._';
+
+/** Tools that wait on the user (a native dialog) and must never be timed out. */
+const UNTIMED_TOOLS = new Set(['openRecipeFolder']);
+
 @injectable()
 export class CookbotLanguageModel implements LanguageModel {
 
@@ -68,6 +85,15 @@ export class CookbotLanguageModel implements LanguageModel {
     // must keep working when it is absent.
     @inject(ErrorReporter) @optional()
     protected readonly errorReporter?: ErrorReporter;
+
+    /** A tool that has not answered by then is reported to the model as timed out. */
+    protected toolTimeoutMs = 120_000;
+
+    /**
+     * Tool rounds one user message may use. The worst prompt in the 09-18
+     * export used 16, before the bulk metadata tools existed.
+     */
+    protected maxToolRounds = 30;
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
         await this.sessionInitializer.ensureInitialized();
@@ -93,6 +119,11 @@ export class CookbotLanguageModel implements LanguageModel {
         }
         const token = cancellationToken ?? request.cancellationToken;
 
+        // Each tool round appends one assistant message and one tool-result
+        // message, so the history tail length counts the rounds already run.
+        const round = (toolMessages?.length ?? 0) / 2;
+        const isTopLevel = toolMessages === undefined;
+
         const that = this;
         const asyncIterator = {
             async *[Symbol.asyncIterator](): AsyncIterableIterator<LanguageModelStreamResponsePart> {
@@ -103,6 +134,19 @@ export class CookbotLanguageModel implements LanguageModel {
                 let currentMessages: CookbotMessageParam[];
                 let currentInputTokens = 0;
                 let currentOutputTokens = 0;
+
+                // Whether the turn ran tools and whether any text followed the
+                // last of them — nested rounds are re-yielded through here.
+                let toolsRan = false;
+                let textAfterTools = false;
+                const track = (part: LanguageModelStreamResponsePart): void => {
+                    if (isToolCallResponsePart(part) && part.tool_calls.some(tc => tc.finished)) {
+                        toolsRan = true;
+                        textAfterTools = false;
+                    } else if (isTextResponsePart(part) && part.content.length > 0) {
+                        textAfterTools = true;
+                    }
+                };
 
                 // Two failures are recoverable without bothering the user, as long as
                 // nothing has been streamed to the UI yet:
@@ -126,6 +170,7 @@ export class CookbotLanguageModel implements LanguageModel {
                             for (const part of parts.yields) {
                                 partsYielded = true;
                                 contentProduced = contentProduced || CookbotLanguageModel.isVisibleContent(part);
+                                track(part);
                                 yield part;
                             }
                             toolCall = parts.toolCall;
@@ -165,11 +210,27 @@ export class CookbotLanguageModel implements LanguageModel {
 
                 // Tool loop: execute tools and recurse
                 if (toolCalls.length > 0) {
+                    if (round >= that.maxToolRounds) {
+                        // Close the tool calls the UI already shows as pending,
+                        // then stop: the model was told to wrap up and did not.
+                        const notRun = {
+                            tool_calls: toolCalls.map(tc => ({
+                                finished: true as const,
+                                id: tc.id,
+                                result: 'Not run: step limit reached.',
+                                function: { name: tc.name, arguments: tc.args || '{}' },
+                            })),
+                        };
+                        yield notRun;
+                        yield { content: STEP_LIMIT_TEXT };
+                        return;
+                    }
+
                     const toolResults = await Promise.all(toolCalls.map(async tc => {
                         const tool = request.tools?.find(t => t.name === tc.name);
                         const argsObject = tc.args.length === 0 ? '{}' : tc.args;
                         const handlerResult: ToolCallResult = tool
-                            ? await tool.handler(argsObject, ToolInvocationContext.create(tc.id))
+                            ? await that.runTool(tool, argsObject, tc.id)
                             : createToolCallError(`Tool '${tc.name}' not found in the available tools for this request.`, 'tool-not-available');
                         return { name: tc.name, result: handlerResult, id: tc.id, arguments: argsObject };
                     }));
@@ -181,7 +242,9 @@ export class CookbotLanguageModel implements LanguageModel {
                         result: tr.result,
                         function: { name: tr.name, arguments: tr.arguments },
                     }));
-                    yield { tool_calls: calls };
+                    const finishedCalls = { tool_calls: calls };
+                    track(finishedCalls);
+                    yield finishedCalls;
 
                     // Build tool result message for next turn
                     const toolResponseMessage: CookbotMessageParam = {
@@ -193,6 +256,9 @@ export class CookbotLanguageModel implements LanguageModel {
                             isError: that.hasError(call.result),
                         })),
                     };
+                    if (round + 1 === that.maxToolRounds) {
+                        toolResponseMessage.content.push({ type: 'text', text: ROUND_LIMIT_NOTE });
+                    }
 
                     // Build assistant message from accumulated content blocks
                     const assistantContent: CookbotContentPart[] = [];
@@ -226,14 +292,24 @@ export class CookbotLanguageModel implements LanguageModel {
 
                     for await (const nestedEvent of result.stream) {
                         contentProduced = contentProduced || CookbotLanguageModel.isVisibleContent(nestedEvent);
+                        track(nestedEvent);
                         yield nestedEvent;
                     }
                 }
 
+                // Only the outermost call judges the turn as a whole; a nested
+                // round that adds nothing after its tools is not a failure.
+                if (!isTopLevel || token?.isCancellationRequested) {
+                    return;
+                }
+                if (toolsRan && !textAfterTools) {
+                    yield { content: NO_REPLY_TEXT };
+                    return;
+                }
                 // A stream that completes without a single content block is a
                 // failure the user cannot see otherwise - it renders as a blank
                 // assistant turn. Report it instead of yielding nothing.
-                if (!contentProduced && !token?.isCancellationRequested) {
+                if (!contentProduced) {
                     console.error('[CookbotLM] Stream completed without producing any content');
                     throw CookbotError.emptyResponse();
                 }
@@ -259,6 +335,30 @@ export class CookbotLanguageModel implements LanguageModel {
             component: 'cookbot-language-model',
             ...(code === undefined ? {} : { grpcCode: String(code) })
         });
+    }
+
+    /**
+     * Runs one tool handler, giving up after `toolTimeoutMs` so a handler that
+     * never resolves cannot stall the turn forever. The handler keeps running;
+     * its late result is ignored.
+     */
+    protected async runTool(tool: ToolRequest, args: string, toolUseId: string): Promise<ToolCallResult> {
+        const call = tool.handler(args, ToolInvocationContext.create(toolUseId));
+        if (UNTIMED_TOOLS.has(tool.name)) {
+            return call;
+        }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<ToolCallResult>(resolve => {
+            timer = setTimeout(() => resolve(createToolCallError(
+                `${tool.name} did not finish within ${Math.max(1, Math.round(this.toolTimeoutMs / 1000))} s. `
+                + 'Tell the user it timed out; do not retry it automatically.'
+            )), this.toolTimeoutMs);
+        });
+        try {
+            return await Promise.race([call, timeout]);
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     /**
