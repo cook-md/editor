@@ -167,10 +167,11 @@ describe('DraftSaver.saveRaw', () => {
         expect(opened).to.deep.equal([uri.toString()]);
     });
 
-    it('keeps an existing frontmatter title in the content', async () => {
+    it('names the draft after an existing frontmatter title and keeps the content', async () => {
         const { saver, created } = saverWith([]);
         const cooklang = '---\ntitle: Grandma\'s Pancakes\n---\nMix @eggs{2}.';
         const uri = await saver.saveRaw(cooklang, 'pancakes');
+        expect(uri.path.base).to.equal('Grandma\'s Pancakes.cook');
         expect(created.get(uri.toString())).to.equal(cooklang);
         expect(created.has(ROOT.resolve('Drafts').toString())).to.equal(true);
     });

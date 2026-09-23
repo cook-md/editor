@@ -45,11 +45,11 @@ export class DraftSaver {
     /**
      * Writes cooklang text that is already in hand — a `.cook` file opened from
      * outside the collection — into `<workspace root>/Drafts/`, de-duplicating the
-     * name, and opens it. `suggestedTitle` (usually the source file's name) is used
-     * as the title and file name; an existing frontmatter title is kept in the content.
+     * name, and opens it. The recipe's own frontmatter title names the draft;
+     * `suggestedTitle` (usually the source file's name) is the fallback.
      */
     async saveRaw(cooklang: string, suggestedTitle: string): Promise<URI> {
-        return this.writeDraft(cooklang, suggestedTitle);
+        return this.writeDraft(cooklang, DraftName.resolveTitle(cooklang, undefined) ?? suggestedTitle);
     }
 
     protected async writeDraft(cooklang: string, suggestedTitle: string | undefined): Promise<URI> {
