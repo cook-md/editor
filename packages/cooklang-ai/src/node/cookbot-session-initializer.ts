@@ -19,6 +19,18 @@ import * as path from 'path';
 import { CookbotGrpcClient } from './cookbot-grpc-client';
 
 /**
+ * Which directory entry is the user's COOK.md. An exact `COOK.md` wins; any
+ * other casing (`cook.md`, `Cook.md`) is accepted, so the file is found on
+ * case-sensitive filesystems too.
+ */
+export function pickCookMdName(names: string[]): string | undefined {
+    if (names.includes('COOK.md')) {
+        return 'COOK.md';
+    }
+    return names.find(name => name.toLowerCase() === 'cook.md');
+}
+
+/**
  * Creates the cookbot session on demand and shares it between every consumer
  * of the connection-scoped gRPC client (language model, usage service):
  * whichever caller runs first creates the session, the others reuse it.
@@ -41,6 +53,13 @@ export class CookbotSessionInitializer {
      */
     private initializedDir: string | undefined;
 
+    /**
+     * The COOK.md text the current session was created with. `undefined`
+     * while the first initialization is still reading it, so a concurrent
+     * caller does not mistake "not read yet" for "changed".
+     */
+    private initializedInstructions: string | undefined;
+
     async ensureInitialized(): Promise<void> {
         // The session carries recipes_dir to the server, where it decides both
         // the system prompt and whether the assistant believes it can write
@@ -53,6 +72,13 @@ export class CookbotSessionInitializer {
                 console.info(
                     `[Cookbot] Recipe folder changed (${this.initializedDir || 'none'} -> ${currentDir || 'none'}), re-initializing the session`
                 );
+                this.initPromise = undefined;
+            } else if (this.initializedInstructions !== undefined
+                && await this.readCookMd(currentDir) !== this.initializedInstructions) {
+                // COOK.md is only sent at Initialize, so a file added or edited
+                // mid-session (including one the onboarding skill just staged)
+                // was ignored until the editor restarted.
+                console.info('[Cookbot] COOK.md changed, re-initializing the session');
                 this.initPromise = undefined;
             }
         }
@@ -101,19 +127,30 @@ export class CookbotSessionInitializer {
     }
 
     private async doInitialize(): Promise<void> {
+        // Cleared first so a concurrent caller never compares COOK.md against
+        // the previous session's text while this one is still reading it.
+        this.initializedInstructions = undefined;
         const recipesDir = await this.resolveRecipesDir();
-        let customInstructions = '';
-        if (recipesDir) {
-            const cookMdPath = path.join(recipesDir, 'COOK.md');
-            try {
-                customInstructions = await fs.promises.readFile(cookMdPath, 'utf-8');
-            } catch {
-                // COOK.md not present, that's fine
-            }
-        }
         // Recorded before the call so a failed init still re-checks the folder
-        // rather than comparing against a stale value.
+        // rather than comparing against a stale value. Set before the COOK.md
+        // read so concurrent callers see the folder as unchanged.
         this.initializedDir = recipesDir;
+        const customInstructions = await this.readCookMd(recipesDir);
+        this.initializedInstructions = customInstructions;
         await this.grpcClient.initialize(recipesDir, customInstructions);
+    }
+
+    /** The COOK.md at the folder root, in any casing, or `''` when there is none. */
+    private async readCookMd(recipesDir: string): Promise<string> {
+        if (!recipesDir) {
+            return '';
+        }
+        try {
+            const name = pickCookMdName(await fs.promises.readdir(recipesDir));
+            return name ? await fs.promises.readFile(path.join(recipesDir, name), 'utf-8') : '';
+        } catch {
+            // Folder unreadable or COOK.md vanished between listing and reading.
+            return '';
+        }
     }
 }

@@ -12,16 +12,23 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { CookbotSessionInitializer } from './cookbot-session-initializer';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { CookbotSessionInitializer, pickCookMdName } from './cookbot-session-initializer';
 
 class FakeGrpcClient {
     initializeCalls = 0;
+    /** The (recipesDir, customInstructions) of every initialize call, in order. */
+    calls: Array<{ recipesDir: string; instructions: string }> = [];
     failNext = false;
     /** When set, `initialize` awaits this before resolving/rejecting, letting a test control when a call settles. */
     nextInitializeBlocksOn: Promise<void> | undefined;
 
-    async initialize(): Promise<unknown> {
+    async initialize(recipesDir = '', customInstructions = ''): Promise<unknown> {
         this.initializeCalls++;
+        this.calls.push({ recipesDir, instructions: customInstructions });
         if (this.nextInitializeBlocksOn) {
             const blocker = this.nextInitializeBlocksOn;
             this.nextInitializeBlocksOn = undefined;
@@ -175,5 +182,87 @@ describe('CookbotSessionInitializer recipe folder changes', () => {
         await initializer.ensureInitialized();
 
         expect(grpcClient.initializeCalls).to.equal(2);
+    });
+});
+
+describe('CookbotSessionInitializer COOK.md', () => {
+
+    let dir: string;
+    let workspaceServer: FakeWorkspaceServer;
+
+    beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cookbot-init-'));
+        workspaceServer = new FakeWorkspaceServer();
+        workspaceServer.current = FileUri.create(dir).toString();
+    });
+
+    afterEach(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('picks up a COOK.md created after the session started', async () => {
+        // uid 2647, 2026-09-18: added COOK.md mid-session, then got asked
+        // "how many people?" because the prompt still said there was none.
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        expect(grpcClient.calls[0].instructions).to.equal('');
+
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'We are 2 people.');
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+        expect(grpcClient.calls[1].instructions).to.equal('We are 2 people.');
+    });
+
+    it('does not re-initialize while COOK.md is unchanged', async () => {
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'We are 2 people.');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        await initializer.ensureInitialized();
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(1);
+    });
+
+    it('re-initializes with the new content when COOK.md is edited', async () => {
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'We are 2 people.');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+        fs.writeFileSync(path.join(dir, 'COOK.md'), 'We are 4 people.');
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.initializeCalls).to.equal(2);
+        expect(grpcClient.calls[1].instructions).to.equal('We are 4 people.');
+    });
+
+    it('reads a lowercase cook.md', async () => {
+        fs.writeFileSync(path.join(dir, 'cook.md'), 'No dairy.');
+        const grpcClient = new FakeGrpcClient();
+        const initializer = createInitializer(grpcClient, workspaceServer);
+
+        await initializer.ensureInitialized();
+
+        expect(grpcClient.calls[0].instructions).to.equal('No dairy.');
+    });
+});
+
+describe('pickCookMdName', () => {
+
+    it('prefers an exact COOK.md over other casings', () => {
+        expect(pickCookMdName(['cook.md', 'COOK.md', 'Pasta.cook'])).to.equal('COOK.md');
+    });
+
+    it('accepts any casing when there is no exact COOK.md', () => {
+        expect(pickCookMdName(['Pasta.cook', 'Cook.md'])).to.equal('Cook.md');
+    });
+
+    it('returns undefined when there is none', () => {
+        expect(pickCookMdName(['Pasta.cook', 'cook.md.bak'])).to.be.undefined;
     });
 });
