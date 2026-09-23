@@ -21,6 +21,7 @@ import {
 } from '@theia/ai-core/lib/common';
 import { CancellationTokenSource } from '@theia/core/lib/common/cancellation';
 import { CookbotChatChunk, CookbotInitResult, CookbotMessageParam } from '../common/cookbot-protocol';
+import { RECIPE_FOLDER_RELOADING } from '../common/tool-markers';
 import { CookbotLanguageModel } from './cookbot-language-model';
 import { CookbotSessionInitializer } from './cookbot-session-initializer';
 
@@ -646,6 +647,38 @@ describe('CookbotLanguageModel tool loop guarantees', () => {
         }));
 
         expect(toolResultSentIn(grpcClient, 1)).to.equal('folder opened');
+    });
+
+    it('ends the turn immediately once openRecipeFolder starts the reload, no further round or closing line', async () => {
+        const grpcClient = new FakeGrpcClient();
+        // No second stream: a reload result must stop the loop before it
+        // recurses, so a second sendMessage call would fail with
+        // "Unexpected sendMessage call".
+        grpcClient.streams = [() => toolUseStream('t1', 'openRecipeFolder')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            openRecipeFolder: async () => `Opening /Users/greg/Cook as the recipe folder. ${RECIPE_FOLDER_RELOADING} `
+                + 'Do not reply further and do not call any more tools.',
+        }));
+
+        expect(grpcClient.sendMessageCalls).to.equal(1);
+        expect(textsOf(parts).join('')).to.not.contain('stopped without a reply');
+        expect(textsOf(parts)).to.be.empty;
+    });
+
+    it('continues the loop as usual when openRecipeFolder does not report a reload (e.g. dismissed)', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.streams = [() => toolUseStream('t1', 'openRecipeFolder'), () => textStream('No worries, ask any time.')];
+        const model = createModel(grpcClient);
+
+        const parts = await collectRequest(model, requestWithTools({
+            openRecipeFolder: async () => 'The user dismissed the folder picker without choosing one. '
+                + 'Do not ask again unless they bring it up — answer what you can without files.',
+        }));
+
+        expect(grpcClient.sendMessageCalls).to.equal(2);
+        expect(textsOf(parts)).to.deep.equal(['No worries, ask any time.']);
     });
 
     it('tells the model to wrap up on the last round and does not run tools past the cap', async () => {

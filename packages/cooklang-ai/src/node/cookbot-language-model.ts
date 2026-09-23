@@ -39,6 +39,7 @@ import {
     CookbotToolDefinition,
 } from '../common/cookbot-protocol';
 import { CookbotError } from '../common/cookbot-error';
+import { RECIPE_FOLDER_RELOADING } from '../common/tool-markers';
 import { ErrorReporter } from '@theia/cooklang-telemetry/lib/common/error-reporter';
 
 interface ToolCallback {
@@ -246,6 +247,16 @@ export class CookbotLanguageModel implements LanguageModel {
                     const finishedCalls = { tool_calls: calls };
                     track(finishedCalls);
                     yield finishedCalls;
+
+                    // openRecipeFolder already called workspaceService.open() and
+                    // the window is on its way down for the reload: don't spend
+                    // another paid model round talking to a chat that is about
+                    // to disappear, and don't add a closing line to it either.
+                    const reloading = toolResults.some(tr =>
+                        UNTIMED_TOOLS.has(tr.name) && that.formatToolCallResult(tr.result).includes(RECIPE_FOLDER_RELOADING));
+                    if (reloading) {
+                        return;
+                    }
 
                     // Build tool result message for next turn
                     const toolResponseMessage: CookbotMessageParam = {

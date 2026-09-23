@@ -17,6 +17,7 @@ import { ChatToolContext } from '@theia/ai-chat/lib/common/chat-tool-request-ser
 import { FileDialogService, OpenFileDialogProps } from '@theia/filesystem/lib/browser';
 import { WorkspaceService } from '@theia/workspace/lib/browser';
 import { savePendingPrompt } from '../pending-prompt';
+import { RECIPE_FOLDER_RELOADING } from '../../common/tool-markers';
 
 /**
  * Lets Cookbot offer the folder picker when the user has no recipe folder open.
@@ -90,8 +91,8 @@ export class OpenRecipeFolder implements ToolProvider {
         // one they just tried to fix.
         this.workspaceService.open(selected, { preserveWindow: true });
 
-        return `Opening ${selected.path.fsPath()} as the recipe folder. The editor is reloading, `
-            + 'and the user\'s question will be waiting in the chat box. '
+        return `Opening ${selected.path.fsPath()} as the recipe folder. ${RECIPE_FOLDER_RELOADING} `
+            + 'The user\'s question will be waiting in the chat box. '
             + 'Do not reply further and do not call any more tools.';
     }
 }
