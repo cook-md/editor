@@ -186,6 +186,12 @@ export class ElectronMainApplication {
     protected didUseNativeWindowFrameOnStart = new Map<number, boolean>();
     protected windows = new Map<number, TheiaElectronWindow>();
     protected activeWindowStack: number[] = [];
+    /**
+     * URLs that arrived while no window had a ready frontend to hand them to, e.g. the `open-url` event of a
+     * macOS cold start, which Electron emits before any window exists. They are opened, in order, as soon as a
+     * window's frontend becomes ready (see {@link openPendingUrls}).
+     */
+    protected pendingUrls: string[] = [];
     protected restarting = false;
 
     /** Used to temporarily store the reference to an early created main window */
@@ -326,6 +332,11 @@ export class ElectronMainApplication {
     }
 
     protected showInitialWindow(urlToOpen: string | undefined): void {
+        if (urlToOpen) {
+            // No window is ready yet, so this queues the URL until the first frontend is - whether or not
+            // the initial window is shown early.
+            this.openUrl(urlToOpen);
+        }
         if (this.isShowWindowEarly() || this.isShowSplashScreen()) {
             app.whenReady().then(async () => {
                 const options = await this.getLastWindowOptions();
@@ -334,11 +345,6 @@ export class ElectronMainApplication {
                     options.preventAutomaticShow = true;
                 }
                 this.initialWindow = await this.createWindow({ ...options });
-                TheiaRendererAPI.onApplicationStateChanged(this.initialWindow.webContents, state => {
-                    if (state === 'ready' && urlToOpen) {
-                        this.openUrl(urlToOpen);
-                    }
-                });
                 if (this.isShowSplashScreen()) {
                     console.log('Showing splash screen');
                     this.configureAndShowSplashScreen(this.initialWindow);
@@ -429,7 +435,14 @@ export class ElectronMainApplication {
         const id = electronWindow.window.webContents.id;
         this.activeWindowStack.push(id);
         this.windows.set(id, electronWindow);
+        // Registered after the window's own state tracking, so `electronWindow.isReady` is already true here.
+        const readyListener = TheiaRendererAPI.onApplicationStateChanged(electronWindow.window.webContents, state => {
+            if (state === 'ready') {
+                this.openPendingUrls();
+            }
+        });
         electronWindow.onDidClose(() => {
+            readyListener.dispose();
             const stackIndex = this.activeWindowStack.indexOf(id);
             if (stackIndex >= 0) {
                 this.activeWindowStack.splice(stackIndex, 1);
@@ -565,12 +578,37 @@ export class ElectronMainApplication {
         }
     }
 
+    /**
+     * Offers `url` to the windows, most recently focused first, until one of them opens it.
+     *
+     * Only windows whose frontend is ready are asked: a frontend that is still starting has no handler yet and
+     * would silently drop the URL. When no window is ready (a cold start, or the only window is still loading),
+     * the URL is kept and opened once one is. When ready windows exist but none opens it, nothing handles it
+     * and it is dropped.
+     */
     async openUrl(url: string): Promise<void> {
+        let offered = false;
         for (const id of this.activeWindowStack) {
             const window = this.windows.get(id);
-            if (window && await window.openUrl(url)) {
-                break;
+            if (window?.isReady) {
+                offered = true;
+                if (await window.openUrl(url)) {
+                    return;
+                }
             }
+        }
+        if (!offered) {
+            this.pendingUrls.push(url);
+        }
+    }
+
+    /**
+     * Opens the URLs that arrived before any window was ready. Called whenever a window's frontend becomes ready.
+     */
+    protected async openPendingUrls(): Promise<void> {
+        const urls = this.pendingUrls.splice(0);
+        for (const url of urls) {
+            await this.openUrl(url);
         }
     }
 
