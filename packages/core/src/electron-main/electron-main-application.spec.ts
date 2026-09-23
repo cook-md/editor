@@ -15,6 +15,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
+import { FrontendApplicationConfig } from '@theia/application-package/lib/application-props';
 import { ElectronMainApplication } from './electron-main-application';
 import { TheiaElectronWindow } from './theia-electron-window';
 
@@ -29,6 +30,7 @@ class TestElectronMainApplication extends ElectronMainApplication {
 
     static create(): TestElectronMainApplication {
         const application = Object.create(TestElectronMainApplication.prototype) as TestElectronMainApplication;
+        application._config = { electron: { uriScheme: 'cook' } } as FrontendApplicationConfig;
         application.windows = new Map();
         application.activeWindowStack = [];
         application.pendingUrls = [];
@@ -42,6 +44,10 @@ class TestElectronMainApplication extends ElectronMainApplication {
 
     flushPendingUrls(): Promise<void> {
         return this.openPendingUrls();
+    }
+
+    urlArgument(argv: string[]): string | undefined {
+        return this.getUrlArgument(argv);
     }
 }
 
@@ -121,5 +127,28 @@ describe('ElectronMainApplication#openUrl', () => {
         expect(accepting.received).to.deep.equal(['cook://my/Dinner.cook']);
         expect(after.received).to.be.empty;
         expect(application.pendingUrls).to.be.empty;
+    });
+});
+
+describe('ElectronMainApplication#getUrlArgument', () => {
+
+    it('takes the last argument after --open-url, as the Windows protocol handler passes it', () => {
+        const application = TestElectronMainApplication.create();
+        expect(application.urlArgument(['--open-url', 'cook://my/Dinner.cook'])).to.equal('cook://my/Dinner.cook');
+    });
+
+    it('finds a bare URL in our scheme, as the Linux desktop entry passes it', () => {
+        const application = TestElectronMainApplication.create();
+        expect(application.urlArgument(['--no-sandbox', 'cook://my/Sides%20%26%20Drinks/Water%20Crackers.cook']))
+            .to.equal('cook://my/Sides%20%26%20Drinks/Water%20Crackers.cook');
+        expect(application.urlArgument(['COOK://my/Dinner.cook'])).to.equal('COOK://my/Dinner.cook');
+    });
+
+    it('treats files and other schemes as not a URL', () => {
+        const application = TestElectronMainApplication.create();
+        expect(application.urlArgument(['/home/alex/Recipes'])).to.be.undefined;
+        expect(application.urlArgument(['cookbook/Dinner.cook'])).to.be.undefined;
+        expect(application.urlArgument(['https://cook.md/my/Dinner.cook'])).to.be.undefined;
+        expect(application.urlArgument([])).to.be.undefined;
     });
 });

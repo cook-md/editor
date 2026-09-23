@@ -238,7 +238,8 @@ export class ElectronMainApplication {
                     this.useNativeWindowFrame = this.getTitleBarStyle(config) === 'native';
                     this._config = config;
                     this.hookApplicationEvents();
-                    this.showInitialWindow(argv.includes('--open-url') ? argv[argv.length - 1] : undefined);
+                    const urlToOpen = this.getUrlArgument(argv);
+                    this.showInitialWindow(urlToOpen);
                     const port = await this.startBackend();
                     this._backendPort.resolve(port);
                     await app.whenReady();
@@ -246,7 +247,8 @@ export class ElectronMainApplication {
                     await this.startContributions();
 
                     this.handleMainCommand({
-                        file: args.file,
+                        // On Linux the URL arrives as the positional argument; it is not a workspace.
+                        file: args.file === urlToOpen ? undefined : args.file,
                         cwd: process.cwd(),
                         secondInstance: false
                     });
@@ -850,6 +852,20 @@ export class ElectronMainApplication {
         }
     }
 
+    /**
+     * The URL this process was launched to open, if any. On Windows the protocol handler registered in
+     * {@link hookApplicationEvents} passes `--open-url <url>`. On Linux the desktop entry's
+     * `x-scheme-handler` passes the URL bare (`Exec=... %U`), so any argument in our own scheme counts.
+     * macOS delivers URLs through the `open-url` event instead.
+     */
+    protected getUrlArgument(argv: string[]): string | undefined {
+        if (argv.includes('--open-url')) {
+            return argv[argv.length - 1];
+        }
+        const schemePrefix = `${this.config.electron.uriScheme.toLowerCase()}:`;
+        return argv.find(arg => arg.toLowerCase().startsWith(schemePrefix));
+    }
+
     protected onWillQuit(event: ElectronEvent): void {
         this.stopContributions();
     }
@@ -865,8 +881,9 @@ export class ElectronMainApplication {
         // arguments", which still focuses the running window.
         const argv = Array.isArray(originalArgv) ? originalArgv : [];
 
-        if (argv.includes('--open-url')) {
-            this.openUrl(argv[argv.length - 1]);
+        const url = this.getUrlArgument(argv);
+        if (url !== undefined) {
+            this.openUrl(url);
         } else {
             createYargs(this.processArgv.getProcessArgvWithoutBin(argv), cwd)
                 .help(false)

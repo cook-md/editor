@@ -189,6 +189,14 @@ linux:
     - AppImage
     - deb
     - tar.gz
+  # Adds x-scheme-handler/cook to the .desktop entry, whose Exec line gets %U, so
+  # cook:// links reach the app as a bare argument (see getUrlArgument in
+  # electron-main-application.ts). The deb registers it on install; an AppImage
+  # only once integrated into the desktop (e.g. AppImageLauncher).
+  protocols:
+    - name: cook
+      schemes:
+        - cook
   fileAssociations:
     - ext: cook
       name: Cooklang Recipe
