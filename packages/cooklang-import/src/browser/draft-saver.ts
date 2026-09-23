@@ -39,6 +39,20 @@ export class DraftSaver {
     protected readonly openerService: OpenerService;
 
     async save(result: ConvertSuccess): Promise<URI> {
+        return this.writeDraft(result.cooklang, result.name);
+    }
+
+    /**
+     * Writes cooklang text that is already in hand — a `.cook` file opened from
+     * outside the collection — into `<workspace root>/Drafts/`, de-duplicating the
+     * name, and opens it. `suggestedTitle` (usually the source file's name) is used
+     * as the title and file name; an existing frontmatter title is kept in the content.
+     */
+    async saveRaw(cooklang: string, suggestedTitle: string): Promise<URI> {
+        return this.writeDraft(cooklang, suggestedTitle);
+    }
+
+    protected async writeDraft(cooklang: string, suggestedTitle: string | undefined): Promise<URI> {
         const roots = await this.workspaceService.roots;
         if (roots.length === 0) {
             throw new Error(nls.localize('theia/cooklang-import/noWorkspace', 'Open a folder before importing recipes.'));
@@ -47,9 +61,9 @@ export class DraftSaver {
         if (!await this.fileService.exists(draftsDir)) {
             await this.fileService.createFolder(draftsDir);
         }
-        const title = DraftName.resolveTitle(result.cooklang, result.name)
+        const title = DraftName.resolveTitle(cooklang, suggestedTitle)
             ?? nls.localize('theia/cooklang-import/importedRecipe', 'Imported Recipe');
-        const content = DraftName.ensureTitleFrontmatter(result.cooklang, title);
+        const content = DraftName.ensureTitleFrontmatter(cooklang, title);
         const base = await DraftName.uniqueBaseName(
             DraftName.sanitizeFilename(title),
             candidate => this.fileService.exists(draftsDir.resolve(`${candidate}.cook`))

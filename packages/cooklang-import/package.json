@@ -4,6 +4,7 @@
   "description": "Theia - Cooklang Recipe Import (URL, text, images, clipping browser)",
   "dependencies": {
     "@theia/core": "1.70.0",
+    "@theia/editor": "1.70.0",
     "@theia/filesystem": "1.70.0",
     "@theia/navigator": "1.70.0",
     "@theia/workspace": "1.70.0",
