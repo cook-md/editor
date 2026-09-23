@@ -859,18 +859,21 @@ export class ElectronMainApplication {
      * macOS delivers URLs through the `open-url` event instead.
      */
     protected getUrlArgument(argv: string[]): string | undefined {
-        if (argv.includes('--open-url')) {
-            return argv[argv.length - 1];
-        }
+        // Match the scheme first: Chromium may append its own switches after the URL, so "last argument" alone
+        // is not reliable once the command line has been through it.
         const schemePrefix = `${this.config.electron.uriScheme.toLowerCase()}:`;
-        return argv.find(arg => arg.toLowerCase().startsWith(schemePrefix));
+        const url = argv.find(arg => arg.toLowerCase().startsWith(schemePrefix));
+        if (url !== undefined) {
+            return url;
+        }
+        return argv.includes('--open-url') ? argv[argv.length - 1] : undefined;
     }
 
     protected onWillQuit(event: ElectronEvent): void {
         this.stopContributions();
     }
 
-    protected async onSecondInstance(event: ElectronEvent, _: string[], cwd: string, originalArgv: string[]): Promise<void> {
+    protected async onSecondInstance(event: ElectronEvent, commandLine: string[], cwd: string, originalArgv: string[]): Promise<void> {
         // the second instance passes it's original argument array as the fourth argument to this method
         // The `argv` second parameter is not usable for us since it is mangled by electron before being passed here
 
@@ -881,7 +884,8 @@ export class ElectronMainApplication {
         // arguments", which still focuses the running window.
         const argv = Array.isArray(originalArgv) ? originalArgv : [];
 
-        const url = this.getUrlArgument(argv);
+        // A link must not be lost with it, though: the mangled `commandLine` still carries the URL itself.
+        const url = this.getUrlArgument(argv) ?? (Array.isArray(commandLine) ? this.getUrlArgument(commandLine) : undefined);
         if (url !== undefined) {
             this.openUrl(url);
         } else {

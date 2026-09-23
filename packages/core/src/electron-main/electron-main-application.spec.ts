@@ -31,6 +31,7 @@ class TestElectronMainApplication extends ElectronMainApplication {
     static create(): TestElectronMainApplication {
         const application = Object.create(TestElectronMainApplication.prototype) as TestElectronMainApplication;
         application._config = { electron: { uriScheme: 'cook' } } as FrontendApplicationConfig;
+        application.openedUrls = [];
         application.windows = new Map();
         application.activeWindowStack = [];
         application.pendingUrls = [];
@@ -48,6 +49,16 @@ class TestElectronMainApplication extends ElectronMainApplication {
 
     urlArgument(argv: string[]): string | undefined {
         return this.getUrlArgument(argv);
+    }
+
+    openedUrls: string[] = [];
+    override async openUrl(url: string): Promise<void> {
+        this.openedUrls.push(url);
+        return super.openUrl(url);
+    }
+
+    secondInstance(commandLine: unknown, originalArgv: unknown): Promise<void> {
+        return this.onSecondInstance(undefined!, commandLine as string[], '/', originalArgv as string[]);
     }
 }
 
@@ -144,11 +155,33 @@ describe('ElectronMainApplication#getUrlArgument', () => {
         expect(application.urlArgument(['COOK://my/Dinner.cook'])).to.equal('COOK://my/Dinner.cook');
     });
 
+    it('finds the URL even when switches follow it on the command line', () => {
+        const application = TestElectronMainApplication.create();
+        expect(application.urlArgument(['--open-url', 'cook://my/Dinner.cook', '--original-process-start-time=1']))
+            .to.equal('cook://my/Dinner.cook');
+    });
+
     it('treats files and other schemes as not a URL', () => {
         const application = TestElectronMainApplication.create();
         expect(application.urlArgument(['/home/alex/Recipes'])).to.be.undefined;
         expect(application.urlArgument(['cookbook/Dinner.cook'])).to.be.undefined;
         expect(application.urlArgument(['https://cook.md/my/Dinner.cook'])).to.be.undefined;
         expect(application.urlArgument([])).to.be.undefined;
+    });
+});
+
+describe('ElectronMainApplication#onSecondInstance', () => {
+
+    it('opens the URL from the original argv', async () => {
+        const application = TestElectronMainApplication.create();
+        await application.secondInstance(['editor.exe'], ['editor.exe', '--open-url', 'cook://my/Dinner.cook']);
+        expect(application.openedUrls).to.deep.equal(['cook://my/Dinner.cook']);
+    });
+
+    it('falls back to the command line when the original argv arrives as null', async () => {
+        const application = TestElectronMainApplication.create();
+        // eslint-disable-next-line no-null/no-null
+        await application.secondInstance(['editor.exe', '--open-url', 'cook://my/Dinner.cook', '--flag'], null);
+        expect(application.openedUrls).to.deep.equal(['cook://my/Dinner.cook']);
     });
 });
