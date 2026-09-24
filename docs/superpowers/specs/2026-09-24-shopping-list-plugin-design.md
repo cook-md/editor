@@ -66,10 +66,17 @@ inside the workspace are also accepted and normalised).
 | Command | Arguments | Result |
 |---|---|---|
 | `cooklang.api.version` | — | `1` |
-| `cooklang.api.generateShoppingList` | `{ recipes: Array<{ path: string; scale?: number }> }` | `ShoppingListResult` (categories in aisle order, `other`, `pantryItems`) |
-| `cooklang.api.resolveRecipeReferences` | `{ path: string }` | `Array<{ path: string; scale: number }>` — `@recipe` references in a `.cook`/`.menu`, with `%servings` / yield units resolved |
-| `cooklang.api.parseShoppingList` | `{ text: string }` | wire JSON of the `.shopping-list` |
-| `cooklang.api.writeShoppingList` | `{ list: <wire JSON> }` | `.shopping-list` text |
+| `cooklang.api.generateShoppingList` | `{ recipes: Array<{ path: string; scale?: number }> }` | `ShoppingListResult` (`categories` in aisle order, `other`, `pantryItems`) |
+| `cooklang.api.resolveRecipeReferences` | `{ path: string }` | `ResolvedRecipeReference[]` — `{ path, scale, children? }` tree of the `@recipe` references in a `.cook`/`.menu`, `%servings` / yield units resolved, cycles skipped |
+| `cooklang.api.parseShoppingList` | `{ text: string }` | `ShoppingListFile` — `{ items: [{ type: 'recipe', path, multiplier?, children }] }` |
+| `cooklang.api.writeShoppingList` | `{ list: ShoppingListFile }` | `.shopping-list` text |
+| `cooklang.api.parseShoppingChecked` | `{ text: string }` | `CheckEntry[]` — `{ type: 'checked' \| 'unchecked', name }` |
+| `cooklang.api.writeShoppingChecked` | `{ entries: CheckEntry[] }` | `.shopping-checked` text (one line per entry) |
+| `cooklang.api.compactShoppingChecked` | `{ entries: CheckEntry[]; ingredients: string[] }` | `CheckEntry[]` keeping only entries for present ingredients |
+
+Results use the editor's existing ergonomic types from
+`common/shopping-list-types.ts` and `recipe-reference-resolver.ts`, never the
+native wire JSON. All format work still runs in the Rust crates.
 
 Commands have no label, so they do not appear in the command palette.
 
@@ -86,7 +93,7 @@ Refactor: `ShoppingListService.computeResult()` moves into a new injectable
 `common/shopping-list-types.ts` stay in the editor (the types are the API's
 result shape).
 
-The editor sets the context key `cooklang.apiVersion` (= `1`) at startup so
+The editor sets the global context key `cooklang.apiVersion` (= `1`) at startup so
 plugins can use it in `when` clauses. A plugin checks compatibility on
 activation by executing `cooklang.api.version`.
 
@@ -103,35 +110,47 @@ future changes only add optional fields.
 |---|---|---|
 | `cooklang/recipePreview/toolbar` | icon buttons in the recipe preview header | `{ version, uri, path, scale }` |
 | `cooklang/menuPreview/toolbar` | icon buttons in the menu preview header | `{ version, uri, path, scale }` |
-| `cooklang/recipePreview/ingredient/context` | right-click on an ingredient in the recipe preview | `{ version, uri, path, scale, ingredient: { name, quantity?, unit? } }` — quantity already scaled |
-| `cooklang/menuPreview/recipe/context` | right-click on a recipe reference in the menu preview | `{ version, menuUri, menuPath, recipePath, scale }` — scale already resolved (menu scale × reference scale, units resolved) |
-| `cooklang/report/toolbar` | icon buttons in the report view header | `{ version, templateUri, templatePath, outputKind }` |
+| `cooklang/recipePreview/ingredient/context` | right-click on an ingredient in the recipe preview | `{ version, uri, path, scale, ingredient: { name, quantity?, amount?, unit? } }` |
+| `cooklang/menuPreview/recipe/context` | right-click on a recipe reference in the menu preview | `{ version, menuUri, menuPath, menuScale, recipe: { name, scale?, unit? } }` |
+| `cooklang/report/toolbar` | icon buttons above the rendered report (row hidden when empty) | `{ version, uri, path, templateId, templateLabel, templateUri?, outputFormat, output? }` |
 
-`uri` values are `file://` URI strings; `path` values are workspace-relative.
-`outputKind` is the report's output format as the report widget already
-determines it (e.g. `markdown`, `yaml`).
+- `uri` / `menuUri` / `templateUri` are `file://` URI strings; `path` /
+  `menuPath` are workspace-relative.
+- `ingredient.quantity` is the scaled, formatted text shown in the preview
+  (`"2 cups"`); `amount` is the scaled number when the quantity is numeric;
+  `unit` is the raw unit.
+- `recipe.name` is the reference as written, without a leading `./`;
+  `recipe.scale` already includes the menu scale. When `recipe.unit` is set
+  (`{4%servings}`), `scale` is a target in that unit, not a multiplier — call
+  `cooklang.api.resolveRecipeReferences` on the menu for multipliers.
+- `output` is the rendered report text once rendering succeeded.
 
-Context keys available to `when` clauses of outlet items:
-`cooklang.previewKind` (`recipe` | `menu`), `cooklang.isMarkdownRecipe`,
-`cooklang.apiVersion`.
+The only context key the editor adds for `when` clauses is the global
+`cooklang.apiVersion`; outlet contexts carry everything else.
 
 ### Rendering
 
-- `CooklangActionBar` (React component) takes an outlet path and a context
-  object. It reads `MenuModelRegistry.getMenu(path)`, filters by visibility
-  (`when` via the context key service, plus the command's `isVisible`), sorts
-  by group then `order` (`group@order`), and renders icon buttons using the
-  command's `iconClass` (plugin `$(codicon)` icons resolve to codicon classes)
-  and label/tooltip. Clicking runs the command with the context object. It
-  re-renders on menu registry changes and context key changes.
-- Context-menu outlets use `ContextMenuRenderer.render({ menuPath, anchor,
-  args: [context] })` from the ingredient / recipe-reference elements' `onContextMenu`.
-  An outlet with no visible items shows no menu.
+- `CooklangOutletService` (injectable) reads `MenuModelRegistry.getMenu(path)`,
+  flattens groups (`navigation` first, then by sort string; items by
+  `order`), keeps nodes visible for the context (`when` via the context key
+  service plus the command's `isVisible`), and returns `OutletItem`s (`id`,
+  `label`, `iconClass`). `run(path, id, context)` executes the node.
+  `onDidChange` fires on menu registry changes and on
+  `CommandRegistry.onCommandsChanged` (fired after plugin contributions are
+  registered; menu additions themselves fire no event). Preview and report
+  widgets re-render on it.
+- `CooklangActionBar` is a presentational React component: icon buttons for
+  the given items, calling back on click.
+- Context-menu outlets call `CooklangOutletService.showContextMenu(path,
+  context, event)`, which renders via `ContextMenuRenderer.render({ menuPath,
+  anchor, args: [context], includeAnchorArg: false })` and does nothing (the
+  default menu shows) when the outlet has no visible items.
 - A command that throws is logged and shown via `MessageService.error`; the
   preview is not affected.
 - The built-in **Show Source** button moves onto the recipe/menu toolbar
-  outlets (contributed by the editor through the same registry) so the outlet
-  is exercised by first-party code.
+  outlets as the command `cooklang.outlet.showSource` (contributed by the
+  editor through the same registry, visible only when invoked with an outlet
+  context) so the outlet is exercised by first-party code.
 - The hard-coded `onAddToShoppingList` props and cart buttons are removed from
   `RecipeView` and `MenuView`, along with `handleAddToShoppingList` in both
   preview widgets.
@@ -146,7 +165,11 @@ bundle + webview bundle).
 
 ### Modules
 
-- `shopping-list-store.ts` — pure logic, no `vscode` import: list model
+- `cooklang-api.ts` — typed wrapper over the `cooklang.api.*` commands (types
+  mirror the editor's), taking an `executeCommand` function.
+- `shopping-list-store.ts` — no `vscode` import; takes a `ListFiles` port
+  (read / write / delete by file name at the workspace root) and the
+  `CooklangApi`: list model
   (add recipe with children, add menu, remove, update scale, clear), flatten for
   generation (multipliers multiply down), checked log (append, last-write-wins,
   lowercase set), compaction of the checked log against present ingredients,
@@ -168,12 +191,16 @@ bundle + webview bundle).
 
 ### Contributions
 
-- View container `shoppingList` in the activity bar (cart codicon) with webview
-  view `shoppingList.view`.
+- View container `shoppingList` in the activity bar with webview view
+  `shoppingList.view`. There is no cart codicon, so the plugin ships the
+  Lucide cart SVG (ISC) the editor uses today, in light and dark variants,
+  for the container and command icons.
 - Commands: `shoppingList.toggle`, `shoppingList.addRecipe`,
   `shoppingList.addMenu`, `shoppingList.addRecipes` (programmatic; takes
-  `{ recipes?: [{path, scale}], menu?: string }`, returns the current
-  `ShoppingListResult`; used by Cookbot).
+  `{ recipes: [{ path, scale? }] }` or `{ menu: path }` with workspace-relative
+  paths, adds them, reveals the view and returns the current
+  `ShoppingListResult`, or `undefined` before the first generation; used by
+  Cookbot).
 - Menus: `cooklang/recipePreview/toolbar` → `addRecipe`;
   `cooklang/menuPreview/toolbar` → `addMenu`; `explorer/context` → `addRecipe`
   when `resourceExtname == .cook`, `addMenu` when `resourceExtname == .menu`;
