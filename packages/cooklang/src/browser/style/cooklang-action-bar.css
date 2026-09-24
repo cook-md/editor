@@ -1,0 +1,25 @@
+.theia-cooklang-action-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theia-cooklang-action-bar-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 8px;
+    border: 1px solid var(--theia-panel-border);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--theia-descriptionForeground);
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.theia-cooklang-action-bar-button:hover {
+    background: var(--theia-toolbar-hoverBackground, var(--theia-textCodeBlock-background));
+    color: var(--theia-foreground);
+}
