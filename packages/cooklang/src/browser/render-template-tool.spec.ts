@@ -493,6 +493,30 @@ describe('RenderTemplateTool staged content', () => {
         };
     }
 
+    /** A tool context whose chat REQUEST's own change set (not the session's debounced one) holds one element for `uri`. */
+    function ctxWithRequestChangeSet(uri: string, state: string, targetState: string): unknown {
+        return {
+            request: {
+                changeSet: {
+                    getElementByURI: (u: URI) => u.toString() === uri ? { state, targetState } : undefined,
+                },
+            },
+        };
+    }
+
+    /** A tool context whose chat change set holds one pending-delete element for `uri`. */
+    function ctxWithDelete(uri: string): unknown {
+        return {
+            request: {
+                session: {
+                    changeSet: {
+                        getElementByURI: (u: URI) => u.toString() === uri ? { state: 'pending', type: 'delete' } : undefined,
+                    },
+                },
+            },
+        };
+    }
+
     async function invokeWith(tool: RenderTemplateTool, args: object, ctx: unknown): Promise<string> {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return await tool.getTool().handler(JSON.stringify(args), ctx as any) as string;
@@ -542,5 +566,23 @@ describe('RenderTemplateTool staged content', () => {
         await invokeWith(tool, { templateContent: 'T', recipeUris: ['a.cook', 'b.cook'] },
             ctxWith('file:///ws/b.cook', 'pending', 'B STAGED'));
         expect(language.calls.map(c => c.recipe)).to.deep.equal(['A ON DISK', 'B STAGED']);
+    });
+
+    it('checks the request\'s own change set before the session\'s debounced one', async () => {
+        const { tool, config, language, files } = createTool();
+        config.workspaceRoot = new URI('file:///ws');
+        files.files.set('file:///ws/a.cook', 'ON DISK');
+        await invokeWith(tool, { templateContent: 'T', recipeUri: 'a.cook' },
+            ctxWithRequestChangeSet('file:///ws/a.cook', 'pending', 'REQUEST STAGED'));
+        expect(language.calls[0].recipe).to.equal('REQUEST STAGED');
+    });
+
+    it('returns an error instead of empty output for a file staged for deletion', async () => {
+        const { tool, config, files } = createTool();
+        config.workspaceRoot = new URI('file:///ws');
+        files.files.set('file:///ws/a.cook', 'ON DISK');
+        const result = JSON.parse(await invokeWith(tool, { templateContent: 'T', recipeUri: 'a.cook' },
+            ctxWithDelete('file:///ws/a.cook')));
+        expect(result.error).to.match(/staged for deletion/);
     });
 });

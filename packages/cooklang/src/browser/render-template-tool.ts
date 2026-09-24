@@ -53,13 +53,34 @@ interface ResolvedTemplate {
 
 const BUILT_IN_PREFIX = 'builtin:';
 
+/** One change-set entry, as read structurally off the chat tool context. */
+interface StagedElement {
+    state?: string;
+    targetState?: string;
+    /** `'delete'` for a pending removal — its `targetState` is meaningless (there is no new content). */
+    type?: string;
+}
+
 /**
- * The slice of a chat tool context this tool reads: the chat's change set.
+ * The slice of a chat tool context this tool reads: two change sets.
+ *
+ * `request.changeSet` is the CURRENT chat request's own change set (e.g. set
+ * synchronously by `suggestFileContent` earlier in the same turn) — checked
+ * first because it has no debounce. `request.session.changeSet` is the whole
+ * session's aggregated `ChatTreeChangeSet`, which refreshes via a 100ms
+ * trailing debounce (`packages/ai-chat/src/common/chat-model.ts` ~1181-1190):
+ * a write-then-render pair issued in the same parallel tool-call batch (see
+ * `cookbot-language-model.ts`) can still see it stale, so it is only the
+ * fallback.
+ *
  * Structural on purpose — `@theia/ai-chat` is not a dependency of this
- * package, and any other context simply has no `request.session`.
+ * package, and any other context simply has neither property.
  */
 interface StagedChangeContext {
-    request?: { session?: { changeSet?: { getElementByURI?(uri: URI): { state?: string; targetState?: string } | undefined } } };
+    request?: {
+        changeSet?: { getElementByURI?(uri: URI): StagedElement | undefined };
+        session?: { changeSet?: { getElementByURI?(uri: URI): StagedElement | undefined } };
+    };
 }
 
 /**
@@ -126,7 +147,8 @@ export class RenderTemplateTool implements ToolProvider {
                         description: 'The .cook or .menu file to render against — preferably a path relative to the workspace '
                             + 'root (e.g. "Baking/Napoleon.cook"); an absolute path or file:// URI also works. Defaults to the '
                             + 'active recipe in the editor. Renders the version staged in this chat if the file has a pending change, '
-                            + 'otherwise the saved file on disk (unsaved editor edits are not included).',
+                            + 'otherwise the saved file on disk (unsaved editor edits are not included). If you are also writing '
+                            + 'the file, call this after the write tool has returned, not in the same batch.',
                     },
                     recipeUris: {
                         type: 'array',
@@ -299,9 +321,16 @@ export class RenderTemplateTool implements ToolProvider {
      * The recipe text to render: the chat's pending (staged) version when there
      * is one, otherwise the file on disk. A plan CookBot just proposed is only
      * staged, so reading disk made "build it and check it" take two prompts.
+     *
+     * Checks the request's own change set first (no debounce), then the
+     * session's aggregated one, then disk — see `StagedChangeContext`.
      */
     protected async readRecipe(uri: URI, ctx?: ToolInvocationContext): Promise<string> {
-        const element = (ctx as StagedChangeContext | undefined)?.request?.session?.changeSet?.getElementByURI?.(uri);
+        const request = (ctx as StagedChangeContext | undefined)?.request;
+        const element = request?.changeSet?.getElementByURI?.(uri) ?? request?.session?.changeSet?.getElementByURI?.(uri);
+        if (element?.type === 'delete') {
+            throw new Error(`${uri.path.fsPath()} is staged for deletion.`);
+        }
         if (element?.state === 'pending' && typeof element.targetState === 'string') {
             return element.targetState;
         }

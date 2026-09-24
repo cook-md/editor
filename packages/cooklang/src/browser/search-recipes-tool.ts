@@ -63,6 +63,8 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const MAX_LIMIT_DIGEST = 500;
 const MAX_CELL_LENGTH = 200;
+/** Higher cap for list-valued cells that can legitimately be long (a week's menu ~14 references). */
+const MAX_LIST_CELL_LENGTH = 2000;
 
 /** Frontmatter keys `fields` may request — kept in step with the tool description. */
 const FIELD_NAMES = ['tags', 'source', 'cuisine', 'course', 'time', 'servings', 'diet', 'description', 'ingredients',
@@ -70,9 +72,41 @@ const FIELD_NAMES = ['tags', 'source', 'cuisine', 'course', 'time', 'servings', 
 type FieldName = typeof FIELD_NAMES[number];
 /** Fields computed by parsing the file body rather than read from frontmatter. */
 const PARSED_FIELDS: readonly FieldName[] = ['ingredients', 'steps', 'cookware', 'recipes', 'dates'];
+/** List-valued fields long enough to want the higher cap and an item-boundary-safe cutoff instead of a hard 200-char cut. */
+const LIST_FIELDS: readonly FieldName[] = ['ingredients', 'recipes'];
 
 function truncateCell(value: string): string {
     return value.length > MAX_CELL_LENGTH ? value.slice(0, MAX_CELL_LENGTH) : value;
+}
+
+/**
+ * Joins `items` with ", ", capped at `maxLength`. Cuts at a list-item boundary
+ * (never a half item) and appends `, …(+N more)` for the ones dropped —
+ * `truncateCell`'s hard 200-char cut silently ate the tail of a week's menu
+ * (~14 recipe references) or a long ingredient list.
+ */
+function truncateList(items: string[], maxLength: number): string {
+    const joined = items.join(', ');
+    if (joined.length <= maxLength) {
+        return joined;
+    }
+    const suffixHeadroom = 20; // room for ", …(+N more)"
+    const budget = maxLength - suffixHeadroom;
+    const kept: string[] = [];
+    let length = 0;
+    for (const item of items) {
+        const addition = (kept.length > 0 ? 2 : 0) + item.length;
+        if (length + addition > budget) {
+            break;
+        }
+        kept.push(item);
+        length += addition;
+    }
+    if (kept.length === 0 && items.length > 0) {
+        kept.push(items[0]);
+    }
+    const remaining = items.length - kept.length;
+    return remaining > 0 ? `${kept.join(', ')}, …(+${remaining} more)` : kept.join(', ');
 }
 
 /** Renders an arbitrary YAML-sourced value as one compact cell string. */
@@ -133,6 +167,11 @@ interface ParsedRecipe {
 
 const unique = (values: string[]): string[] => [...new Set(values.filter(v => v.length > 0))];
 
+/** A menu reference path names a recipe by its bare stem — append `.cook` so it matches the `path` column, unless it already has an extension. */
+function withRecipeExtension(path: string): string {
+    return /\.[^./]+$/.test(path) ? path : `${path}.cook`;
+}
+
 function digestOf(recipe: ParsedRecipe): ParsedDigest {
     const ingredients = recipe.ingredients ?? [];
     const sections = recipe.sections ?? [];
@@ -146,7 +185,7 @@ function digestOf(recipe: ParsedRecipe): ParsedDigest {
         cookware: unique((recipe.cookware ?? []).map(c => c.name ?? '')),
         recipes: unique(ingredients
             .filter(i => i.reference)
-            .map(i => [...(i.reference!.components ?? []).filter(c => c !== '.'), i.reference!.name ?? ''].join('/'))),
+            .map(i => withRecipeExtension([...(i.reference!.components ?? []).filter(c => c !== '.'), i.reference!.name ?? ''].join('/')))),
         dates: dates.length === 0 ? '' : dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]}..${dates[dates.length - 1]}`,
     };
 }
@@ -191,9 +230,9 @@ export class SearchRecipesTool implements ToolProvider {
                 + `\`fields\` (array, from ${FIELD_NAMES.map(f => `"${f}"`).join(', ')}) picks extra columns beyond path/title — `
                 + '"source" is rendered as its URL or name (never the raw map), "ingredients" is the recipe\'s unique ingredient '
                 + 'names, "steps" is the number of steps (0 = an empty placeholder recipe), "cookware" the unique cookware names '
-                + '— both for recipes; for .menu files "recipes" lists the recipe paths the plan references and "dates" its date '
-                + 'range (YYYY-MM-DD..YYYY-MM-DD from dated day sections). Combine with kind:"menu" to see which recipes your '
-                + 'recent plans used, in one call. `where` filters by frontmatter, every key ANDed, case-insensitive: '
+                + '— both for recipes; for .menu files "recipes" lists the recipe paths the plan references and "dates" is '
+                + 'YYYY-MM-DD, or YYYY-MM-DD..YYYY-MM-DD for a range, from dated day sections. Combine with kind:"menu" to see '
+                + 'which recipes your recent plans used, in one call. `where` filters by frontmatter, every key ANDed, case-insensitive: '
                 + '{ contains: string|string[] } (ANY '
                 + 'needle is a substring of ANY string leaf of the field — a map like source:{url,name,author} or an array is '
                 + 'matched leaf-by-leaf), { equals: string }, { has: string } / { missing: string } (array membership and its '
@@ -384,7 +423,12 @@ export class SearchRecipesTool implements ToolProvider {
             for (const field of fields) {
                 row.push(this.fieldCell(field, entry, parsedByPath));
             }
-            return row.map(truncateCell);
+            // path/title and every non-list field are capped at MAX_CELL_LENGTH; a LIST_FIELDS cell is
+            // already bounded (at MAX_LIST_CELL_LENGTH, item-boundary-safe) by fieldCell itself.
+            return row.map((cell, i) => {
+                const field = fields[i - 2];
+                return field && LIST_FIELDS.includes(field) ? cell : truncateCell(cell);
+            });
         });
         return { query, columns, rows, total };
     }
@@ -404,6 +448,9 @@ export class SearchRecipesTool implements ToolProvider {
             }
             if (field === 'cookware' && entry.path.endsWith('.menu')) {
                 return '';
+            }
+            if (LIST_FIELDS.includes(field) && Array.isArray(parsedValue)) {
+                return truncateList(parsedValue, MAX_LIST_CELL_LENGTH);
             }
             return Array.isArray(parsedValue) ? parsedValue.join(', ') : String(parsedValue);
         }
