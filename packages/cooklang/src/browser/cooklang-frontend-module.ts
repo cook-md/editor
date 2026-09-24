@@ -66,6 +66,7 @@ import { EmptyFileDetector } from './empty-file-detector';
 import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { MarkdownRecipeLanguageContribution } from './markdown-recipe-language-contribution';
 import { PreviewTabManager } from './preview-tab-manager';
+import { CooklangOutletService } from './cooklang-outlet-service';
 import { CooklangWorkspaceCommandContribution } from './cooklang-workspace-command-contribution';
 import { createCooklangFileNavigatorWidget } from './cooklang-navigator-widget';
 import { WorkspaceCommandContribution } from '@theia/workspace/lib/browser/workspace-commands';
@@ -77,6 +78,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(EmptyFileDetector).toSelf().inSingletonScope();
     bind(MarkdownRecipeDetector).toSelf().inSingletonScope();
     bind(PreviewTabManager).toSelf().inSingletonScope();
+
+    // Reads what plugins (and the editor) contributed to a Cooklang outlet menu path.
+    bind(CooklangOutletService).toSelf().inSingletonScope();
 
     // Obsidian-style `.md` + `recipe: true` → Cooklang language id.
     bind(MarkdownRecipeLanguageContribution).toSelf().inSingletonScope();
