@@ -185,6 +185,10 @@ fn get_sync_status_state() -> Arc<std::sync::Mutex<SyncStatusState>> {
 #[derive(Serialize)]
 pub struct ParseResult {
     pub recipe: Option<serde_json::Value>,
+    /// The recipe's display title from its metadata, resolved by cooklang-rs
+    /// (`title:`), falling back to a legacy `name:` key. `None` when neither
+    /// is a non-blank string, so callers fall back to the file name.
+    pub title: Option<String>,
     pub errors: Vec<DiagnosticInfo>,
     pub warnings: Vec<DiagnosticInfo>,
 }
@@ -225,15 +229,28 @@ pub fn parse(input: String) -> napi::Result<String> {
     let recipe = result.output().map(|r| {
         serde_json::to_value(r).unwrap_or(serde_json::Value::Null)
     });
+    let title = result.output().and_then(|r| recipe_title(&r.metadata));
 
     let parse_result = ParseResult {
         recipe,
+        title,
         errors,
         warnings,
     };
 
     serde_json::to_string(&parse_result)
         .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+/// The recipe's display title: the std `title` key, or a legacy `name` key so
+/// recipes written before `title` was documented keep their heading.
+fn recipe_title(metadata: &cooklang::Metadata) -> Option<String> {
+    metadata
+        .title()
+        .or_else(|| metadata.get("name").and_then(|name| name.as_str()))
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(str::to_string)
 }
 
 /// Input for a single recipe when generating a shopping list.
@@ -1351,6 +1368,37 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
         Ok(output) => serde_json::json!({ "output": output }).to_string(),
         Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
+    }
+}
+
+#[cfg(test)]
+mod parse_title_tests {
+    use super::*;
+
+    fn title_of(input: &str) -> serde_json::Value {
+        let json: serde_json::Value = serde_json::from_str(&parse(input.to_string()).unwrap()).unwrap();
+        json["title"].clone()
+    }
+
+    #[test]
+    fn reads_the_title_key() {
+        assert_eq!(title_of("---\ntitle: Pain de campagne\n---\nMix @flour{500%g}.\n"), "Pain de campagne");
+    }
+
+    #[test]
+    fn title_wins_over_legacy_name() {
+        assert_eq!(title_of("---\nname: Old\ntitle: New\n---\nMix @flour{500%g}.\n"), "New");
+    }
+
+    #[test]
+    fn falls_back_to_legacy_name() {
+        assert_eq!(title_of("---\nname: Country Loaf\n---\nMix @flour{500%g}.\n"), "Country Loaf");
+    }
+
+    #[test]
+    fn is_null_without_a_title() {
+        assert!(title_of("Mix @flour{500%g}.\n").is_null());
+        assert!(title_of("---\ntitle: '  '\n---\nMix @flour{500%g}.\n").is_null());
     }
 }
 

@@ -207,6 +207,11 @@ export interface DiagnosticInfo {
 
 export interface ParseResult {
     recipe: Recipe | null;
+    /**
+     * The recipe's display title from its metadata, resolved natively (`title:`,
+     * falling back to a legacy `name:`). `null` when the recipe has none.
+     */
+    title: string | null;
     errors: DiagnosticInfo[];
     warnings: DiagnosticInfo[];
 }
