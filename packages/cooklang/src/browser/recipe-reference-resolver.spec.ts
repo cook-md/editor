@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { RecipeReferenceResolver, parseNumberAndUnit } from './recipe-reference-resolver';
+import { RecipeReferenceResolver, flattenReferences, parseNumberAndUnit } from './recipe-reference-resolver';
 
 class FakeLanguageService {
     recipes = new Map<string, string>();
@@ -77,10 +77,63 @@ describe('RecipeReferenceResolver', () => {
         expect(refs).to.deep.equal([{ path: 'Missing', scale: 3 }]);
     });
 
+    it('expands references at every depth, not just the first level (cookcli#509)', async () => {
+        const { resolver, ls } = createResolver();
+        ls.recipes.set('B', '@./C{1}');
+        ls.recipes.set('C', '@./D{1}');
+        ls.recipes.set('D', 'plain');
+        const refs = await resolver.resolve('@./B{1}', '/ws');
+        expect(refs).to.deep.equal([
+            { path: 'B', scale: 1, children: [
+                { path: 'C', scale: 1, children: [
+                    { path: 'D', scale: 1 },
+                ] },
+            ] },
+        ]);
+    });
+
+    it('resolves a nested %servings against the nested recipe, relative to its parent', async () => {
+        const { resolver, ls } = createResolver();
+        ls.recipes.set('Dinner', 'servings: 2\n@./Sauce{4%servings}');
+        ls.recipes.set('Sauce', 'servings: 8');
+        const refs = await resolver.resolve('@./Dinner{4%servings}', '/ws');
+        expect(refs).to.deep.equal([
+            { path: 'Dinner', scale: 2, children: [{ path: 'Sauce', scale: 0.5 }] },
+        ]);
+    });
+
+    it('stops at a reference cycle instead of recursing forever', async () => {
+        const { resolver, ls } = createResolver();
+        ls.recipes.set('A', '@./B{1}');
+        ls.recipes.set('B', '@./A{1}');
+        const refs = await resolver.resolve('@./A{1}', '/ws');
+        expect(refs).to.deep.equal([
+            { path: 'A', scale: 1, children: [{ path: 'B', scale: 1 }] },
+        ]);
+    });
+
     it('returns [] when parsing fails', async () => {
         const { resolver, ls } = createResolver();
         ls.parseMenu = async () => { throw new Error('boom'); };
         expect(await resolver.resolve('anything', '/ws')).to.deep.equal([]);
+    });
+});
+
+describe('flattenReferences', () => {
+
+    it('lists every reference depth-first with scales multiplied down', () => {
+        const flat = flattenReferences([
+            { path: 'Dinner', scale: 2, children: [
+                { path: 'Sauce', scale: 0.5, children: [{ path: 'Prep', scale: 3 }] },
+            ] },
+            { path: 'Salad', scale: 1 },
+        ], 2);
+        expect(flat).to.deep.equal([
+            { path: 'Dinner', scale: 4 },
+            { path: 'Sauce', scale: 2 },
+            { path: 'Prep', scale: 6 },
+            { path: 'Salad', scale: 2 },
+        ]);
     });
 });
 

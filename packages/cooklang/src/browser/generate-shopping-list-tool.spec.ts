@@ -45,7 +45,7 @@ const LIVE_RESULT: ShoppingListResult = {
     pantryItems: [],
 };
 
-interface PathScale { path: string; scale: number }
+interface PathScale { path: string; scale: number; children?: PathScale[] }
 
 /** Shared ordering log so specs can assert adds happen before the view opens. */
 class EventLog {
@@ -292,6 +292,34 @@ describe('GenerateShoppingListTool', () => {
         expect(result.error).to.match(/Permission denied/);
         expect(result.error).to.not.match(/not found/);
         expect(svc.computeCalls).to.deep.equal([]);
+    });
+
+    it('computes nested references at every depth with multipliers applied down (cookcli#509)', async () => {
+        const { tool, svc, fs, resolver } = createTool();
+        fs.files.set('file:///ws/Dinner.cook', 'dinner');
+        resolver.refs.set('dinner', [
+            { path: 'Sauce', scale: 0.5, children: [{ path: 'Prep', scale: 3 }] },
+        ]);
+        await invoke(tool, { recipes: [{ path: 'Dinner.cook', scale: 2 }] });
+        expect(svc.computeCalls).to.deep.equal([[
+            { path: 'Dinner.cook', scale: 2 },
+            { path: 'Sauce', scale: 1 },
+            { path: 'Prep', scale: 3 },
+        ]]);
+    });
+
+    it('computes a menu with the references nested under its recipes', async () => {
+        const { tool, svc, fs, resolver } = createTool();
+        fs.files.set('file:///ws/Week.menu', 'menu');
+        resolver.refs.set('menu', [
+            { path: 'Dinner', scale: 2, children: [{ path: 'Sauce', scale: 0.5 }] },
+        ]);
+        await invoke(tool, { menu: 'Week.menu' });
+        expect(svc.computeCalls).to.deep.equal([[
+            { path: 'Week.menu', scale: 1 },
+            { path: 'Dinner', scale: 2 },
+            { path: 'Sauce', scale: 1 },
+        ]]);
     });
 
     it('surfaces computation failures as an error', async () => {
