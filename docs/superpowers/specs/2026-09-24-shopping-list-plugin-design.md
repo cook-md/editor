@@ -147,6 +147,10 @@ The only context key the editor adds for `when` clauses is the global
   default menu shows) when the outlet has no visible items.
 - A command that throws is logged and shown via `MessageService.error`; the
   preview is not affected.
+- Known limitation: outlet `when` clauses are evaluated when the widget
+  renders. A context-key change alone does not re-render a preview, so a
+  `when` clause should depend on static facts (the outlet context is the
+  place for per-resource data).
 - The built-in **Show Source** button moves onto the recipe/menu toolbar
   outlets as the command `cooklang.outlet.showSource` (contributed by the
   editor through the same registry, visible only when invoked with an outlet
@@ -195,7 +199,8 @@ bundle + webview bundle).
   `shoppingList.view`. There is no cart codicon, so the plugin ships the
   Lucide cart SVG (ISC) the editor uses today, in light and dark variants,
   for the container and command icons.
-- Commands: `shoppingList.toggle`, `shoppingList.addRecipe`,
+- Commands: `shoppingList.show` (reveal the view), `shoppingList.clear`,
+  `shoppingList.addRecipe`,
   `shoppingList.addMenu`, `shoppingList.addRecipes` (programmatic; takes
   `{ recipes: [{ path, scale? }] }` or `{ menu: path }` with workspace-relative
   paths, adds them, reveals the view and returns the current
