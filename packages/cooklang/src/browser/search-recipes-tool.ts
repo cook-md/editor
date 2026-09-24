@@ -28,6 +28,7 @@ interface SearchRecipesArgs {
     limit?: number;
     fields?: string[];
     where?: WhereClause;
+    kind?: unknown;
 }
 
 /** One query's outcome in a batched search. */
@@ -64,8 +65,11 @@ const MAX_LIMIT_DIGEST = 500;
 const MAX_CELL_LENGTH = 200;
 
 /** Frontmatter keys `fields` may request — kept in step with the tool description. */
-const FIELD_NAMES = ['tags', 'source', 'cuisine', 'course', 'time', 'servings', 'diet', 'description', 'ingredients'] as const;
+const FIELD_NAMES = ['tags', 'source', 'cuisine', 'course', 'time', 'servings', 'diet', 'description', 'ingredients',
+    'steps', 'cookware', 'recipes', 'dates'] as const;
 type FieldName = typeof FIELD_NAMES[number];
+/** Fields computed by parsing the file body rather than read from frontmatter. */
+const PARSED_FIELDS: readonly FieldName[] = ['ingredients', 'steps', 'cookware', 'recipes', 'dates'];
 
 function truncateCell(value: string): string {
     return value.length > MAX_CELL_LENGTH ? value.slice(0, MAX_CELL_LENGTH) : value;
@@ -109,6 +113,44 @@ function sourceCell(value: unknown): string {
     return cellValue(value);
 }
 
+/** Everything the digest can derive from one parse of a file. */
+interface ParsedDigest {
+    ingredients: string[];
+    steps: number;
+    cookware: string[];
+    recipes: string[];
+    dates: string;
+}
+
+const EMPTY_DIGEST: ParsedDigest = { ingredients: [], steps: 0, cookware: [], recipes: [], dates: '' };
+const ISO_DATE = /\b(\d{4}-\d{2}-\d{2})\b/;
+
+interface ParsedRecipe {
+    ingredients?: Array<{ name?: string; reference?: { components?: string[]; name?: string } | null }>;
+    cookware?: Array<{ name?: string }>;
+    sections?: Array<{ name?: string | null; content?: Array<{ type?: string }> }>;
+}
+
+const unique = (values: string[]): string[] => [...new Set(values.filter(v => v.length > 0))];
+
+function digestOf(recipe: ParsedRecipe): ParsedDigest {
+    const ingredients = recipe.ingredients ?? [];
+    const sections = recipe.sections ?? [];
+    const dates = sections
+        .map(s => ISO_DATE.exec(s.name ?? '')?.[1])
+        .filter((d): d is string => !!d)
+        .sort();
+    return {
+        ingredients: unique(ingredients.map(i => i.name ?? '')),
+        steps: sections.reduce((n, s) => n + (s.content ?? []).filter(c => c.type === 'step').length, 0),
+        cookware: unique((recipe.cookware ?? []).map(c => c.name ?? '')),
+        recipes: unique(ingredients
+            .filter(i => i.reference)
+            .map(i => [...(i.reference!.components ?? []).filter(c => c !== '.'), i.reference!.name ?? ''].join('/'))),
+        dates: dates.length === 0 ? '' : dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]}..${dates[dates.length - 1]}`,
+    };
+}
+
 /**
  * AI tool: search the user's own recipes the way `cook search` does
  * (cooklang-find, filename + content terms), optionally filtered by tag.
@@ -148,7 +190,11 @@ export class SearchRecipesTool implements ToolProvider {
                 + `truncated to ${MAX_CELL_LENGTH} chars) and the max \`limit\` rises to ${MAX_LIMIT_DIGEST}. `
                 + `\`fields\` (array, from ${FIELD_NAMES.map(f => `"${f}"`).join(', ')}) picks extra columns beyond path/title — `
                 + '"source" is rendered as its URL or name (never the raw map), "ingredients" is the recipe\'s unique ingredient '
-                + 'names. `where` filters by frontmatter, every key ANDed, case-insensitive: { contains: string|string[] } (ANY '
+                + 'names, "steps" is the number of steps (0 = an empty placeholder recipe), "cookware" the unique cookware names '
+                + '— both for recipes; for .menu files "recipes" lists the recipe paths the plan references and "dates" its date '
+                + 'range (YYYY-MM-DD..YYYY-MM-DD from dated day sections). Combine with kind:"menu" to see which recipes your '
+                + 'recent plans used, in one call. `where` filters by frontmatter, every key ANDed, case-insensitive: '
+                + '{ contains: string|string[] } (ANY '
                 + 'needle is a substring of ANY string leaf of the field — a map like source:{url,name,author} or an array is '
                 + 'matched leaf-by-leaf), { equals: string }, { has: string } / { missing: string } (array membership and its '
                 + 'inverse), { exists: boolean }. Never read file bodies to answer a "which recipes have/are/contain X" question '
@@ -186,6 +232,11 @@ export class SearchRecipesTool implements ToolProvider {
                         type: 'object',
                         description: 'Frontmatter key -> condition, ANDed (switches the response to the compact { columns, rows, total } '
                             + 'shape). See the tool description for the condition grammar.',
+                    },
+                    kind: {
+                        type: 'string',
+                        enum: ['menu', 'recipe'],
+                        description: 'Keep only .menu files (meal plans) or only .cook recipes.',
                     },
                 },
             },
@@ -225,6 +276,13 @@ export class SearchRecipesTool implements ToolProvider {
         if (args.where !== undefined && (typeof args.where !== 'object' || args.where === null || Array.isArray(args.where))) { // eslint-disable-line no-null/no-null
             return this.fail('where must be an object of frontmatter key -> condition.');
         }
+        let kind: 'menu' | 'recipe' | undefined;
+        if (args.kind !== undefined) {
+            if (args.kind !== 'menu' && args.kind !== 'recipe') {
+                return this.fail('kind must be "menu" or "recipe".');
+            }
+            kind = args.kind;
+        }
 
         const tag = typeof args.tag === 'string' ? args.tag.trim().toLowerCase() : '';
         const limit = this.normaliseLimit(args.limit, digest ? MAX_LIMIT_DIGEST : MAX_LIMIT);
@@ -239,13 +297,13 @@ export class SearchRecipesTool implements ToolProvider {
             }
             const searches: SearchResult[] = [];
             for (const each of queries) {
-                searches.push(await this.searchOne(root, each, tag, limit, digest, fields, args.where));
+                searches.push(await this.searchOne(root, each, tag, limit, digest, fields, args.where, kind));
             }
             return JSON.stringify({ searches });
         }
 
         const query = typeof args.query === 'string' ? args.query.trim() : '';
-        const single = await this.searchOne(root, query, tag, limit, digest, fields, args.where);
+        const single = await this.searchOne(root, query, tag, limit, digest, fields, args.where, kind);
         if (single.error !== undefined) {
             return this.fail(single.error);
         }
@@ -269,9 +327,10 @@ export class SearchRecipesTool implements ToolProvider {
      */
     protected async searchOne(
         root: URI, query: string, tag: string, limit: number, digest: boolean, fields: FieldName[], where: WhereClause | undefined,
+        kind: 'menu' | 'recipe' | undefined,
     ): Promise<SearchResult> {
         if (digest) {
-            return this.searchOneDigest(root, query, tag, limit, fields, where);
+            return this.searchOneDigest(root, query, tag, limit, fields, where, kind);
         }
         let entries: NativeRecipeEntry[];
         try {
@@ -282,9 +341,12 @@ export class SearchRecipesTool implements ToolProvider {
         if (!Array.isArray(entries)) {
             return { query, error: 'Search failed: unexpected result shape.' };
         }
-        const filtered = tag
+        let filtered = tag
             ? entries.filter(entry => entry.tags.some(t => t.toLowerCase() === tag))
             : entries;
+        if (kind) {
+            filtered = filtered.filter(entry => kind === 'menu' ? entry.path.endsWith('.menu') : !entry.path.endsWith('.menu'));
+        }
         return {
             query,
             recipes: filtered.slice(0, limit).map(entry => this.toRecipe(root, entry)),
@@ -294,6 +356,7 @@ export class SearchRecipesTool implements ToolProvider {
 
     protected async searchOneDigest(
         root: URI, query: string, tag: string, limit: number, fields: FieldName[], where: WhereClause | undefined,
+        kind: 'menu' | 'recipe' | undefined,
     ): Promise<SearchResult> {
         let entries: RecipeMetadataEntry[];
         try {
@@ -301,51 +364,62 @@ export class SearchRecipesTool implements ToolProvider {
         } catch (e) {
             return { query, error: `Search failed: ${e instanceof Error ? e.message : String(e)}` };
         }
-        const tagFiltered = tag
+        let tagFiltered = tag
             ? entries.filter(entry => entry.tags.some(t => t.toLowerCase() === tag))
             : entries;
+        if (kind) {
+            tagFiltered = tagFiltered.filter(entry => kind === 'menu' ? entry.path.endsWith('.menu') : !entry.path.endsWith('.menu'));
+        }
         const total = tagFiltered.length;
         const candidates = tagFiltered.slice(0, limit);
 
-        let ingredientsByPath: Map<string, string[]> | undefined;
-        if (fields.includes('ingredients')) {
-            ingredientsByPath = await this.readIngredients(root, candidates.map(c => c.path));
+        let parsedByPath: Map<string, ParsedDigest> | undefined;
+        if (fields.some(f => PARSED_FIELDS.includes(f))) {
+            parsedByPath = await this.readParsed(root, candidates.map(c => c.path));
         }
 
         const columns = ['path', 'title', ...fields];
         const rows = candidates.map(entry => {
             const row = [entry.path, entry.title ?? ''];
             for (const field of fields) {
-                row.push(this.fieldCell(field, entry, ingredientsByPath));
+                row.push(this.fieldCell(field, entry, parsedByPath));
             }
             return row.map(truncateCell);
         });
         return { query, columns, rows, total };
     }
 
-    protected fieldCell(field: FieldName, entry: RecipeMetadataEntry, ingredientsByPath?: Map<string, string[]>): string {
+    protected fieldCell(field: FieldName, entry: RecipeMetadataEntry, parsedByPath?: Map<string, ParsedDigest>): string {
         if (field === 'tags') {
             return entry.tags.join(', ');
         }
-        if (field === 'ingredients') {
-            return (ingredientsByPath?.get(entry.path) ?? []).join(', ');
+        if (PARSED_FIELDS.includes(field)) {
+            const digest = parsedByPath?.get(entry.path) ?? EMPTY_DIGEST;
+            const parsedValue = digest[field as keyof ParsedDigest];
+            if (field === 'steps') {
+                return entry.path.endsWith('.menu') ? '' : String(parsedValue);
+            }
+            if ((field === 'recipes' || field === 'dates') && !entry.path.endsWith('.menu')) {
+                return '';
+            }
+            if (field === 'cookware' && entry.path.endsWith('.menu')) {
+                return '';
+            }
+            return Array.isArray(parsedValue) ? parsedValue.join(', ') : String(parsedValue);
         }
         const value = entry.metadata[field];
         return field === 'source' ? sourceCell(value) : cellValue(value);
     }
 
-    protected async readIngredients(root: URI, paths: string[]): Promise<Map<string, string[]>> {
-        const result = new Map<string, string[]>();
+    protected async readParsed(root: URI, paths: string[]): Promise<Map<string, ParsedDigest>> {
+        const result = new Map<string, ParsedDigest>();
         for (const path of paths) {
             try {
                 const content = (await this.fileService.read(root.resolve(path))).value.toString();
-                const parsed = JSON.parse(await this.languageService.parse(content)) as {
-                    recipe?: { ingredients?: Array<{ name?: string }> } | null;
-                };
-                const names = parsed.recipe?.ingredients?.map(i => i.name).filter((n): n is string => typeof n === 'string' && n.length > 0) ?? [];
-                result.set(path, [...new Set(names)]);
+                const parsed = JSON.parse(await this.languageService.parse(content)) as { recipe?: ParsedRecipe | null };
+                result.set(path, parsed.recipe ? digestOf(parsed.recipe) : EMPTY_DIGEST);
             } catch {
-                result.set(path, []);
+                result.set(path, EMPTY_DIGEST);
             }
         }
         return result;
