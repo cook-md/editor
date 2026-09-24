@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
-import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
+import { ToolInvocationContext, ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService, CooklangUri, ReportOutputFormat, ReportTemplates } from '../common';
@@ -52,6 +52,15 @@ interface ResolvedTemplate {
 }
 
 const BUILT_IN_PREFIX = 'builtin:';
+
+/**
+ * The slice of a chat tool context this tool reads: the chat's change set.
+ * Structural on purpose — `@theia/ai-chat` is not a dependency of this
+ * package, and any other context simply has no `request.session`.
+ */
+interface StagedChangeContext {
+    request?: { session?: { changeSet?: { getElementByURI?(uri: URI): { state?: string; targetState?: string } | undefined } } };
+}
 
 /**
  * AI tool that renders a Jinja2 report template against a `.cook`/`.menu` file
@@ -109,14 +118,16 @@ export class RenderTemplateTool implements ToolProvider {
                         type: 'string',
                         description: 'A saved template to render: a workspace-relative path to a .jinja/.j2/.jinja2 file '
                             + '(e.g. "config/reports/cost.jinja"; absolute path or file:// URI also works), or a built-in id '
-                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the file\'s saved content on disk (unsaved editor edits are not included). '
+                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the version staged in this chat if the file has a '
+                            + 'pending change, otherwise the saved file on disk (unsaved editor edits are not included). '
                             + 'Mutually exclusive with templateContent.',
                     },
                     recipeUri: {
                         type: 'string',
                         description: 'The .cook or .menu file to render against — preferably a path relative to the workspace '
                             + 'root (e.g. "Baking/Napoleon.cook"); an absolute path or file:// URI also works. Defaults to the '
-                            + 'active recipe in the editor. Renders the file\'s saved content on disk (unsaved editor edits are not included).',
+                            + 'active recipe in the editor. Renders the version staged in this chat if the file has a pending change, '
+                            + 'otherwise the saved file on disk (unsaved editor edits are not included).',
                     },
                     recipeUris: {
                         type: 'array',
@@ -144,11 +155,11 @@ export class RenderTemplateTool implements ToolProvider {
                     },
                 },
             },
-            handler: async (argString: string) => this.execute(argString),
+            handler: async (argString: string, ctx?: ToolInvocationContext) => this.execute(argString, ctx),
         };
     }
 
-    protected async execute(argString: string): Promise<string> {
+    protected async execute(argString: string, ctx?: ToolInvocationContext): Promise<string> {
         let args: RenderTemplateArgs;
         try {
             args = JSON.parse(argString);
@@ -167,7 +178,7 @@ export class RenderTemplateTool implements ToolProvider {
             return this.fail(template.error);
         }
         if (args.recipeUris !== undefined) {
-            return this.executeBatch(args, template);
+            return this.executeBatch(args, template, ctx);
         }
         let recipeUri: URI | undefined;
         if (args.recipeUri) {
@@ -187,7 +198,7 @@ export class RenderTemplateTool implements ToolProvider {
         }
         let recipeContent: string;
         try {
-            recipeContent = (await this.fileService.read(recipeUri)).value;
+            recipeContent = await this.readRecipe(recipeUri, ctx);
         } catch (e) {
             return this.fail(`Could not read recipe ${recipeUri.toString()}: ${this.message(e)}`);
         }
@@ -232,7 +243,7 @@ export class RenderTemplateTool implements ToolProvider {
      * others still come back. One bad candidate costing a retry of the whole
      * shortlist would give the waste straight back.
      */
-    protected async executeBatch(args: RenderTemplateArgs, template: ResolvedTemplate): Promise<string> {
+    protected async executeBatch(args: RenderTemplateArgs, template: ResolvedTemplate, ctx?: ToolInvocationContext): Promise<string> {
         if (args.recipeUri) {
             return this.fail('Pass either recipeUri or recipeUris, not both.');
         }
@@ -246,13 +257,13 @@ export class RenderTemplateTool implements ToolProvider {
         }
         const results: BatchEntry[] = [];
         for (const ref of refs) {
-            results.push(await this.renderOne(ref, template, args.scale ?? 1));
+            results.push(await this.renderOne(ref, template, args.scale ?? 1, ctx));
         }
         return JSON.stringify({ results });
     }
 
     /** Renders one recipe reference, mapping every failure into the entry itself. */
-    protected async renderOne(ref: string, template: ResolvedTemplate, scale: number): Promise<BatchEntry> {
+    protected async renderOne(ref: string, template: ResolvedTemplate, scale: number, ctx?: ToolInvocationContext): Promise<BatchEntry> {
         const recipeUri = this.reportConfigService.resolveWorkspaceUri(ref);
         if (!recipeUri) {
             return {
@@ -265,7 +276,7 @@ export class RenderTemplateTool implements ToolProvider {
         }
         let recipeContent: string;
         try {
-            recipeContent = (await this.fileService.read(recipeUri)).value;
+            recipeContent = await this.readRecipe(recipeUri, ctx);
         } catch (e) {
             return { recipeUri: ref, error: `Could not read recipe: ${this.message(e)}` };
         }
@@ -282,6 +293,19 @@ export class RenderTemplateTool implements ToolProvider {
         } catch (e) {
             return { recipeUri: ref, error: `Render failed: ${this.message(e)}` };
         }
+    }
+
+    /**
+     * The recipe text to render: the chat's pending (staged) version when there
+     * is one, otherwise the file on disk. A plan CookBot just proposed is only
+     * staged, so reading disk made "build it and check it" take two prompts.
+     */
+    protected async readRecipe(uri: URI, ctx?: ToolInvocationContext): Promise<string> {
+        const element = (ctx as StagedChangeContext | undefined)?.request?.session?.changeSet?.getElementByURI?.(uri);
+        if (element?.state === 'pending' && typeof element.targetState === 'string') {
+            return element.targetState;
+        }
+        return (await this.fileService.read(uri)).value;
     }
 
     protected inlineTemplate(content: string): ResolvedTemplate {
