@@ -28,6 +28,7 @@ import { FileChangesEvent } from '@theia/filesystem/lib/common/files';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
+import { ResolvedRecipeReference } from './recipe-reference-resolver';
 import {
     ShoppingListFile,
     ShoppingListRecipeItem,
@@ -255,16 +256,9 @@ export class ShoppingListService implements Disposable {
     async addRecipe(
         path: string,
         scale = 1,
-        includedRefs?: Array<{ path: string; scale: number }>,
+        includedRefs?: ReadonlyArray<ResolvedRecipeReference>,
     ): Promise<void> {
-        const children: ShoppingListRecipeItem[] = includedRefs
-            ? includedRefs.map(r => ({
-                  type: 'recipe',
-                  path: r.path.replace(/^\.\//, ''),
-                  multiplier: r.scale === 1 ? undefined : r.scale,
-                  children: [],
-              }))
-            : [];
+        const children = (includedRefs ?? []).map(toRecipeItem);
         this.list.items.push({
             type: 'recipe',
             path,
@@ -358,24 +352,14 @@ export class ShoppingListService implements Disposable {
 
     /**
      * Adds a menu as a single top-level item with nested recipe children.
-     * Each child recipe may itself have sub-recipe references as grandchildren.
+     * Each child recipe keeps its own sub-recipe references, at any depth.
      */
     async addMenu(
         menuPath: string,
         menuScale: number,
-        recipes: Array<{ path: string; scale: number; includedRefs?: string[] }>,
+        recipes: ReadonlyArray<ResolvedRecipeReference>,
     ): Promise<void> {
-        const children: ShoppingListRecipeItem[] = recipes.map(r => ({
-            type: 'recipe',
-            path: r.path,
-            multiplier: r.scale === 1 ? undefined : r.scale,
-            children: (r.includedRefs ?? []).map(p => ({
-                type: 'recipe',
-                path: p.replace(/^\.\//, ''),
-                multiplier: undefined,
-                children: [],
-            })),
-        }));
+        const children = recipes.map(toRecipeItem);
         this.list.items.push({
             type: 'recipe',
             path: menuPath,
@@ -481,4 +465,14 @@ export class ShoppingListService implements Disposable {
 
         this.onDidChangeEmitter.fire();
     }
+}
+
+/** Converts a resolved reference tree into persisted shopping-list items. */
+function toRecipeItem(ref: ResolvedRecipeReference): ShoppingListRecipeItem {
+    return {
+        type: 'recipe',
+        path: ref.path.replace(/^\.\//, ''),
+        multiplier: ref.scale === 1 ? undefined : ref.scale,
+        children: (ref.children ?? []).map(toRecipeItem),
+    };
 }

@@ -17,7 +17,34 @@ import { CooklangLanguageService } from '../common/cooklang-language-service';
 /** A `@recipe{…}` reference resolved to a concrete multiplier. */
 export interface ResolvedRecipeReference {
     path: string;
+    /** Multiplier relative to the recipe that holds the reference. */
     scale: number;
+    /** The referenced recipe's own references; omitted when there are none. */
+    children?: ResolvedRecipeReference[];
+}
+
+/**
+ * Deepest reference chain followed, matching CookCLI's `MAX_REFERENCE_DEPTH`.
+ * Cycles are caught separately; this only bounds absurdly deep collections.
+ */
+const MAX_REFERENCE_DEPTH = 100;
+
+/**
+ * Flattens a reference tree depth-first into `{ path, scale }` pairs with
+ * multipliers applied down the chain (a sauce at ×0.5 under a dinner at ×2
+ * is ×1 overall) — the shape `ShoppingListService.computeResult` expects.
+ */
+export function flattenReferences(
+    refs: ReadonlyArray<ResolvedRecipeReference>,
+    parentScale = 1,
+): Array<{ path: string; scale: number }> {
+    const out: Array<{ path: string; scale: number }> = [];
+    for (const ref of refs) {
+        const scale = ref.scale * parentScale;
+        out.push({ path: ref.path, scale });
+        out.push(...flattenReferences(ref.children ?? [], scale));
+    }
+    return out;
 }
 
 /**
@@ -32,6 +59,11 @@ export interface ResolvedRecipeReference {
  *
  * Unresolvable units fall back to treating the raw number as a multiplier —
  * same as when no metadata is present on the target.
+ *
+ * References are followed recursively (a menu → dinner → sauce → prep chain
+ * lists the prep's ingredients too). Nested paths resolve against the same
+ * workspace root, as in CookCLI; a reference back to a recipe already being
+ * expanded is skipped (with a warning) so a cycle can't count twice.
  */
 @injectable()
 export class RecipeReferenceResolver {
@@ -40,6 +72,14 @@ export class RecipeReferenceResolver {
     protected readonly languageService: CooklangLanguageService;
 
     async resolve(content: string, baseDir: string): Promise<ResolvedRecipeReference[]> {
+        return this.resolveNested(content, baseDir, []);
+    }
+
+    protected async resolveNested(
+        content: string,
+        baseDir: string,
+        ancestors: string[],
+    ): Promise<ResolvedRecipeReference[]> {
         let parsed: {
             sections?: Array<{
                 lines?: Array<Array<{ type?: string; name?: string; scale?: number; unit?: string }>>;
@@ -69,16 +109,42 @@ export class RecipeReferenceResolver {
 
         const out: ResolvedRecipeReference[] = [];
         for (const r of refs) {
+            if (ancestors.includes(r.path)) {
+                // Listing it again would count its ingredients twice.
+                console.warn(`[shopping-list] Reference cycle at ${r.path}; skipping it`);
+                continue;
+            }
+            const recipe = await this.findRecipe(baseDir, r.path);
             let scale = r.scale;
-            if (r.unit && r.scale > 0) {
-                const resolved = await this.resolveReferenceScale(baseDir, r.path, r.scale, r.unit);
+            if (recipe && r.unit && r.scale > 0) {
+                const resolved = await this.resolveReferenceScale(recipe, r.path, r.scale, r.unit);
                 if (resolved !== undefined) {
                     scale = resolved;
                 }
             }
-            out.push({ path: r.path, scale });
+            const ref: ResolvedRecipeReference = { path: r.path, scale };
+            if (recipe) {
+                if (ancestors.length + 1 >= MAX_REFERENCE_DEPTH) {
+                    console.warn(`[shopping-list] Stopped at ${r.path}: references nested more than ${MAX_REFERENCE_DEPTH} deep`);
+                } else {
+                    const children = await this.resolveNested(recipe, baseDir, [...ancestors, r.path]);
+                    if (children.length > 0) {
+                        ref.children = children;
+                    }
+                }
+            }
+            out.push(ref);
         }
         return out;
+    }
+
+    protected async findRecipe(baseDir: string, recipePath: string): Promise<string | undefined> {
+        try {
+            return await this.languageService.findRecipe(baseDir, recipePath);
+        } catch (e) {
+            console.warn(`[shopping-list] findRecipe failed for ${recipePath}:`, e);
+            return undefined;
+        }
     }
 
     /**
@@ -89,24 +155,15 @@ export class RecipeReferenceResolver {
      * - any other unit          → reads the recipe's `yield` metadata and
      *                             only resolves when the units match.
      *
-     * Returns `undefined` when the recipe can't be found, the relevant
-     * metadata is missing/unparseable, or the unit doesn't match.
+     * Returns `undefined` when the relevant metadata is missing/unparseable
+     * or the unit doesn't match.
      */
     protected async resolveReferenceScale(
-        baseDir: string,
+        content: string,
         recipePath: string,
         target: number,
         unit: string,
     ): Promise<number | undefined> {
-        let content: string | undefined;
-        try {
-            content = await this.languageService.findRecipe(baseDir, recipePath);
-        } catch (e) {
-            console.warn(`[shopping-list] findRecipe failed for ${recipePath}:`, e);
-            return undefined;
-        }
-        if (!content) { return undefined; }
-
         let metadata: { servings?: string; yield?: string } | undefined;
         try {
             const menu = JSON.parse(await this.languageService.parseMenu(content, 1));

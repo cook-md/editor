@@ -27,7 +27,7 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
-import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
 import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { COOKLANG_LANGUAGE_ID, CooklangUri } from '../common';
 import { RECIPE_PREVIEW_WIDGET_ID } from './recipe-preview-widget';
@@ -227,7 +227,7 @@ export class ShoppingListContribution
 
         // Parse the recipe for sub-recipe references so we can include their
         // ingredients in the shopping list with correctly scaled multipliers.
-        let includedRefs: Array<{ path: string; scale: number }> | undefined;
+        let includedRefs: ResolvedRecipeReference[] | undefined;
         try {
             const content = await this.fileService.read(targetUri);
             includedRefs = await this.referenceResolver.resolve(

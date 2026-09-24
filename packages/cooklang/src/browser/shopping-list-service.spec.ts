@@ -209,6 +209,32 @@ describe('ShoppingListService', () => {
         expect(items[0].children[1].multiplier).to.equal(2);
     });
 
+    it('addMenu keeps references nested below the menu recipes (cookcli#509)', async () => {
+        const { svc } = makeService();
+        await svc.addMenu('week.menu', 1, [
+            { path: 'Dinner', scale: 1, children: [
+                { path: 'Sauce', scale: 0.5, children: [{ path: 'Prep', scale: 2 }] },
+            ] },
+        ]);
+        const dinner = (svc.getItems() as readonly ShoppingListRecipeItem[])[0].children[0];
+        expect(dinner.path).to.equal('Dinner');
+        expect(dinner.children[0].path).to.equal('Sauce');
+        expect(dinner.children[0].multiplier).to.equal(0.5);
+        expect(dinner.children[0].children[0].path).to.equal('Prep');
+        expect(dinner.children[0].children[0].multiplier).to.equal(2);
+    });
+
+    it('addRecipe keeps references more than one level deep', async () => {
+        const { svc } = makeService();
+        await svc.addRecipe('a.cook', 1, [
+            { path: './b', scale: 1, children: [{ path: './c', scale: 1, children: [{ path: 'd', scale: 1 }] }] },
+        ]);
+        const b = (svc.getItems() as readonly ShoppingListRecipeItem[])[0].children[0];
+        expect(b.path).to.equal('b');
+        expect(b.children[0].path).to.equal('c');
+        expect(b.children[0].children[0].path).to.equal('d');
+    });
+
     it('checkItem appends to .shopping-checked and updates the set', async () => {
         const { svc, fs } = makeService();
         await svc.checkItem('Flour');

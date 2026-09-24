@@ -18,7 +18,7 @@ import { FileOperationError, FileOperationResult } from '@theia/filesystem/lib/c
 import URI from '@theia/core/lib/common/uri';
 import { ShoppingListService } from './shopping-list-service';
 import { ShoppingListContribution } from './shopping-list-contribution';
-import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
+import { RecipeReferenceResolver, ResolvedRecipeReference, flattenReferences } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
 import { ShoppingListResult } from '../common/shopping-list-types';
 
@@ -192,9 +192,7 @@ export class GenerateShoppingListTool implements ToolProvider {
         const flat: Array<{ path: string; scale: number }> = [];
         for (const input of inputs) {
             flat.push({ path: input.path, scale: input.scale });
-            for (const ref of input.refs) {
-                flat.push({ path: ref.path, scale: ref.scale * input.scale });
-            }
+            flat.push(...flattenReferences(input.refs, input.scale));
         }
         const result = await this.shoppingListService.computeResult(flat);
         return JSON.stringify({ ...result, recipes: summary });
@@ -218,7 +216,7 @@ export class GenerateShoppingListTool implements ToolProvider {
 
         // Same flattening as ShoppingListService.flattenForGeneration for a menu
         // item: the menu itself (own ingredients, if any) plus each referenced recipe.
-        const flat = [{ path: file.path, scale: 1 }, ...recipes];
+        const flat = [{ path: file.path, scale: 1 }, ...flattenReferences(recipes)];
         const result = await this.shoppingListService.computeResult(flat);
         return JSON.stringify({ ...result, recipes });
     }
