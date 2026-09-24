@@ -1,0 +1,35 @@
+// *****************************************************************************
+// Copyright (C) 2026 cook.md and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU Affero General Public License version 3 as
+// published by the Free Software Foundation, with the linking exception
+// documented in NOTICE.md.
+//
+// See LICENSE-AGPL for the full license text.
+// *****************************************************************************
+
+import { MenuPath } from '@theia/core/lib/common/menu';
+
+/**
+ * Public menu paths plugins contribute to with `contributes.menus`, e.g.
+ * `"cooklang/recipePreview/toolbar": [{ "command": "x", "group": "navigation@10" }]`.
+ * Theia maps any non-VS Code menu id to the menu path `[id]`, so plugins need
+ * nothing beyond the id. Each outlet passes one JSON context argument — see
+ * `cooklang-outlet-context.ts`. Renaming a path breaks plugins.
+ */
+export namespace CooklangOutlets {
+    export const VERSION = 1;
+    /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
+    export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];
+    /** Icon buttons in the menu preview header. Context: `PreviewOutletContext`. */
+    export const MENU_PREVIEW_TOOLBAR: MenuPath = ['cooklang/menuPreview/toolbar'];
+    /** Right-click on an ingredient in the recipe preview. Context: `IngredientOutletContext`. */
+    export const RECIPE_INGREDIENT_CONTEXT: MenuPath = ['cooklang/recipePreview/ingredient/context'];
+    /** Right-click on a recipe reference in the menu preview. Context: `MenuRecipeOutletContext`. */
+    export const MENU_RECIPE_CONTEXT: MenuPath = ['cooklang/menuPreview/recipe/context'];
+    /** Icon buttons above a rendered report. Context: `ReportOutletContext`. */
+    export const REPORT_TOOLBAR: MenuPath = ['cooklang/report/toolbar'];
+}
