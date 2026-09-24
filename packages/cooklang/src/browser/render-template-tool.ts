@@ -118,8 +118,7 @@ export class RenderTemplateTool implements ToolProvider {
                         type: 'string',
                         description: 'A saved template to render: a workspace-relative path to a .jinja/.j2/.jinja2 file '
                             + '(e.g. "config/reports/cost.jinja"; absolute path or file:// URI also works), or a built-in id '
-                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the version staged in this chat if the file has a '
-                            + 'pending change, otherwise the saved file on disk (unsaved editor edits are not included). '
+                            + '("builtin:ingredients", "builtin:shopping-list"). Renders the file\'s saved content on disk (unsaved editor edits are not included). '
                             + 'Mutually exclusive with templateContent.',
                     },
                     recipeUri: {
@@ -137,6 +136,7 @@ export class RenderTemplateTool implements ToolProvider {
                             + 'one call per recipe: the template is sent once rather than retyped for every candidate. '
                             + 'Returns { results: [{ recipeUri, output } | { recipeUri, error }] } in the order given; a recipe that '
                             + 'fails to read or render reports its error in its own entry and the rest still come back. '
+                            + 'Each uses the version staged in this chat when the file has a pending change. '
                             + 'Mutually exclusive with recipeUri, and cannot be combined with show (a batch is headless).',
                     },
                     show: {
