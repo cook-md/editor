@@ -18,7 +18,7 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { CommandMenu, CompoundMenuNode, MenuModelRegistry, MenuNode, MenuPath } from '@theia/core/lib/common/menu';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
-import { ContextMenuRenderer, RenderContextMenuOptions } from '@theia/core/lib/browser/context-menu-renderer';
+import { ContextMenuRenderer } from '@theia/core/lib/browser/context-menu-renderer';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
 
@@ -33,6 +33,8 @@ export interface OutletItem {
 export interface OutletMouseEvent {
     clientX: number;
     clientY: number;
+    /** The element the menu was opened on; it scopes `when` clauses and picks the window. */
+    readonly currentTarget: EventTarget | null;
     preventDefault(): void;
     stopPropagation(): void;
 }
@@ -113,12 +115,8 @@ export class CooklangOutletService {
             args: [context],
             // The anchor is a DOM object; plugin commands only get the JSON context.
             includeAnchorArg: false,
-            // `OutletMouseEvent` is a JSON-friendly subset of DOM/React mouse events
-            // without a DOM element, but `BrowserContextMenuRenderer` and
-            // `ElectronContextMenuRenderer` both treat `context` as optional
-            // internally (`params.context?.ownerDocument...`) and this is a
-            // single-window Electron app, so omitting it is safe.
-        } as RenderContextMenuOptions);
+            context: event.currentTarget instanceof HTMLElement ? event.currentTarget : document.body,
+        });
     }
 
     /** `uri` and workspace-relative `path` for an outlet context. */

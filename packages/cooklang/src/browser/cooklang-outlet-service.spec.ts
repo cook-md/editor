@@ -130,16 +130,18 @@ describe('CooklangOutletService', () => {
         const fixture = new Fixture();
         fixture.root!.children = [fixture.command('lookup', '1')];
         let prevented = false;
-        const event = { clientX: 10, clientY: 20, preventDefault: () => { prevented = true; }, stopPropagation: () => undefined };
+        const target = document.createElement('div');
+        const event = { clientX: 10, clientY: 20, currentTarget: target, preventDefault: () => { prevented = true; }, stopPropagation: () => undefined };
         fixture.create().showContextMenu(PATH, CONTEXT, event);
         expect(prevented).to.equal(true);
-        expect(fixture.rendered).to.deep.equal([{ menuPath: PATH, anchor: { x: 10, y: 20 }, args: [CONTEXT], includeAnchorArg: false }]);
+        expect(fixture.rendered).to.deep.equal([{ menuPath: PATH, anchor: { x: 10, y: 20 }, args: [CONTEXT], includeAnchorArg: false, context: target }]);
     });
 
     it('leaves the default context menu alone when the outlet is empty', () => {
         const fixture = new Fixture();
         let prevented = false;
-        fixture.create().showContextMenu(PATH, CONTEXT, { clientX: 0, clientY: 0, preventDefault: () => { prevented = true; }, stopPropagation: () => undefined });
+        fixture.create().showContextMenu(PATH, CONTEXT,
+            { clientX: 0, clientY: 0, currentTarget: null, preventDefault: () => { prevented = true; }, stopPropagation: () => undefined }); // eslint-disable-line no-null/no-null
         expect(prevented).to.equal(false);
         expect(fixture.rendered).to.deep.equal([]);
     });
