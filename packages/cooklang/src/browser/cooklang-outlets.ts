@@ -21,6 +21,7 @@ import { MenuPath } from '@theia/core/lib/common/menu';
  * `cooklang-outlet-context.ts`. Renaming a path breaks plugins.
  */
 export namespace CooklangOutlets {
+    /** Outlet contract version; equals the `version` field of every context passed to outlet commands. */
     export const VERSION = 1;
     /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
     export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];

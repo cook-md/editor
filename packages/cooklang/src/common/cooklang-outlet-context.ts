@@ -19,6 +19,8 @@ import { ReportOutputFormat } from './report-templates';
  * Cooklang outlets (see `CooklangOutlets`). Plain JSON so they cross the
  * plugin-host boundary unchanged. Version 1; later versions only add optional
  * fields. Paths are workspace-relative; URIs are `file://` strings.
+ *
+ * Context for the `cooklang/recipePreview/toolbar` and `cooklang/menuPreview/toolbar` outlets.
  */
 export interface PreviewOutletContext {
     version: 1;
@@ -70,6 +72,7 @@ export namespace IngredientOutletInfo {
     }
 }
 
+/** Context for the `cooklang/recipePreview/ingredient/context` outlet (right-click on an ingredient in the recipe preview). */
 export interface IngredientOutletContext extends PreviewOutletContext {
     ingredient: IngredientOutletInfo;
 }
@@ -84,6 +87,7 @@ export interface MenuRecipeOutletInfo {
     unit?: string;
 }
 
+/** Context for the `cooklang/menuPreview/recipe/context` outlet (right-click on a recipe reference in the menu preview). */
 export interface MenuRecipeOutletContext {
     version: 1;
     menuUri: string;
@@ -92,6 +96,7 @@ export interface MenuRecipeOutletContext {
     recipe: MenuRecipeOutletInfo;
 }
 
+/** Context for the `cooklang/report/toolbar` outlet (toolbar above a rendered report). */
 export interface ReportOutletContext {
     version: 1;
     /** Recipe or menu the report was rendered for. */
