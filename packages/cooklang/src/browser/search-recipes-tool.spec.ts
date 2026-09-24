@@ -51,6 +51,10 @@ class FakeLanguageService {
     /** Keyed by recipe content, so `parse` can answer per-file in readIngredients tests. */
     ingredientsByContent = new Map<string, FakeIngredient[]>();
 
+    /** Keyed by recipe content: the parsed `recipe` object `parse` returns. Overrides ingredientsByContent. */
+    parsedByContent = new Map<string, Record<string, unknown>>();
+    parseCalls = 0;
+
     async searchRecipes(baseDir: string, query: string): Promise<string> {
         this.calls.push({ baseDir, query });
         return JSON.stringify(this.entries);
@@ -60,8 +64,10 @@ class FakeLanguageService {
         return JSON.stringify(this.filteredEntries);
     }
     async parse(content: string): Promise<string> {
-        const ingredients = this.ingredientsByContent.get(content) ?? [];
-        return JSON.stringify({ recipe: { ingredients }, errors: [], warnings: [] });
+        this.parseCalls++;
+        const recipe = this.parsedByContent.get(content)
+            ?? { ingredients: this.ingredientsByContent.get(content) ?? [] };
+        return JSON.stringify({ recipe, errors: [], warnings: [] });
     }
 }
 
@@ -537,6 +543,176 @@ describe('SearchRecipesTool', () => {
             const result = JSON.parse(raw as string) as { searches: SearchResult[] };
             expect(result.searches[0].error).to.match(/boom/);
             expect(result.searches[1].total).to.equal(1);
+        });
+
+        const CHILLI_CONTENT = 'CHILLI CONTENT';
+        const CHILLI_ENTRY: NativeFilteredEntry = {
+            path: '/ws/Chilli.cook', name: 'Chilli', title: 'Chilli', tags: [], isMenu: false, servings: null, metadata: {},
+        };
+        const TODO_CONTENT = 'TODO CONTENT';
+        const TODO_ENTRY: NativeFilteredEntry = {
+            path: '/ws/Todo.cook', name: 'Todo', title: 'Todo', tags: [], isMenu: false, servings: null, metadata: {},
+        };
+        const MENU_CONTENT = 'MENU CONTENT';
+        const MENU_ENTRY: NativeFilteredEntry = {
+            path: '/ws/Plans/Week.menu', name: 'Week', title: 'Week', tags: [], isMenu: true, servings: null, metadata: {},
+        };
+
+        const step = (n: number) => ({ type: 'step', value: { items: [], number: n } });
+
+        it('renders steps and cookware from the parse', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [CHILLI_ENTRY];
+            withContent(fs, 'Chilli.cook', CHILLI_CONTENT);
+            ls.parsedByContent.set(CHILLI_CONTENT, {
+                ingredients: [],
+                cookware: [{ name: 'slow cooker' }, { name: 'pan' }, { name: 'slow cooker' }],
+                sections: [{ name: null, content: [step(1), { type: 'text', value: 'note' }, step(2)] }, { name: 'Serve', content: [step(1)] }],
+            });
+            const result = await invoke(tool, { fields: ['steps', 'cookware'] });
+            expect(result.columns).to.deep.equal(['path', 'title', 'steps', 'cookware']);
+            expect(result.rows?.[0]).to.deep.equal(['Chilli.cook', 'Chilli', '3', 'slow cooker, pan']);
+        });
+
+        it('reports 0 steps for a placeholder body', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [TODO_ENTRY];
+            withContent(fs, 'Todo.cook', TODO_CONTENT);
+            ls.parsedByContent.set(TODO_CONTENT, { ingredients: [], cookware: [], sections: [] });
+            const result = await invoke(tool, { fields: ['steps'] });
+            expect(result.rows?.[0][2]).to.equal('0');
+        });
+
+        it('renders a menu\'s referenced recipes (unique, in order) and its date range', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [MENU_ENTRY];
+            withContent(fs, 'Plans/Week.menu', MENU_CONTENT);
+            ls.parsedByContent.set(MENU_CONTENT, {
+                ingredients: [
+                    { name: 'Shakshuka', reference: { components: ['.', 'Breakfast'], name: 'Shakshuka' } },
+                    { name: 'coffee', reference: null },
+                    { name: 'Chilli Con Carne', reference: { components: ['.', 'Slowcooker'], name: 'Chilli Con Carne' } },
+                    { name: 'Chilli Con Carne', reference: { components: ['.', 'Slowcooker'], name: 'Chilli Con Carne' } },
+                ],
+                cookware: [],
+                sections: [{ name: 'Day 1 (2026-09-24)', content: [] }, { name: 'Day 3 (2026-09-26)', content: [] }, { name: 'Snacks', content: [] }],
+            });
+            const result = await invoke(tool, { fields: ['recipes', 'dates'] });
+            expect(result.columns).to.deep.equal(['path', 'title', 'recipes', 'dates']);
+            expect(result.rows?.[0]).to.deep.equal([
+                'Plans/Week.menu', 'Week', 'Breakfast/Shakshuka.cook, Slowcooker/Chilli Con Carne.cook', '2026-09-24..2026-09-26',
+            ]);
+        });
+
+        it('leaves a reference\'s existing extension alone instead of appending another .cook', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [MENU_ENTRY];
+            const withExtContent = 'MENU WITH EXT CONTENT';
+            withContent(fs, 'Plans/Week.menu', withExtContent);
+            ls.parsedByContent.set(withExtContent, {
+                ingredients: [{ name: 'Shakshuka', reference: { components: ['.', 'Breakfast'], name: 'Shakshuka.menu' } }],
+                cookware: [],
+                sections: [],
+            });
+            const result = await invoke(tool, { fields: ['recipes'] });
+            expect(result.rows?.[0][2]).to.equal('Breakfast/Shakshuka.menu');
+        });
+
+        it('leaves dates empty for a menu without dated sections, and recipes/dates empty for recipes', async () => {
+            const { tool, ls, fs } = createTool();
+            const noDatesContent = 'NO DATES CONTENT';
+            const noDatesEntry: NativeFilteredEntry = {
+                path: '/ws/Plans/NoDates.menu', name: 'NoDates', title: 'NoDates', tags: [], isMenu: true, servings: null, metadata: {},
+            };
+            ls.filteredEntries = [noDatesEntry, CHILLI_ENTRY];
+            withContent(fs, 'Plans/NoDates.menu', noDatesContent);
+            withContent(fs, 'Chilli.cook', CHILLI_CONTENT);
+            ls.parsedByContent.set(noDatesContent, { ingredients: [], cookware: [], sections: [{ name: 'Snacks', content: [] }] });
+            ls.parsedByContent.set(CHILLI_CONTENT, { ingredients: [], cookware: [], sections: [] });
+            const result = await invoke(tool, { fields: ['recipes', 'dates'] });
+            expect(result.rows?.[0]).to.deep.equal(['Plans/NoDates.menu', 'NoDates', '', '']);
+            expect(result.rows?.[1]).to.deep.equal(['Chilli.cook', 'Chilli', '', '']);
+        });
+
+        it('parses each file once when several parsed fields are requested', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [CHILLI_ENTRY, TODO_ENTRY];
+            withContent(fs, 'Chilli.cook', CHILLI_CONTENT);
+            withContent(fs, 'Todo.cook', TODO_CONTENT);
+            ls.parsedByContent.set(CHILLI_CONTENT, { ingredients: [], cookware: [{ name: 'pan' }], sections: [] });
+            ls.parsedByContent.set(TODO_CONTENT, { ingredients: [], cookware: [], sections: [] });
+            await invoke(tool, { fields: ['ingredients', 'steps', 'cookware', 'recipes'] });
+            expect(ls.parseCalls).to.equal(2);
+        });
+
+        it('kind: "menu" keeps only .menu entries; kind: "recipe" only .cook; anything else is an error', async () => {
+            const { tool, ls } = createTool();
+            ls.filteredEntries = [MENU_ENTRY, CHILLI_ENTRY];
+            const menuResult = await invoke(tool, { fields: ['cuisine'], kind: 'menu' });
+            expect(menuResult.rows?.map(r => r[0])).to.deep.equal(['Plans/Week.menu']);
+            expect(menuResult.total).to.equal(1);
+            const recipeResult = await invoke(tool, { fields: ['cuisine'], kind: 'recipe' });
+            expect(recipeResult.rows?.map(r => r[0])).to.deep.equal(['Chilli.cook']);
+            expect(recipeResult.total).to.equal(1);
+            const badResult = await invoke(tool, { kind: 'oops' });
+            expect(badResult.error).to.match(/kind must be "menu" or "recipe"/);
+        });
+
+        it('keeps every reference for a normal-length list, well under the higher cap', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [MENU_ENTRY];
+            const manyRefsContent = 'MANY REFS CONTENT';
+            withContent(fs, 'Plans/Week.menu', manyRefsContent);
+            // 20 references of ~27 chars each ("Category/Recipe-00.cook") — a week's-plan-sized list.
+            const refNames = Array.from({ length: 20 }, (_, i) => `Recipe-${String(i).padStart(2, '0')}`);
+            ls.parsedByContent.set(manyRefsContent, {
+                ingredients: refNames.map(name => ({ name, reference: { components: ['.', 'Category'], name } })),
+                cookware: [],
+                sections: [],
+            });
+            const result = await invoke(tool, { fields: ['recipes'] });
+            const cell = result.rows?.[0][2] ?? '';
+            expect(cell).to.not.include('more)');
+            const expectedPaths = refNames.map(name => `Category/${name}.cook`);
+            expect(cell.split(', ')).to.deep.equal(expectedPaths);
+        });
+
+        it('cuts a long list at an item boundary and appends the remaining count when it exceeds the higher cap', async () => {
+            const { tool, ls, fs } = createTool();
+            ls.filteredEntries = [MENU_ENTRY];
+            const hugeRefsContent = 'HUGE REFS CONTENT';
+            withContent(fs, 'Plans/Week.menu', hugeRefsContent);
+            const refNames = Array.from({ length: 150 }, (_, i) => `Recipe-${String(i).padStart(3, '0')}`);
+            const expectedPaths = refNames.map(name => `Category/${name}.cook`);
+            ls.parsedByContent.set(hugeRefsContent, {
+                ingredients: refNames.map(name => ({ name, reference: { components: ['.', 'Category'], name } })),
+                cookware: [],
+                sections: [],
+            });
+            const result = await invoke(tool, { fields: ['recipes'] });
+            const cell = result.rows?.[0][2] ?? '';
+            expect(cell.length).to.be.at.most(2000);
+            expect(cell).to.match(/, …\(\+\d+ more\)$/);
+            const withoutSuffix = cell.replace(/, …\(\+\d+ more\)$/, '');
+            const items = withoutSuffix.split(', ');
+            expect(items.length).to.be.lessThan(refNames.length);
+            for (const [i, item] of items.entries()) {
+                expect(item).to.equal(expectedPaths[i]);
+            }
+        });
+    });
+
+    describe('kind (plain, non-digest path)', () => {
+
+        it('keeps only .menu entries for kind: "menu" and only non-.menu entries for kind: "recipe"', async () => {
+            const { tool, ls } = createTool();
+            ls.entries = [salmon, menu];
+            const menuResult = await invoke(tool, { kind: 'menu' });
+            expect(menuResult.recipes?.map(r => r.path)).to.deep.equal(['Plans/Week.menu']);
+            expect(menuResult.total).to.equal(1);
+            const recipeResult = await invoke(tool, { kind: 'recipe' });
+            expect(recipeResult.recipes?.map(r => r.path)).to.deep.equal(['Dinner/Salmon.cook']);
+            expect(recipeResult.total).to.equal(1);
         });
     });
 });
