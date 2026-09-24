@@ -13,6 +13,25 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.46](https://github.com/cook-md/editor/compare/v0.1.0-alpha.45...v0.1.0-alpha.46) (2026-09-24)
+
+
+### Features
+
+* **cookbot:** renderTemplate renders staged files; searchRecipes digest gains steps, cookware, menu recipes/dates, kind ([#144](https://github.com/cook-md/editor/issues/144)) ([f0934d1](https://github.com/cook-md/editor/commit/f0934d112faef20a3ce58531f954f063663b00f7))
+* **deeplink:** handle cook:// links, unify the .cook UTI, offer Save to Drafts ([#139](https://github.com/cook-md/editor/issues/139)) ([59d7d58](https://github.com/cook-md/editor/commit/59d7d5892dba91180fe4e807aab8e0898ba1dc84))
+
+
+### Bug Fixes
+
+* **cookbot:** live COOK.md, honest truncation, turns that always end, keep the question across folder open ([#141](https://github.com/cook-md/editor/issues/141)) ([b903aca](https://github.com/cook-md/editor/commit/b903aca17d6c34fa389b710270b881759de7897d))
+* **preview:** show the recipe's title: metadata instead of the filename ([#131](https://github.com/cook-md/editor/issues/131)) ([#143](https://github.com/cook-md/editor/issues/143)) ([a60e411](https://github.com/cook-md/editor/commit/a60e411dee0749388652266ad767df65fa487288))
+
+
+### Performance Improvements
+
+* **cookbot:** shrink searchRecipes results — drop name, omit empty fields ([#125](https://github.com/cook-md/editor/issues/125)) ([#142](https://github.com/cook-md/editor/issues/142)) ([3fc9847](https://github.com/cook-md/editor/commit/3fc98477247bd0678109727620b78d438ee6b82e))
+
 ## [0.1.0-alpha.45](https://github.com/cook-md/editor/compare/v0.1.0-alpha.44...v0.1.0-alpha.45) (2026-09-20)
 
 
