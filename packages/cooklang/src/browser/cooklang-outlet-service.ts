@@ -74,6 +74,7 @@ export class CooklangOutletService {
 
     @postConstruct()
     protected init(): void {
+        // Not disposed: this service is a root singleton that lives as long as the registries it listens to.
         this.menus.onDidChange(() => this.onDidChangeEmitter.fire());
         this.commands.onCommandsChanged(() => this.onDidChangeEmitter.fire());
     }
@@ -104,7 +105,8 @@ export class CooklangOutletService {
 
     /** Opens the outlet as a context menu; does nothing when it has no visible items. */
     showContextMenu(menuPath: MenuPath, context: object, event: OutletMouseEvent): void {
-        if (this.visibleCommands(menuPath, context).length === 0) {
+        const element = event.currentTarget instanceof HTMLElement ? event.currentTarget : document.body;
+        if (this.visibleCommands(menuPath, context, element).length === 0) {
             return;
         }
         event.preventDefault();
@@ -115,7 +117,7 @@ export class CooklangOutletService {
             args: [context],
             // The anchor is a DOM object; plugin commands only get the JSON context.
             includeAnchorArg: false,
-            context: event.currentTarget instanceof HTMLElement ? event.currentTarget : document.body,
+            context: element,
         });
     }
 
@@ -126,14 +128,14 @@ export class CooklangOutletService {
         return { uri: uri.toString(), path: relative ?? uri.path.base };
     }
 
-    protected visibleCommands(menuPath: MenuPath, context: object): CommandMenu[] {
+    protected visibleCommands(menuPath: MenuPath, context: object, element?: HTMLElement): CommandMenu[] {
         const root = this.menus.getMenu(menuPath);
         if (!root) {
             return [];
         }
         const out: CommandMenu[] = [];
         const visit = (node: MenuNode): void => {
-            if (!node.isVisible(menuPath, this.contextKeys, undefined, context)) {
+            if (!node.isVisible(menuPath, this.contextKeys, element, context)) {
                 return;
             }
             if (CommandMenu.is(node)) {
