@@ -35,6 +35,7 @@ import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-wid
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListGenerator } from './shopping-list-generator';
+import { CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
 import { RecipeNavigator } from './recipe-navigator';
 import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget';
 import { ImageViewerContribution } from './image-viewer-contribution';
@@ -222,6 +223,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bindViewContribution(bind, ShoppingListContribution);
     bind(FrontendApplicationContribution).toService(ShoppingListContribution);
     bind(TabBarToolbarContribution).toService(ShoppingListContribution);
+
+    // Public label-less `cooklang.api.*` commands for plugins.
+    bind(CooklangPluginApiContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(CooklangPluginApiContribution);
+    bind(FrontendApplicationContribution).toService(CooklangPluginApiContribution);
 
     // --- Timers --- (CookingTimerService is bound above, with the preview.)
     bind(TimerChime).toSelf().inSingletonScope();
