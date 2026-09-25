@@ -22,9 +22,12 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
-import { MenuParseResult } from '../common/menu-types';
+import { MenuParseResult, MenuRecipeReferenceItem } from '../common/menu-types';
 import { MenuView } from './menu-preview-components';
 import { RecipeNavigator } from './recipe-navigator';
+import { CooklangOutletService } from './cooklang-outlet-service';
+import { CooklangOutlets } from './cooklang-outlets';
+import { MenuRecipeOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/menu-preview.css';
 
@@ -66,6 +69,9 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     @inject(RecipeNavigator)
     protected readonly navigator: RecipeNavigator;
 
+    @inject(CooklangOutletService)
+    protected readonly outlets: CooklangOutletService;
+
     protected uri: URI;
     protected menuResult: MenuParseResult | undefined;
     protected parseErrors: string[] = [];
@@ -82,6 +88,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -200,10 +207,39 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
-    protected handleShowSource = (): void => {
-        if (this.uri) {
-            this.navigator.openSource(this.uri);
+    protected previewContext(): PreviewOutletContext | undefined {
+        if (!this.uri) {
+            return undefined;
         }
+        return { version: CooklangOutlets.VERSION, ...this.outlets.describe(this.uri), scale: this.scale };
+    }
+
+    protected handleRunToolbarItem = (id: string): void => {
+        const context = this.previewContext();
+        if (context) {
+            this.outlets.run(CooklangOutlets.MENU_PREVIEW_TOOLBAR, id, context);
+        }
+    };
+
+    protected handleRecipeContextMenu = (item: MenuRecipeReferenceItem, event: React.MouseEvent): void => {
+        const context = this.previewContext();
+        if (!context) {
+            return;
+        }
+        const recipe: MenuRecipeOutletInfo = { name: item.name.replace(/^\.\//, '') };
+        if (typeof item.scale === 'number') {
+            recipe.scale = item.scale;
+        }
+        if (item.unit) {
+            recipe.unit = item.unit;
+        }
+        this.outlets.showContextMenu(CooklangOutlets.MENU_RECIPE_CONTEXT, {
+            version: CooklangOutlets.VERSION,
+            menuUri: context.uri,
+            menuPath: context.path,
+            menuScale: context.scale,
+            recipe,
+        }, event);
     };
 
     protected handleScaleChange = (newScale: number): void => {
@@ -221,13 +257,17 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     protected render(): React.ReactNode {
         if (this.menuResult && this.menuResult.sections.length > 0) {
+            const context = this.previewContext();
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.MENU_PREVIEW_TOOLBAR, context) : [];
             return (
                 <MenuView
                     menuResult={this.menuResult}
                     fileName={this.uri?.path.base ?? ''}
                     scale={this.scale}
                     onScaleChange={this.handleScaleChange}
-                    onShowSource={this.handleShowSource}
+                    toolbarItems={toolbarItems}
+                    onRunToolbarItem={this.handleRunToolbarItem}
+                    onRecipeContextMenu={this.handleRecipeContextMenu}
                     onAddToShoppingList={this.handleAddToShoppingList}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
                 />

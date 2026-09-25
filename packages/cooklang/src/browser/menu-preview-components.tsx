@@ -26,7 +26,10 @@ import {
     MenuSection,
     MenuSectionItem,
     MenuMetadata,
+    MenuRecipeReferenceItem,
 } from '../common/menu-types';
+import { CooklangActionBar } from './cooklang-action-bar';
+import { OutletItem } from './cooklang-outlet-service';
 
 // ---------------------------------------------------------------------------
 // MenuMetadataPills
@@ -77,9 +80,10 @@ const MenuMetadataPills = ({ metadata }: MenuMetadataPillsProps): React.ReactEle
 interface MenuItemViewProps {
     item: MenuSectionItem;
     onNavigateToRecipe?: (referencePath: string) => void;
+    onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
 }
 
-const MenuItemView = ({ item, onNavigateToRecipe }: MenuItemViewProps): React.ReactElement => {
+const MenuItemView = ({ item, onNavigateToRecipe, onRecipeContextMenu }: MenuItemViewProps): React.ReactElement => {
     switch (item.type) {
         case 'text':
             return <span className='menu-text'>{item.value}</span>;
@@ -89,7 +93,8 @@ const MenuItemView = ({ item, onNavigateToRecipe }: MenuItemViewProps): React.Re
                 ? item.name.slice(2)
                 : item.name;
             return (
-                <span className='menu-recipe-ref'>
+                <span className='menu-recipe-ref'
+                    onContextMenu={onRecipeContextMenu ? event => onRecipeContextMenu(item, event) : undefined}>
                     <a
                         className='menu-recipe-ref-link'
                         onClick={() => onNavigateToRecipe?.(item.name)}
@@ -125,9 +130,10 @@ const MenuItemView = ({ item, onNavigateToRecipe }: MenuItemViewProps): React.Re
 interface MenuLineViewProps {
     items: MenuSectionItem[];
     onNavigateToRecipe?: (referencePath: string) => void;
+    onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
 }
 
-const MenuLineView = ({ items, onNavigateToRecipe }: MenuLineViewProps): React.ReactElement => {
+const MenuLineView = ({ items, onNavigateToRecipe, onRecipeContextMenu }: MenuLineViewProps): React.ReactElement => {
     // Single text item ending with ':' — render as meal type header
     if (items.length === 1 && items[0].type === 'text' && items[0].value.trim().endsWith(':')) {
         return <h3 className='menu-meal-header'>{items[0].value}</h3>;
@@ -140,6 +146,7 @@ const MenuLineView = ({ items, onNavigateToRecipe }: MenuLineViewProps): React.R
                     key={idx}
                     item={item}
                     onNavigateToRecipe={onNavigateToRecipe}
+                    onRecipeContextMenu={onRecipeContextMenu}
                 />
             ))}
         </div>
@@ -153,9 +160,10 @@ const MenuLineView = ({ items, onNavigateToRecipe }: MenuLineViewProps): React.R
 interface MenuSectionViewProps {
     section: MenuSection;
     onNavigateToRecipe?: (referencePath: string) => void;
+    onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
 }
 
-const MenuSectionView = ({ section, onNavigateToRecipe }: MenuSectionViewProps): React.ReactElement => (
+const MenuSectionView = ({ section, onNavigateToRecipe, onRecipeContextMenu }: MenuSectionViewProps): React.ReactElement => (
     <div className='menu-section'>
         {section.name && (
             <div className='menu-section-header'>
@@ -168,6 +176,7 @@ const MenuSectionView = ({ section, onNavigateToRecipe }: MenuSectionViewProps):
                     key={idx}
                     items={line}
                     onNavigateToRecipe={onNavigateToRecipe}
+                    onRecipeContextMenu={onRecipeContextMenu}
                 />
             ))}
         </div>
@@ -183,9 +192,11 @@ export interface MenuViewProps {
     fileName: string;
     scale: number;
     onScaleChange?: (scale: number) => void;
-    onShowSource?: () => void;
+    toolbarItems: readonly OutletItem[];
+    onRunToolbarItem: (id: string) => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
+    onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
 }
 
 export const MenuView = ({
@@ -193,9 +204,11 @@ export const MenuView = ({
     fileName,
     scale,
     onScaleChange,
-    onShowSource,
+    toolbarItems,
+    onRunToolbarItem,
     onAddToShoppingList,
     onNavigateToRecipe,
+    onRecipeContextMenu,
 }: MenuViewProps): React.ReactElement => {
     const meta = menuResult.metadata;
     const title = fileName.replace(/\.menu$/i, '');
@@ -236,15 +249,7 @@ export const MenuView = ({
                             <span className='theia-shopping-cart-icon'></span>
                         </button>
                     )}
-                    {onShowSource && (
-                        <button
-                            className='menu-add-shopping-list'
-                            onClick={onShowSource}
-                            title='Show Source'
-                        >
-                            <span className='codicon codicon-go-to-file'></span>
-                        </button>
-                    )}
+                    <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
                 </div>
             </div>
 
@@ -260,6 +265,7 @@ export const MenuView = ({
                         key={idx}
                         section={section}
                         onNavigateToRecipe={onNavigateToRecipe}
+                        onRecipeContextMenu={onRecipeContextMenu}
                     />
                 ))}
             </div>
