@@ -86,6 +86,10 @@ class PreviewHarness {
     contentImage: string | undefined = REMOTE_IMAGE;
     /** What `recipeImages` reports as the title image of a local recipe. */
     localImage: string | undefined;
+    /** URI schemes `fileService.hasProvider` reports as registered. */
+    readonly providers = new Set<string>(['file', 'cooklang-hub']);
+    readonly fileReads: string[] = [];
+    readonly registrations = new Emitter<{ added: boolean; scheme: string }>();
     readonly widget: RecipePreviewWidget;
 
     constructor() {
@@ -122,7 +126,12 @@ class PreviewHarness {
                     return Disposable.NULL;
                 },
                 onDidFilesChange: never,
-                read: async () => ({ value: CONTENT }),
+                hasProvider: (scheme: string) => this.providers.has(scheme),
+                onDidChangeFileSystemProviderRegistrations: this.registrations.event,
+                read: async (uri: URI) => {
+                    this.fileReads.push(uri.toString());
+                    return { value: CONTENT };
+                },
             },
             imageService: {
                 resolve: async (uri: URI) => {
@@ -159,6 +168,12 @@ class PreviewHarness {
         this.widget.setUri(uri);
         await until(() => this.internals.recipe !== undefined);
         await new Promise(resolve => setTimeout(resolve, 10));
+    }
+
+    /** Register a file system provider for `scheme`, as a plugin activating late would. */
+    registerProvider(scheme: string): void {
+        this.providers.add(scheme);
+        this.registrations.fire({ added: true, scheme });
     }
 
     markup(): string {
@@ -262,5 +277,78 @@ describe('RecipePreviewWidget for non-file recipes', () => {
         const harness = new PreviewHarness();
         await harness.open(LOCAL);
         expect(harness.markup()).to.contain('ingredient-ref-link');
+    });
+});
+
+describe('RecipePreviewWidget restored before its file system registers', () => {
+
+    it('waits for the provider instead of reading, then parses once it registers', async () => {
+        const harness = new PreviewHarness();
+        harness.providers.delete('cooklang-hub');
+        harness.widget.setUri(HUB);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(harness.fileReads).to.deep.equal([]);
+        expect(harness.internals.recipe).to.be.undefined;
+        expect(harness.markup()).to.not.contain('Parse errors');
+
+        harness.registerProvider('cooklang-hub');
+        await until(() => harness.internals.recipe !== undefined);
+        expect(harness.fileReads).to.deep.equal([HUB.toString()]);
+        await until(() => harness.internals.images.title === REMOTE_IMAGE);
+        expect(harness.markup()).to.contain('Syrup');
+    });
+
+    it('ignores providers registered for other schemes', async () => {
+        const harness = new PreviewHarness();
+        harness.providers.delete('cooklang-hub');
+        harness.widget.setUri(HUB);
+        harness.registerProvider('other-scheme');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(harness.fileReads).to.deep.equal([]);
+        expect(harness.internals.recipe).to.be.undefined;
+    });
+
+    it('re-reads a recipe whose read failed once its provider registers', async () => {
+        const harness = new PreviewHarness();
+        harness.providers.delete('cooklang-hub');
+        // The provider is reported absent, but a racing read still ran and failed.
+        let failed = false;
+        const fileService = (harness.widget as unknown as { fileService: { read(uri: URI): Promise<{ value: string }> } }).fileService;
+        const read = fileService.read;
+        fileService.read = async (uri: URI) => {
+            if (!failed) {
+                failed = true;
+                throw new Error('Canceled');
+            }
+            return read(uri);
+        };
+        harness.providers.add('cooklang-hub');
+        harness.widget.setUri(HUB);
+        await until(() => failed);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        expect(harness.markup()).to.contain('Parse errors');
+
+        harness.registrations.fire({ added: true, scheme: 'cooklang-hub' });
+        await until(() => harness.internals.recipe !== undefined);
+        expect(harness.markup()).to.contain('Syrup');
+    });
+
+    it('stops listening for provider registrations once disposed', async () => {
+        const harness = new PreviewHarness();
+        harness.providers.delete('cooklang-hub');
+        harness.widget.setUri(HUB);
+        harness.widget.dispose();
+        harness.registerProvider('cooklang-hub');
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(harness.fileReads).to.deep.equal([]);
+    });
+
+    it('does not re-read a local recipe when a provider registers', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(LOCAL);
+        expect(harness.fileReads).to.deep.equal([LOCAL.toString()]);
+        harness.registrations.fire({ added: true, scheme: 'file' });
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(harness.fileReads).to.deep.equal([LOCAL.toString()]);
     });
 });

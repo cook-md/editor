@@ -125,6 +125,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.listenToProviderRegistrations();
         this.toDispose.push(this.timerService.onDidChangeTimers(() => {
             // A tick is only interesting to this preview if one of its own
             // timers is in it. Ticks fire for every timer in the window, and a
@@ -221,6 +222,21 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         );
     }
 
+    /**
+     * A preview restored at startup can come up before the plugin providing
+     * its file system (e.g. `cooklang-hub:`) has activated. Such a read either
+     * waits for the provider or is cancelled after a timeout, so the preview
+     * does not read until the provider exists, and reads again once it
+     * registers. Local recipes are unaffected: `file:` is always there.
+     */
+    protected listenToProviderRegistrations(): void {
+        this.toDispose.push(this.fileService.onDidChangeFileSystemProviderRegistrations(({ added, scheme }) => {
+            if (added && this.uri && !this.hasLocalSource() && scheme === this.uri.scheme) {
+                this.parseCurrentContent();
+            }
+        }));
+    }
+
     // --- Parse helpers ---
 
     protected debouncedParse(content: string): void {
@@ -240,6 +256,10 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         const model = this.monacoWorkspace.getTextDocument(this.uri.toString());
         if (model) {
             this.parseContent(model.getText());
+        } else if (!this.hasLocalSource() && !this.fileService.hasProvider(this.uri.scheme)) {
+            // Read once the provider registers; see `listenToProviderRegistrations`.
+            this.parseErrors = [];
+            this.update();
         } else {
             this.fileService.read(this.uri).then(
                 content => this.parseContent(content.value),
