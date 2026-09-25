@@ -20,6 +20,7 @@ import { CooklangLanguageService } from '../common/cooklang-language-service';
 import {
     CheckEntry,
     ShoppingListFile,
+    ShoppingListRecipeItem,
     ShoppingListResult,
     fromWireCheckedLog,
     fromWireShoppingList,
@@ -53,6 +54,13 @@ export namespace CooklangPluginApi {
     } as const;
 }
 
+/**
+ * Registers the public `cooklang.api.*` commands (see {@link CooklangPluginApi})
+ * and sets the `cooklang.apiVersion` context key on start. Every command takes
+ * one plain-JSON argument, validates it strictly (rejecting with
+ * `Invalid arguments: …`), and delegates the format work to the native
+ * Cooklang crates through {@link CooklangLanguageService}.
+ */
 @injectable()
 export class CooklangPluginApiContribution implements CommandContribution, FrontendApplicationContribution {
 
@@ -123,10 +131,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
 
     protected async writeShoppingList(args: unknown): Promise<string> {
         const list = this.object(this.object(args).list);
-        if (!Array.isArray(list.items)) {
-            throw this.invalid('`list.items` must be an array.');
-        }
-        return this.languageService.writeShoppingList(toWireShoppingList(list as unknown as ShoppingListFile));
+        const file: ShoppingListFile = { items: this.shoppingItems(list.items, '`list.items`') };
+        return this.languageService.writeShoppingList(toWireShoppingList(file));
     }
 
     protected async parseShoppingChecked(args: unknown): Promise<CheckEntry[]> {
@@ -167,12 +173,26 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     /** Workspace-relative form of a path or URI inside the workspace. */
     protected workspacePath(path: string): string {
         const root = this.root();
-        const uri = this.reportConfigService.resolveWorkspaceUri(path);
+        const uri = this.reportConfigService.resolveWorkspaceUri(this.portablePath(path));
         const relative = uri && root.isEqualOrParent(uri) ? root.relative(uri)?.toString() : undefined;
         if (!relative) {
             throw new Error(`Path is outside the workspace: ${path}`);
         }
         return relative;
+    }
+
+    /**
+     * Windows absolute paths (`C:\\…`) become `file://` URIs; backslashes in
+     * relative paths become `/`, so plugins may pass either separator.
+     */
+    protected portablePath(path: string): string {
+        if (/^[a-zA-Z]:[\\/]/.test(path)) {
+            return URI.fromFilePath(path.replace(/\\/g, '/')).toString();
+        }
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) {
+            return path;
+        }
+        return path.replace(/\\/g, '/');
     }
 
     protected object(value: unknown): Record<string, unknown> {
@@ -186,6 +206,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         if (typeof value !== 'string' || value.trim() === '') {
             throw this.invalid(`${name} must be a non-empty string.`);
         }
+        this.noControlCharacters(value, name);
         return value.trim();
     }
 
@@ -205,8 +226,38 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             if ((candidate.type !== 'checked' && candidate.type !== 'unchecked') || typeof candidate.name !== 'string') {
                 throw this.invalid('each entry must be { type: "checked" | "unchecked", name }.');
             }
+            this.noControlCharacters(candidate.name, 'entry `name`');
             return { type: candidate.type, name: candidate.name };
         });
+    }
+
+    /** Validates a `.shopping-list` item tree; `type` is always `'recipe'`. */
+    protected shoppingItems(value: unknown, name: string): ShoppingListRecipeItem[] {
+        if (!Array.isArray(value)) {
+            throw this.invalid(`${name} must be an array.`);
+        }
+        return value.map(entry => {
+            const item = this.object(entry);
+            const path = this.string(item.path, '`path`');
+            const multiplier = item.multiplier;
+            if (multiplier !== undefined && (typeof multiplier !== 'number' || !Number.isFinite(multiplier) || multiplier <= 0)) {
+                throw this.invalid(`Recipe multiplier must be a positive number: ${path}`);
+            }
+            const children = item.children === undefined ? [] : this.shoppingItems(item.children, '`children`');
+            const result: ShoppingListRecipeItem = { type: 'recipe', path, children };
+            if (multiplier !== undefined) {
+                result.multiplier = multiplier;
+            }
+            return result;
+        });
+    }
+
+    /** The Rust writers do not escape newlines, so control characters would corrupt the file. */
+    protected noControlCharacters(value: string, name: string): void {
+        // eslint-disable-next-line no-control-regex
+        if (/[\u0000-\u001f\u007f]/.test(value)) {
+            throw this.invalid(`${name} must not contain control characters.`);
+        }
     }
 
     protected invalid(detail: string): Error {

@@ -13,7 +13,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-const disableJSDOM = enableJSDOM();
+enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 try {
@@ -25,8 +25,6 @@ try {
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangPluginApi, CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
-
-after(() => disableJSDOM());
 
 interface Handler { execute: (...args: unknown[]) => unknown }
 
@@ -166,6 +164,33 @@ describe('CooklangPluginApiContribution', () => {
             entries: [{ type: 'checked', name: 'flour' }], ingredients: ['flour'],
         })).to.deep.equal([{ type: 'checked', name: 'flour' }]);
         expect(await fixture.error(CooklangPluginApi.Commands.WRITE_SHOPPING_CHECKED, { entries: [{ type: 'maybe', name: 'x' }] }))
+            .to.match(/^Invalid arguments/);
+    });
+
+    it('accepts backslash separators in relative paths', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(CooklangPluginApi.Commands.GENERATE_SHOPPING_LIST, { recipes: [{ path: 'Dinner\\Soup.cook' }] });
+        expect(fixture.computeCalls).to.deep.equal([[{ path: 'Dinner/Soup.cook', scale: 1 }]]);
+    });
+
+    it('validates the shopping list deeply before writing it', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.WRITE_SHOPPING_LIST;
+        expect(await fixture.run(id, { list: { items: [{ type: 'menu', path: 'a.cook', multiplier: 2 }] } }))
+            .to.equal('wrote {"items":[{"Recipe":{"path":"a.cook","multiplier":2,"children":[]}}]}');
+        expect(await fixture.error(id, { list: { items: [{ path: 'a.cook', multiplier: -1 }] } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { list: { items: [{ path: 'a.cook', children: [null] }] } })).to.match(/^Invalid arguments/); // eslint-disable-line no-null/no-null
+        expect(await fixture.error(id, { list: { items: [null] } })).to.match(/^Invalid arguments/); // eslint-disable-line no-null/no-null
+    });
+
+    it('rejects control characters in paths and checked entry names', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.error(CooklangPluginApi.Commands.GENERATE_SHOPPING_LIST, { recipes: [{ path: 'Soup\n.cook' }] }))
+            .to.match(/^Invalid arguments/);
+        expect(await fixture.error(CooklangPluginApi.Commands.WRITE_SHOPPING_CHECKED, { entries: [{ type: 'checked', name: 'flour\nmilk' }] }))
             .to.match(/^Invalid arguments/);
     });
 });
