@@ -82,6 +82,14 @@ export declare function findRecipePath(baseDir: string, name: string): string | 
  * section 0 holding the linear `Recipe.N.ext` form.
  */
 export declare function recipeImages(recipePath: string): string
+/**
+ * Title image for recipe text that has no file on disk, such as a recipe a
+ * plugin serves from its own file system, using `cooklang-find`'s
+ * content-based entry. Only metadata (`image:`, `images:`, `picture:`,
+ * `pictures:`) can name an image, and it comes back verbatim. Same JSON shape
+ * as `recipeImages`; `steps` is always empty.
+ */
+export declare function recipeImagesFromContent(content: string): string
 export declare function compactChecked(entriesJson: string, currentIngredients: Array<string>): string
 /**
  * Search recipes under `base_dir` the way `cook search` does
