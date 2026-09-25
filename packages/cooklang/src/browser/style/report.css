@@ -241,3 +241,9 @@
     font-size: 0.85em;
     white-space: pre-wrap;
 }
+
+.theia-cooklang-report .theia-cooklang-report-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 16px 0;
+}

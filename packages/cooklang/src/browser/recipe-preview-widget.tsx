@@ -15,7 +15,6 @@ import { injectable, inject, postConstruct, interfaces } from '@theia/core/share
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
@@ -23,7 +22,7 @@ import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
-import { ParseResult, Recipe } from '../common/recipe-types';
+import { Ingredient, ParseResult, Recipe } from '../common/recipe-types';
 import {
     RecipeImages,
     ResolvedRecipeImages,
@@ -36,6 +35,9 @@ import { RecipeView, LinkOpenerProvider } from './recipe-preview-components';
 import { TimerRecipeRef } from '../common/cooking-timer';
 import { CookingTimerService } from './cooking-timer-service';
 import { TimerBinding, TimerBindingProvider } from './timer-components';
+import { CooklangOutletService } from './cooklang-outlet-service';
+import { CooklangOutlets } from './cooklang-outlets';
+import { IngredientOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -68,9 +70,6 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(FileService)
     protected readonly fileService: FileService;
 
-    @inject(CommandRegistry)
-    protected readonly commandRegistry: CommandRegistry;
-
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
 
@@ -85,6 +84,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(CookingTimerService)
     protected readonly timerService: CookingTimerService;
+
+    @inject(CooklangOutletService)
+    protected readonly outlets: CooklangOutletService;
 
     protected uri: URI;
     protected recipe: Recipe | undefined;
@@ -117,6 +119,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 this.update();
             }
         }));
+        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -388,14 +391,26 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         }
     }
 
-    protected handleShowSource = (): void => {
-        if (this.uri) {
-            this.navigator.openSource(this.uri);
+    protected previewContext(): PreviewOutletContext | undefined {
+        if (!this.uri) {
+            return undefined;
+        }
+        return { version: CooklangOutlets.VERSION, ...this.outlets.describe(this.uri), scale: this.scale };
+    }
+
+    protected handleRunToolbarItem = (id: string): void => {
+        const context = this.previewContext();
+        if (context) {
+            this.outlets.run(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, id, context);
         }
     };
 
-    protected handleAddToShoppingList = (scale: number): void => {
-        this.commandRegistry.executeCommand('cooklang.addToShoppingList', this, scale);
+    protected handleIngredientContextMenu = (ingredient: Ingredient, event: React.MouseEvent): void => {
+        const context = this.previewContext();
+        if (context) {
+            this.outlets.showContextMenu(CooklangOutlets.RECIPE_INGREDIENT_CONTEXT,
+                { ...context, ingredient: IngredientOutletInfo.fromIngredient(ingredient) }, event);
+        }
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
@@ -441,6 +456,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
 
     protected render(): React.ReactNode {
         if (this.recipe) {
+            const context = this.previewContext();
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, context) : [];
             return (
                 <TimerBindingProvider value={this.timerBinding}>
                     <LinkOpenerProvider value={this.handleOpenLink}>
@@ -450,8 +467,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                             images={this.images}
                             scale={this.scale}
                             onScaleChange={this.handleScaleChange}
-                            onShowSource={this.handleShowSource}
-                            onAddToShoppingList={this.handleAddToShoppingList}
+                            toolbarItems={toolbarItems}
+                            onRunToolbarItem={this.handleRunToolbarItem}
+                            onIngredientContextMenu={this.handleIngredientContextMenu}
                             onNavigateToRecipe={this.handleNavigateToRecipe}
                         />
                     </LinkOpenerProvider>

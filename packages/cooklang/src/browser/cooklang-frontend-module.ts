@@ -31,15 +31,14 @@ import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
 import { CookingTimerService } from './cooking-timer-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
-import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
-import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { ShoppingListGenerator } from './shopping-list-generator';
+import { CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
 import { RecipeNavigator } from './recipe-navigator';
 import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget';
 import { ImageViewerContribution } from './image-viewer-contribution';
 import { BinaryFileOpenHandler } from './binary-file-open-handler';
 import { CookUrlOpenHandler } from './cook-url-open-handler';
-import { ShoppingListContribution } from './shopping-list-contribution';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
 import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
@@ -66,6 +65,8 @@ import { EmptyFileDetector } from './empty-file-detector';
 import { MarkdownRecipeDetector } from './markdown-recipe-detector';
 import { MarkdownRecipeLanguageContribution } from './markdown-recipe-language-contribution';
 import { PreviewTabManager } from './preview-tab-manager';
+import { CooklangOutletService } from './cooklang-outlet-service';
+import { CooklangOutletContribution } from './cooklang-outlet-contribution';
 import { CooklangWorkspaceCommandContribution } from './cooklang-workspace-command-contribution';
 import { createCooklangFileNavigatorWidget } from './cooklang-navigator-widget';
 import { WorkspaceCommandContribution } from '@theia/workspace/lib/browser/workspace-commands';
@@ -77,6 +78,14 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(EmptyFileDetector).toSelf().inSingletonScope();
     bind(MarkdownRecipeDetector).toSelf().inSingletonScope();
     bind(PreviewTabManager).toSelf().inSingletonScope();
+
+    // Reads what plugins (and the editor) contributed to a Cooklang outlet menu path.
+    bind(CooklangOutletService).toSelf().inSingletonScope();
+
+    // Editor's own Show Source entry in the preview toolbar outlets.
+    bind(CooklangOutletContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(CooklangOutletContribution);
+    bind(MenuContribution).toService(CooklangOutletContribution);
 
     // Obsidian-style `.md` + `recipe: true` → Cooklang language id.
     bind(MarkdownRecipeLanguageContribution).toSelf().inSingletonScope();
@@ -196,20 +205,15 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Cooklang preferences
     bindCooklangPreferences(bind);
 
-    // Shopping list
+    // Shopping-list aggregation (plugin API + Cookbot)
     bind(RecipeReferenceResolver).toSelf().inSingletonScope();
+    bind(ShoppingListGenerator).toSelf().inSingletonScope();
     bind(RecipeNavigator).toSelf().inSingletonScope();
-    bind(ShoppingListService).toSelf().inSingletonScope();
 
-    bind(ShoppingListWidget).toSelf();
-    bind(WidgetFactory).toDynamicValue(ctx => ({
-        id: SHOPPING_LIST_WIDGET_ID,
-        createWidget: () => ctx.container.get<ShoppingListWidget>(ShoppingListWidget),
-    })).inSingletonScope();
-
-    bindViewContribution(bind, ShoppingListContribution);
-    bind(FrontendApplicationContribution).toService(ShoppingListContribution);
-    bind(TabBarToolbarContribution).toService(ShoppingListContribution);
+    // Public label-less `cooklang.api.*` commands for plugins.
+    bind(CooklangPluginApiContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(CooklangPluginApiContribution);
+    bind(FrontendApplicationContribution).toService(CooklangPluginApiContribution);
 
     // --- Timers --- (CookingTimerService is bound above, with the preview.)
     bind(TimerChime).toSelf().inSingletonScope();

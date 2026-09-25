@@ -32,7 +32,7 @@ const MAX_REFERENCE_DEPTH = 100;
 /**
  * Flattens a reference tree depth-first into `{ path, scale }` pairs with
  * multipliers applied down the chain (a sauce at ×0.5 under a dinner at ×2
- * is ×1 overall) — the shape `ShoppingListService.computeResult` expects.
+ * is ×1 overall) — the shape `ShoppingListGenerator.computeResult` expects.
  */
 export function flattenReferences(
     refs: ReadonlyArray<ResolvedRecipeReference>,
@@ -50,7 +50,7 @@ export function flattenReferences(
 /**
  * Resolves `@recipe` sub-references in a `.cook`/`.menu` to `{ path, scale }`
  * pairs, since the `.shopping-list` format only stores a numeric multiplier.
- * Shared by the shopping-list commands and the `generateShoppingList` AI tool.
+ * Shared by the `cooklang.api.resolveRecipeReferences` command and the `generateShoppingList` AI tool.
  *
  * Per spec/conventions.md:
  *   {2}            → plain multiplier

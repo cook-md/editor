@@ -20,7 +20,7 @@
 // terms of the MIT License, which is available in the project root.
 // *****************************************************************************
 
-// ── Internal, ergonomic types used by ShoppingListService + UI ───────────────
+// ── Internal, ergonomic types used by the plugin API ─────────────────────────
 
 /**
  * Persisted shopping list — internal representation.

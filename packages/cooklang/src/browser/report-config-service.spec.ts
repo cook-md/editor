@@ -14,7 +14,7 @@
 // `ReportConfigService` imports browser widget types (ApplicationShell, Widget,
 // NavigatableWidget) whose modules evaluate `@lumino/widgets` at require time,
 // which touches `document`/`navigator`. Set up jsdom before importing the
-// service — mirrors the sibling `shopping-list-service.spec.ts`.
+// service — same preamble as the sibling tool specs.
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 const disableJSDOM = enableJSDOM();

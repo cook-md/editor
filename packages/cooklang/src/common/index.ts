@@ -27,3 +27,4 @@ export * from './report-templates';
 export * from './cooking-timer';
 export * from './timer-duration';
 export * from './recipe-links';
+export * from './cooklang-outlet-context';

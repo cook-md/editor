@@ -28,6 +28,10 @@ import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types
 import { buildReportExportDocument } from './report-export-document';
 import { MermaidRenderer, themeTypeToMermaidTheme } from './mermaid-renderer';
 import { MermaidMarkdown } from './report-markdown';
+import { CooklangOutletService } from './cooklang-outlet-service';
+import { CooklangOutlets } from './cooklang-outlets';
+import { CooklangActionBar } from './cooklang-action-bar';
+import { ReportOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/report.css';
 
@@ -63,6 +67,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     @inject(ThemeService)
     protected readonly themeService: ThemeService;
 
+    @inject(CooklangOutletService)
+    protected readonly outlets: CooklangOutletService;
+
     protected uri: URI;
     protected options: ReportWidgetOptions;
     protected output: string | undefined;
@@ -93,6 +100,7 @@ export class ReportWidget extends ReactWidget implements Navigatable {
         this.toDispose.push(
             this.themeService.onDidColorThemeChange(() => this.update())
         );
+        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -222,6 +230,44 @@ export class ReportWidget extends ReactWidget implements Navigatable {
     // --- Rendering ---
 
     protected render(): React.ReactNode {
+        const context = this.reportContext();
+        const items = context ? this.outlets.getItems(CooklangOutlets.REPORT_TOOLBAR, context) : [];
+        return (
+            <>
+                <CooklangActionBar className='theia-cooklang-report-toolbar' items={items} onRun={this.handleRunToolbarItem} />
+                {this.renderBody()}
+            </>
+        );
+    }
+
+    protected reportContext(): ReportOutletContext | undefined {
+        if (!this.uri || !this.options) {
+            return undefined;
+        }
+        const context: ReportOutletContext = {
+            version: CooklangOutlets.VERSION,
+            ...this.outlets.describe(this.uri),
+            templateId: this.options.templateId,
+            templateLabel: this.options.templateLabel,
+            outputFormat: this.getOutputFormat(),
+        };
+        if (this.options.templateUri) {
+            context.templateUri = this.options.templateUri;
+        }
+        if (this.output !== undefined && this.errorMessage === undefined) {
+            context.output = this.output;
+        }
+        return context;
+    }
+
+    protected handleRunToolbarItem = (id: string): void => {
+        const context = this.reportContext();
+        if (context) {
+            this.outlets.run(CooklangOutlets.REPORT_TOOLBAR, id, context);
+        }
+    };
+
+    protected renderBody(): React.ReactNode {
         if (this.errorMessage) {
             return (
                 <div className='theia-cooklang-report-error'>

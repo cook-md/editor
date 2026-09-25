@@ -15,16 +15,18 @@ import { injectable, inject, postConstruct, interfaces } from '@theia/core/share
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
-import { MenuParseResult } from '../common/menu-types';
+import { MenuParseResult, MenuRecipeReferenceItem } from '../common/menu-types';
 import { MenuView } from './menu-preview-components';
 import { RecipeNavigator } from './recipe-navigator';
+import { CooklangOutletService } from './cooklang-outlet-service';
+import { CooklangOutlets } from './cooklang-outlets';
+import { MenuRecipeOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/menu-preview.css';
 
@@ -57,14 +59,14 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     @inject(FileService)
     protected readonly fileService: FileService;
 
-    @inject(CommandRegistry)
-    protected readonly commandRegistry: CommandRegistry;
-
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;
 
     @inject(RecipeNavigator)
     protected readonly navigator: RecipeNavigator;
+
+    @inject(CooklangOutletService)
+    protected readonly outlets: CooklangOutletService;
 
     protected uri: URI;
     protected menuResult: MenuParseResult | undefined;
@@ -82,6 +84,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -200,19 +203,44 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     // --- Rendering ---
 
-    protected handleShowSource = (): void => {
-        if (this.uri) {
-            this.navigator.openSource(this.uri);
+    protected previewContext(): PreviewOutletContext | undefined {
+        if (!this.uri) {
+            return undefined;
         }
+        return { version: CooklangOutlets.VERSION, ...this.outlets.describe(this.uri), scale: this.scale };
+    }
+
+    protected handleRunToolbarItem = (id: string): void => {
+        const context = this.previewContext();
+        if (context) {
+            this.outlets.run(CooklangOutlets.MENU_PREVIEW_TOOLBAR, id, context);
+        }
+    };
+
+    protected handleRecipeContextMenu = (item: MenuRecipeReferenceItem, event: React.MouseEvent): void => {
+        const context = this.previewContext();
+        if (!context) {
+            return;
+        }
+        const recipe: MenuRecipeOutletInfo = { name: item.name.replace(/^\.\//, '') };
+        if (typeof item.scale === 'number') {
+            recipe.scale = item.scale;
+        }
+        if (item.unit) {
+            recipe.unit = item.unit;
+        }
+        this.outlets.showContextMenu(CooklangOutlets.MENU_RECIPE_CONTEXT, {
+            version: CooklangOutlets.VERSION,
+            menuUri: context.uri,
+            menuPath: context.path,
+            menuScale: context.scale,
+            recipe,
+        }, event);
     };
 
     protected handleScaleChange = (newScale: number): void => {
         this.scale = newScale;
         this.parseCurrentContent();
-    };
-
-    protected handleAddToShoppingList = (currentScale: number): void => {
-        this.commandRegistry.executeCommand('cooklang.addMenuToShoppingList', this, currentScale);
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
@@ -221,14 +249,17 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     protected render(): React.ReactNode {
         if (this.menuResult && this.menuResult.sections.length > 0) {
+            const context = this.previewContext();
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.MENU_PREVIEW_TOOLBAR, context) : [];
             return (
                 <MenuView
                     menuResult={this.menuResult}
                     fileName={this.uri?.path.base ?? ''}
                     scale={this.scale}
                     onScaleChange={this.handleScaleChange}
-                    onShowSource={this.handleShowSource}
-                    onAddToShoppingList={this.handleAddToShoppingList}
+                    toolbarItems={toolbarItems}
+                    onRunToolbarItem={this.handleRunToolbarItem}
+                    onRecipeContextMenu={this.handleRecipeContextMenu}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
                 />
             );

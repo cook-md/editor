@@ -16,8 +16,8 @@ import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { FileOperationError, FileOperationResult } from '@theia/filesystem/lib/common/files';
 import URI from '@theia/core/lib/common/uri';
-import { ShoppingListService } from './shopping-list-service';
-import { ShoppingListContribution } from './shopping-list-contribution';
+import { CommandRegistry } from '@theia/core/lib/common/command';
+import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeReferenceResolver, ResolvedRecipeReference, flattenReferences } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
 import { ShoppingListResult } from '../common/shopping-list-types';
@@ -44,11 +44,16 @@ interface WorkspaceFile {
 
 const EMPTY_RESULT: ShoppingListResult = { categories: [], other: { name: 'other', items: [] }, pantryItems: [] };
 
+/** Contributed by the `cooklang.shopping-list` plugin. */
+const ADD_RECIPES_COMMAND = 'shoppingList.addRecipes';
+const PLUGIN_MISSING = 'The Shopping List plugin is not installed or is disabled.';
+
 /**
  * AI tool: build a shopping list from recipes (each with a scale) or from a
  * `.menu`, aisle-grouped and pantry-subtracted — the same aggregation as the
- * Shopping List view. Headless by default; `addToList: true` also adds the
- * items to the user's live shopping list and opens the view. Because that
+ * Shopping List view. Headless by default; `addToList: true` hands the
+ * recipes to the Shopping List plugin (`shoppingList.addRecipes`), which adds
+ * them to the live list and reveals its view. Because that
  * path mutates the list the tool keeps the default confirmation behaviour
  * (no `confirmAlwaysAllow`).
  */
@@ -57,11 +62,11 @@ export class GenerateShoppingListTool implements ToolProvider {
 
     static ID = 'generateShoppingList';
 
-    @inject(ShoppingListService)
-    protected readonly shoppingListService: ShoppingListService;
+    @inject(ShoppingListGenerator)
+    protected readonly generator: ShoppingListGenerator;
 
-    @inject(ShoppingListContribution)
-    protected readonly shoppingListContribution: ShoppingListContribution;
+    @inject(CommandRegistry)
+    protected readonly commandRegistry: CommandRegistry;
 
     @inject(RecipeReferenceResolver)
     protected readonly referenceResolver: RecipeReferenceResolver;
@@ -79,9 +84,9 @@ export class GenerateShoppingListTool implements ToolProvider {
             displayName: 'Generate Shopping List',
             description: 'Build a shopping list from recipes (with optional scale multipliers) or from a .menu file — ingredients '
                 + 'aggregated, grouped by aisle (config/aisle.conf), pantry items (config/pantry.conf) subtracted, sub-recipe references '
-                + 'included — exactly like the Shopping List view / `cook shopping-list`. Pass exactly one of `recipes` or `menu`. '
+                + 'included — exactly like the Shopping List plugin / `cook shopping-list`. Pass exactly one of `recipes` or `menu`. '
                 + 'By default it only returns the computed list ({ categories: [{ name, items: [{ name, quantities }] }], other, pantryItems, recipes }). '
-                + 'With addToList:true it also adds the recipes to the user\'s live shopping list, opens the Shopping List view and returns the whole current list. '
+                + 'With addToList:true it also adds the recipes to the user\'s live shopping list, opens the Shopping List plugin\'s view and returns the whole current list. '
                 + 'Use addToList only when the user asks to add/put items on their shopping list; for "what do I need for X" stay headless. '
                 + 'Paths are workspace-relative (use searchRecipes to find them).',
             parameters: {
@@ -139,7 +144,7 @@ export class GenerateShoppingListTool implements ToolProvider {
         if (hasRecipes === hasMenu) {
             return this.fail('Pass exactly one of `recipes` (non-empty) or `menu`.');
         }
-        const root = this.shoppingListService.getWorkspaceRootUri();
+        const root = this.generator.getWorkspaceRootUri();
         if (!root) {
             return this.fail('No workspace is open.');
         }
@@ -174,27 +179,22 @@ export class GenerateShoppingListTool implements ToolProvider {
             if (file === undefined) {
                 return this.fail(`Recipe not found: ${requestedPath}`);
             }
-            const refs = await this.referenceResolver.resolve(file.content, baseDir);
+            const refs = addToList ? [] : await this.referenceResolver.resolve(file.content, baseDir);
             inputs.push({ path: file.path, scale, refs });
         }
 
         const summary = inputs.map(({ path, scale }) => ({ path, scale }));
         if (addToList) {
-            for (const input of inputs) {
-                await this.shoppingListService.addRecipe(input.path, input.scale, input.refs);
-            }
-            await this.shoppingListContribution.openView({ activate: true });
-            return JSON.stringify({ ...this.currentResult(), added: true, recipes: summary });
+            return this.addToLiveList({ recipes: summary }, summary);
         }
 
-        // Same flattening as ShoppingListService.flattenForGeneration: the
-        // recipe itself plus each reference, multipliers multiplying down.
+        // The recipe itself plus each reference, multipliers multiplying down.
         const flat: Array<{ path: string; scale: number }> = [];
         for (const input of inputs) {
             flat.push({ path: input.path, scale: input.scale });
             flat.push(...flattenReferences(input.refs, input.scale));
         }
-        const result = await this.shoppingListService.computeResult(flat);
+        const result = await this.generator.computeResult(flat);
         return JSON.stringify({ ...result, recipes: summary });
     }
 
@@ -209,15 +209,12 @@ export class GenerateShoppingListTool implements ToolProvider {
         }
 
         if (addToList) {
-            await this.shoppingListService.addMenu(file.path, 1, recipes);
-            await this.shoppingListContribution.openView({ activate: true });
-            return JSON.stringify({ ...this.currentResult(), added: true, recipes });
+            return this.addToLiveList({ menu: file.path }, recipes);
         }
 
-        // Same flattening as ShoppingListService.flattenForGeneration for a menu
-        // item: the menu itself (own ingredients, if any) plus each referenced recipe.
+        // The menu itself (own ingredients, if any) plus each referenced recipe.
         const flat = [{ path: file.path, scale: 1 }, ...flattenReferences(recipes)];
-        const result = await this.shoppingListService.computeResult(flat);
+        const result = await this.generator.computeResult(flat);
         return JSON.stringify({ ...result, recipes });
     }
 
@@ -247,8 +244,16 @@ export class GenerateShoppingListTool implements ToolProvider {
         }
     }
 
-    protected currentResult(): ShoppingListResult {
-        return this.shoppingListService.getResult() ?? EMPTY_RESULT;
+    /**
+     * Adds through the Shopping List plugin and returns its live list. A
+     * rejection from the plugin propagates and `execute` reports it as an error.
+     */
+    protected async addToLiveList(request: { recipes: Array<{ path: string; scale: number }> } | { menu: string }, recipes: unknown): Promise<string> {
+        if (!this.commandRegistry.getCommand(ADD_RECIPES_COMMAND)) {
+            return this.fail(PLUGIN_MISSING);
+        }
+        const live = await this.commandRegistry.executeCommand<ShoppingListResult>(ADD_RECIPES_COMMAND, request);
+        return JSON.stringify({ ...(live ?? EMPTY_RESULT), added: true, recipes });
     }
 
     protected fail(message: string): string {

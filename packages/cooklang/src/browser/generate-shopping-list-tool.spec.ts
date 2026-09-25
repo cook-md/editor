@@ -11,9 +11,8 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-// The tool imports `ShoppingListContribution` (widget-heavy) and
-// `ReportConfigService` (ApplicationShell etc.), which evaluate browser-only
-// modules at require time. Same jsdom preamble as the sibling tool specs.
+// The tool imports `ReportConfigService` (ApplicationShell etc.), which
+// evaluates browser-only modules at require time. Same jsdom preamble as the sibling tool specs.
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
 const disableJSDOM = enableJSDOM();
@@ -47,35 +46,34 @@ const LIVE_RESULT: ShoppingListResult = {
 
 interface PathScale { path: string; scale: number; children?: PathScale[] }
 
-/** Shared ordering log so specs can assert adds happen before the view opens. */
-class EventLog {
-    events: string[] = [];
-}
-
-class FakeShoppingListService {
-    constructor(protected readonly log: EventLog) { }
+class FakeGenerator {
     root: URI | undefined = new URI('file:///ws');
     computeCalls: PathScale[][] = [];
     /** When set, `computeResult` throws this. */
     computeError: Error | undefined;
-    addRecipeCalls: Array<{ path: string; scale: number; refs?: PathScale[] }> = [];
-    addMenuCalls: Array<{ path: string; scale: number; recipes: PathScale[] }> = [];
-    current: ShoppingListResult | undefined = LIVE_RESULT;
     getWorkspaceRootUri(): URI | undefined { return this.root; }
     async computeResult(items: PathScale[]): Promise<ShoppingListResult> {
         if (this.computeError) { throw this.computeError; }
         this.computeCalls.push(items);
         return RESULT;
     }
-    async addRecipe(path: string, scale: number, refs?: PathScale[]): Promise<void> {
-        this.addRecipeCalls.push({ path, scale, refs });
-        this.log.events.push(`addRecipe:${path}`);
+}
+
+/** Stands in for the Shopping List plugin's `shoppingList.addRecipes` command. */
+class FakeCommands {
+    installed = true;
+    calls: unknown[] = [];
+    live: ShoppingListResult | undefined = LIVE_RESULT;
+    /** When set, `executeCommand` rejects with this (the plugin rejects on bad input or failed generation). */
+    executeError: Error | undefined;
+    getCommand(id: string): { id: string } | undefined {
+        return this.installed && id === 'shoppingList.addRecipes' ? { id } : undefined;
     }
-    async addMenu(path: string, scale: number, recipes: PathScale[]): Promise<void> {
-        this.addMenuCalls.push({ path, scale, recipes });
-        this.log.events.push(`addMenu:${path}`);
+    async executeCommand(id: string, args: unknown): Promise<unknown> {
+        this.calls.push({ id, args });
+        if (this.executeError) { throw this.executeError; }
+        return this.live;
     }
-    getResult(): ShoppingListResult | undefined { return this.current; }
 }
 
 class FakeFileService {
@@ -115,38 +113,21 @@ class FakeResolver {
     }
 }
 
-class FakeContribution {
-    constructor(protected readonly log: EventLog) { }
-    opened: Array<{ activate?: boolean }> = [];
-    async openView(options: { activate?: boolean }): Promise<void> {
-        this.opened.push(options);
-        this.log.events.push('openView');
-    }
-}
-
-function createTool(): {
-    tool: GenerateShoppingListTool;
-    svc: FakeShoppingListService;
-    fs: FakeFileService;
-    resolver: FakeResolver;
-    view: FakeContribution;
-    log: EventLog;
-} {
+function createTool(): { tool: GenerateShoppingListTool; gen: FakeGenerator; fs: FakeFileService; resolver: FakeResolver; commands: FakeCommands } {
     const tool = new GenerateShoppingListTool();
-    const log = new EventLog();
-    const svc = new FakeShoppingListService(log);
+    const gen = new FakeGenerator();
     const fs = new FakeFileService();
     const resolver = new FakeResolver();
-    const view = new FakeContribution(log);
-    const config = new FakeConfigService(() => svc.root);
+    const commands = new FakeCommands();
+    const config = new FakeConfigService(() => gen.root);
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    (tool as any).shoppingListService = svc;
+    (tool as any).generator = gen;
     (tool as any).fileService = fs;
     (tool as any).referenceResolver = resolver;
-    (tool as any).shoppingListContribution = view;
+    (tool as any).commandRegistry = commands;
     (tool as any).reportConfigService = config;
     /* eslint-enable @typescript-eslint/no-explicit-any */
-    return { tool, svc, fs, resolver, view, log };
+    return { tool, gen, fs, resolver, commands };
 }
 
 /** Invokes the registered tool handler with a JSON argument string (or raw string). */
@@ -167,80 +148,79 @@ describe('GenerateShoppingListTool', () => {
     });
 
     it('rejects arguments that are not a JSON object', async () => {
-        const { tool, svc } = createTool();
+        const { tool, gen } = createTool();
         expect((await invoke(tool, 'null')).error).to.equal('Invalid arguments: expected a JSON object.');
         expect((await invoke(tool, '[]')).error).to.equal('Invalid arguments: expected a JSON object.');
         expect((await invoke(tool, '{not json')).error).to.equal('Invalid arguments: expected a JSON object.');
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('computes a headless list for recipes (default scale 1) and returns it with the inputs', async () => {
-        const { tool, svc, fs, view } = createTool();
+        const { tool, gen, fs, commands } = createTool();
         fs.files.set('file:///ws/Dinner/Carbonara.cook', 'x');
         fs.files.set('file:///ws/Soup.cook', 'y');
         const result = await invoke(tool, { recipes: [{ path: 'Dinner/Carbonara.cook', scale: 2 }, { path: 'Soup.cook' }] });
-        expect(svc.computeCalls).to.deep.equal([[{ path: 'Dinner/Carbonara.cook', scale: 2 }, { path: 'Soup.cook', scale: 1 }]]);
+        expect(gen.computeCalls).to.deep.equal([[{ path: 'Dinner/Carbonara.cook', scale: 2 }, { path: 'Soup.cook', scale: 1 }]]);
         expect(result).to.deep.equal({ ...RESULT, recipes: [{ path: 'Dinner/Carbonara.cook', scale: 2 }, { path: 'Soup.cook', scale: 1 }] });
-        expect(svc.addRecipeCalls).to.deep.equal([]);
-        expect(view.opened).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
     });
 
     it('includes sub-recipe references (scaled by the parent) in the headless computation', async () => {
-        const { tool, svc, fs, resolver } = createTool();
+        const { tool, gen, fs, resolver } = createTool();
         fs.files.set('file:///ws/Pie.cook', 'pie');
         resolver.refs.set('pie', [{ path: 'Dough', scale: 0.5 }]);
         await invoke(tool, { recipes: [{ path: 'Pie.cook', scale: 2 }] });
-        expect(svc.computeCalls[0]).to.deep.equal([{ path: 'Pie.cook', scale: 2 }, { path: 'Dough', scale: 1 }]);
+        expect(gen.computeCalls[0]).to.deep.equal([{ path: 'Pie.cook', scale: 2 }, { path: 'Dough', scale: 1 }]);
         expect(resolver.calls).to.deep.equal([{ content: 'pie', baseDir: '/ws' }]);
     });
 
     it('accepts absolute and file:// paths under the workspace and reports them workspace-relative', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs } = createTool();
         fs.files.set('file:///ws/Dinner/Carbonara.cook', 'x');
         fs.files.set('file:///ws/Soup.cook', 'y');
         const result = await invoke(tool, { recipes: [{ path: 'file:///ws/Dinner/Carbonara.cook' }, { path: '/ws/./Soup.cook' }] });
         expect(result.recipes).to.deep.equal([{ path: 'Dinner/Carbonara.cook', scale: 1 }, { path: 'Soup.cook', scale: 1 }]);
-        expect(svc.computeCalls[0]).to.deep.equal([{ path: 'Dinner/Carbonara.cook', scale: 1 }, { path: 'Soup.cook', scale: 1 }]);
+        expect(gen.computeCalls[0]).to.deep.equal([{ path: 'Dinner/Carbonara.cook', scale: 1 }, { path: 'Soup.cook', scale: 1 }]);
     });
 
     it('expands a menu into its recipes', async () => {
-        const { tool, svc, fs, resolver } = createTool();
+        const { tool, gen, fs, resolver, commands } = createTool();
         fs.files.set('file:///ws/Plans/Week.menu', 'menu');
         resolver.refs.set('menu', [{ path: 'Pancakes', scale: 2 }, { path: 'Soup', scale: 1 }]);
         const result = await invoke(tool, { menu: 'Plans/Week.menu' });
-        expect(svc.computeCalls[0]).to.deep.equal([{ path: 'Plans/Week.menu', scale: 1 }, { path: 'Pancakes', scale: 2 }, { path: 'Soup', scale: 1 }]);
+        expect(gen.computeCalls[0]).to.deep.equal([{ path: 'Plans/Week.menu', scale: 1 }, { path: 'Pancakes', scale: 2 }, { path: 'Soup', scale: 1 }]);
         expect(result).to.deep.equal({ ...RESULT, recipes: [{ path: 'Pancakes', scale: 2 }, { path: 'Soup', scale: 1 }] });
-        expect(svc.addMenuCalls).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
     });
 
     it('requires exactly one of recipes / menu', async () => {
-        const { tool, svc } = createTool();
+        const { tool, gen } = createTool();
         expect((await invoke(tool, {})).error).to.match(/exactly one/i);
         expect((await invoke(tool, { recipes: [] })).error).to.match(/exactly one/i);
         expect((await invoke(tool, { menu: '   ' })).error).to.match(/exactly one/i);
         expect((await invoke(tool, { recipes: [{ path: 'a.cook' }], menu: 'm.menu' })).error).to.match(/exactly one/i);
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('rejects recipes / menu of the wrong type instead of ignoring them', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs } = createTool();
         fs.files.set('file:///ws/Plans/Week.menu', 'menu');
         expect((await invoke(tool, { recipes: 'Soup.cook', menu: 'Plans/Week.menu' })).error).to.match(/`recipes` must be an array/);
         expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], menu: ['Plans/Week.menu'] })).error).to.match(/`menu` must be/);
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('rejects a non-boolean addToList', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs, commands } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
         expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: 'yes' })).error).to.equal('`addToList` must be a boolean.');
         expect((await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: 1 })).error).to.equal('`addToList` must be a boolean.');
-        expect(svc.computeCalls).to.deep.equal([]);
-        expect(svc.addRecipeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
     });
 
     it('rejects recipe and menu paths outside the workspace before touching anything', async () => {
-        const { tool, svc, fs, view } = createTool();
+        const { tool, gen, fs, commands } = createTool();
         fs.files.set('file:///elsewhere/Cake.cook', 'cake');
         fs.files.set('file:///elsewhere/Week.menu', 'menu');
         fs.files.set('file:///ws/Soup.cook', 'y');
@@ -250,58 +230,55 @@ describe('GenerateShoppingListTool', () => {
             .to.equal('Path is outside the workspace: ../Outside.cook');
         expect((await invoke(tool, { menu: '/elsewhere/Week.menu', addToList: true })).error)
             .to.equal('Path is outside the workspace: /elsewhere/Week.menu');
-        expect(svc.computeCalls).to.deep.equal([]);
-        expect(svc.addRecipeCalls).to.deep.equal([]);
-        expect(svc.addMenuCalls).to.deep.equal([]);
-        expect(view.opened).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
     });
 
     it('rejects a recipe entry without a path or with a non-positive scale', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
         expect((await invoke(tool, { recipes: [{ scale: 2 }] })).error).to.match(/path/);
         expect((await invoke(tool, { recipes: ['Soup.cook'] })).error).to.match(/path/);
         expect((await invoke(tool, { recipes: [{ path: 'Soup.cook', scale: 0 }] })).error).to.match(/scale/);
         expect((await invoke(tool, { recipes: [{ path: 'Soup.cook', scale: '2' }] })).error).to.match(/scale/);
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('errors before adding anything when a recipe is missing', async () => {
-        const { tool, svc, fs, view } = createTool();
+        const { tool, gen, fs, commands } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
         const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }, { path: 'Nope.cook' }], addToList: true });
         expect(result.error).to.equal('Recipe not found: Nope.cook');
-        expect(svc.addRecipeCalls).to.deep.equal([]);
-        expect(svc.computeCalls).to.deep.equal([]);
-        expect(view.opened).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('errors when the menu is missing or has no recipe references', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs, commands } = createTool();
         expect((await invoke(tool, { menu: 'Plans/Nope.menu', addToList: true })).error).to.equal('Menu not found: Plans/Nope.menu');
         fs.files.set('file:///ws/Plans/Empty.menu', 'empty');
         expect((await invoke(tool, { menu: 'Plans/Empty.menu', addToList: true })).error).to.match(/no recipe references/);
-        expect(svc.addMenuCalls).to.deep.equal([]);
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(commands.calls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('surfaces read errors other than file-not-found instead of reporting a missing recipe', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs } = createTool();
         fs.readError = PERMISSION_DENIED;
         const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }] });
         expect(result.error).to.match(/Permission denied/);
         expect(result.error).to.not.match(/not found/);
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('computes nested references at every depth with multipliers applied down (cookcli#509)', async () => {
-        const { tool, svc, fs, resolver } = createTool();
+        const { tool, gen, fs, resolver } = createTool();
         fs.files.set('file:///ws/Dinner.cook', 'dinner');
         resolver.refs.set('dinner', [
             { path: 'Sauce', scale: 0.5, children: [{ path: 'Prep', scale: 3 }] },
         ]);
         await invoke(tool, { recipes: [{ path: 'Dinner.cook', scale: 2 }] });
-        expect(svc.computeCalls).to.deep.equal([[
+        expect(gen.computeCalls).to.deep.equal([[
             { path: 'Dinner.cook', scale: 2 },
             { path: 'Sauce', scale: 1 },
             { path: 'Prep', scale: 3 },
@@ -309,13 +286,13 @@ describe('GenerateShoppingListTool', () => {
     });
 
     it('computes a menu with the references nested under its recipes', async () => {
-        const { tool, svc, fs, resolver } = createTool();
+        const { tool, gen, fs, resolver } = createTool();
         fs.files.set('file:///ws/Week.menu', 'menu');
         resolver.refs.set('menu', [
             { path: 'Dinner', scale: 2, children: [{ path: 'Sauce', scale: 0.5 }] },
         ]);
         await invoke(tool, { menu: 'Week.menu' });
-        expect(svc.computeCalls).to.deep.equal([[
+        expect(gen.computeCalls).to.deep.equal([[
             { path: 'Week.menu', scale: 1 },
             { path: 'Dinner', scale: 2 },
             { path: 'Sauce', scale: 1 },
@@ -323,57 +300,40 @@ describe('GenerateShoppingListTool', () => {
     });
 
     it('surfaces computation failures as an error', async () => {
-        const { tool, svc, fs } = createTool();
+        const { tool, gen, fs } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
-        svc.computeError = new Error('native exploded');
+        gen.computeError = new Error('native exploded');
         const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }] });
         expect(result.error).to.match(/native exploded/);
     });
 
-    it('addToList adds each recipe with its refs, opens the view and returns the live list', async () => {
-        const { tool, svc, fs, resolver, view } = createTool();
+    it('addToList hands the recipes to the Shopping List plugin and returns its live list', async () => {
+        const { tool, gen, fs, commands } = createTool();
         fs.files.set('file:///ws/Pie.cook', 'pie');
-        resolver.refs.set('pie', [{ path: 'Dough', scale: 0.5 }]);
-        const result = await invoke(tool, { recipes: [{ path: 'Pie.cook', scale: 2 }], addToList: true });
-        expect(svc.addRecipeCalls).to.deep.equal([{ path: 'Pie.cook', scale: 2, refs: [{ path: 'Dough', scale: 0.5 }] }]);
-        expect(view.opened).to.deep.equal([{ activate: true }]);
-        expect(result).to.deep.equal({ ...LIVE_RESULT, added: true, recipes: [{ path: 'Pie.cook', scale: 2 }] });
-        expect(svc.computeCalls).to.deep.equal([]);
-    });
-
-    it('addToList adds several recipes in request order and opens the view only after the last add', async () => {
-        const { tool, svc, fs, view, log } = createTool();
-        fs.files.set('file:///ws/Pie.cook', 'pie');
-        fs.files.set('file:///ws/Soup.cook', 'soup');
         fs.files.set('file:///ws/Dinner/Carbonara.cook', 'carbonara');
-        const result = await invoke(tool, {
-            recipes: [{ path: 'Pie.cook', scale: 2 }, { path: 'Soup.cook' }, { path: 'Dinner/Carbonara.cook', scale: 3 }],
-            addToList: true,
-        });
-        expect(svc.addRecipeCalls.map(c => c.path)).to.deep.equal(['Pie.cook', 'Soup.cook', 'Dinner/Carbonara.cook']);
-        expect(log.events).to.deep.equal(['addRecipe:Pie.cook', 'addRecipe:Soup.cook', 'addRecipe:Dinner/Carbonara.cook', 'openView']);
-        expect(view.opened).to.deep.equal([{ activate: true }]);
-        expect(result.recipes).to.deep.equal([
-            { path: 'Pie.cook', scale: 2 }, { path: 'Soup.cook', scale: 1 }, { path: 'Dinner/Carbonara.cook', scale: 3 },
-        ]);
+        const result = await invoke(tool, { recipes: [{ path: 'Pie.cook', scale: 2 }, { path: 'file:///ws/Dinner/Carbonara.cook' }], addToList: true });
+        expect(commands.calls).to.deep.equal([{
+            id: 'shoppingList.addRecipes',
+            args: { recipes: [{ path: 'Pie.cook', scale: 2 }, { path: 'Dinner/Carbonara.cook', scale: 1 }] },
+        }]);
+        expect(result).to.deep.equal({ ...LIVE_RESULT, added: true, recipes: [{ path: 'Pie.cook', scale: 2 }, { path: 'Dinner/Carbonara.cook', scale: 1 }] });
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
-    it('addToList with a menu calls addMenu, opens the view and returns the live list', async () => {
-        const { tool, svc, fs, resolver, view, log } = createTool();
+    it('addToList with a menu hands the menu path to the plugin', async () => {
+        const { tool, gen, fs, resolver, commands } = createTool();
         fs.files.set('file:///ws/Plans/Week.menu', 'menu');
         resolver.refs.set('menu', [{ path: 'Pancakes', scale: 2 }]);
         const result = await invoke(tool, { menu: 'Plans/Week.menu', addToList: true });
-        expect(svc.addMenuCalls).to.deep.equal([{ path: 'Plans/Week.menu', scale: 1, recipes: [{ path: 'Pancakes', scale: 2 }] }]);
-        expect(log.events).to.deep.equal(['addMenu:Plans/Week.menu', 'openView']);
-        expect(view.opened).to.deep.equal([{ activate: true }]);
+        expect(commands.calls).to.deep.equal([{ id: 'shoppingList.addRecipes', args: { menu: 'Plans/Week.menu' } }]);
         expect(result).to.deep.equal({ ...LIVE_RESULT, added: true, recipes: [{ path: 'Pancakes', scale: 2 }] });
-        expect(svc.computeCalls).to.deep.equal([]);
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
-    it('addToList returns an empty list shape when the live list has not been computed yet', async () => {
-        const { tool, svc, fs } = createTool();
+    it('addToList returns an empty list shape when the plugin has not computed a list yet', async () => {
+        const { tool, fs, commands } = createTool();
         fs.files.set('file:///ws/Soup.cook', 'y');
-        svc.current = undefined;
+        commands.live = undefined;
         const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: true });
         expect(result).to.deep.equal({
             categories: [], other: { name: 'other', items: [] }, pantryItems: [],
@@ -381,9 +341,26 @@ describe('GenerateShoppingListTool', () => {
         });
     });
 
+    it('addToList explains that the Shopping List plugin is missing', async () => {
+        const { tool, fs, commands } = createTool();
+        fs.files.set('file:///ws/Soup.cook', 'y');
+        commands.installed = false;
+        const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: true });
+        expect(result).to.deep.equal({ error: 'The Shopping List plugin is not installed or is disabled.' });
+        expect(commands.calls).to.deep.equal([]);
+    });
+
+    it('addToList surfaces a rejection from the Shopping List plugin as an error', async () => {
+        const { tool, fs, commands } = createTool();
+        fs.files.set('file:///ws/Soup.cook', 'y');
+        commands.executeError = new Error('boom');
+        const result = await invoke(tool, { recipes: [{ path: 'Soup.cook' }], addToList: true });
+        expect(result).to.deep.equal({ error: 'boom' });
+    });
+
     it('errors without a workspace', async () => {
-        const { tool, svc } = createTool();
-        svc.root = undefined;
+        const { tool, gen } = createTool();
+        gen.root = undefined;
         expect((await invoke(tool, { recipes: [{ path: 'a.cook' }] })).error).to.match(/workspace/i);
         expect((await invoke(tool, { menu: 'a.menu' })).error).to.match(/workspace/i);
     });
