@@ -49,10 +49,21 @@ export class DraftSaver {
      * `suggestedTitle` (usually the source file's name) is the fallback.
      */
     async saveRaw(cooklang: string, suggestedTitle: string): Promise<URI> {
-        return this.writeDraft(cooklang, DraftName.resolveTitle(cooklang, undefined) ?? suggestedTitle);
+        return this.saveContent(cooklang, suggestedTitle);
     }
 
-    protected async writeDraft(cooklang: string, suggestedTitle: string | undefined): Promise<URI> {
+    /**
+     * Writes cooklang text handed over by a plugin (`cooklang.api.saveDraft`) into
+     * `<workspace root>/Drafts/` and opens it. The recipe's own frontmatter title
+     * names the draft; `fallbackTitle` is used when it has none. `frontmatter`
+     * entries are added to the YAML frontmatter only for keys the recipe does not
+     * already have.
+     */
+    async saveContent(cooklang: string, fallbackTitle: string | undefined, frontmatter: Record<string, string> = {}): Promise<URI> {
+        return this.writeDraft(cooklang, DraftName.resolveTitle(cooklang, undefined) ?? fallbackTitle, frontmatter);
+    }
+
+    protected async writeDraft(cooklang: string, suggestedTitle: string | undefined, frontmatter: Record<string, string> = {}): Promise<URI> {
         const roots = await this.workspaceService.roots;
         if (roots.length === 0) {
             throw new Error(nls.localize('theia/cooklang-import/noWorkspace', 'Open a folder before importing recipes.'));
@@ -63,7 +74,7 @@ export class DraftSaver {
         }
         const title = DraftName.resolveTitle(cooklang, suggestedTitle)
             ?? nls.localize('theia/cooklang-import/importedRecipe', 'Imported Recipe');
-        const content = DraftName.ensureTitleFrontmatter(cooklang, title);
+        const content = DraftName.mergeFrontmatter(DraftName.ensureTitleFrontmatter(cooklang, title), frontmatter);
         const base = await DraftName.uniqueBaseName(
             DraftName.sanitizeFilename(title),
             candidate => this.fileService.exists(draftsDir.resolve(`${candidate}.cook`))
