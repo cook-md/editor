@@ -72,6 +72,71 @@ export namespace DraftName {
     }
 
     /**
+     * Whether `key` can be written as a plain top-level YAML frontmatter key:
+     * a letter or underscore, then letters, digits, `_`, `-` or `.`.
+     */
+    export function isFrontmatterKey(key: string): boolean {
+        return /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key);
+    }
+
+    /**
+     * Adds `entries` to the recipe's YAML frontmatter, creating the block when
+     * there is none. Keys the frontmatter already has are left alone (the
+     * recipe's own values always win), and keys that are not plain YAML keys
+     * are skipped. Values become single-line YAML scalars, double-quoted when
+     * YAML would otherwise misread them. Never writes the deprecated `>>`
+     * metadata syntax. An unterminated frontmatter is returned unchanged.
+     */
+    export function mergeFrontmatter(cooklang: string, entries: Record<string, string>): string {
+        const additions = Object.entries(entries).filter(([key]) => isFrontmatterKey(key));
+        if (additions.length === 0) {
+            return cooklang;
+        }
+        const lines = cooklang.split(/\r?\n/);
+        if (lines[0]?.trim() !== '---') {
+            return ['---', ...additions.map(([key, value]) => frontmatterLine(key, value)), '---', '', cooklang].join('\n');
+        }
+        const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
+        if (end === -1) {
+            return cooklang;
+        }
+        const existing = new Set<string>();
+        for (const line of lines.slice(1, end)) {
+            const match = line.match(/^([^\s#:][^:]*):/);
+            if (match) {
+                existing.add(match[1].trim());
+            }
+        }
+        const missing = additions.filter(([key]) => !existing.has(key));
+        if (missing.length === 0) {
+            return cooklang;
+        }
+        return [
+            ...lines.slice(0, end),
+            ...missing.map(([key, value]) => frontmatterLine(key, value)),
+            ...lines.slice(end),
+        ].join('\n');
+    }
+
+    function frontmatterLine(key: string, value: string): string {
+        return `${key}: ${yamlScalar(value)}`;
+    }
+
+    /**
+     * A single-line YAML scalar for `value`. Whitespace, newlines included,
+     * collapses to single spaces, since a newline would start a new frontmatter
+     * line. Anything YAML would read as another type, a comment or a mapping is
+     * double-quoted; JSON string syntax is valid YAML double-quoted syntax.
+     */
+    function yamlScalar(value: string): string {
+        const single = sanitizeTitleValue(value);
+        const plain = /^[A-Za-z0-9_(][^#]*$/.test(single)
+            && !/:(\s|$)/.test(single)
+            && !/^(true|false|yes|no|on|off|y|n|null)$/i.test(single);
+        return plain ? single : JSON.stringify(single);
+    }
+
+    /**
      * Collapses all whitespace — including newlines, which would otherwise
      * inject arbitrary frontmatter lines — into single spaces and trims.
      */
