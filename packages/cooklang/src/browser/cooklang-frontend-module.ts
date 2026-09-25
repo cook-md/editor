@@ -31,8 +31,6 @@ import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/
 import { RECIPE_PREVIEW_WIDGET_ID, createRecipePreviewWidget } from './recipe-preview-widget';
 import { CookingTimerService } from './cooking-timer-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
-import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
-import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
 import { ShoppingListGenerator } from './shopping-list-generator';
 import { CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
@@ -41,7 +39,6 @@ import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget
 import { ImageViewerContribution } from './image-viewer-contribution';
 import { BinaryFileOpenHandler } from './binary-file-open-handler';
 import { CookUrlOpenHandler } from './cook-url-open-handler';
-import { ShoppingListContribution } from './shopping-list-contribution';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
 import { TimersWidget, TIMERS_WIDGET_ID } from './timers-widget';
@@ -208,21 +205,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Cooklang preferences
     bindCooklangPreferences(bind);
 
-    // Shopping list
+    // Shopping-list aggregation (plugin API + Cookbot)
     bind(RecipeReferenceResolver).toSelf().inSingletonScope();
     bind(ShoppingListGenerator).toSelf().inSingletonScope();
     bind(RecipeNavigator).toSelf().inSingletonScope();
-    bind(ShoppingListService).toSelf().inSingletonScope();
-
-    bind(ShoppingListWidget).toSelf();
-    bind(WidgetFactory).toDynamicValue(ctx => ({
-        id: SHOPPING_LIST_WIDGET_ID,
-        createWidget: () => ctx.container.get<ShoppingListWidget>(ShoppingListWidget),
-    })).inSingletonScope();
-
-    bindViewContribution(bind, ShoppingListContribution);
-    bind(FrontendApplicationContribution).toService(ShoppingListContribution);
-    bind(TabBarToolbarContribution).toService(ShoppingListContribution);
 
     // Public label-less `cooklang.api.*` commands for plugins.
     bind(CooklangPluginApiContribution).toSelf().inSingletonScope();

@@ -569,7 +569,6 @@ export interface RecipeViewProps {
     onScaleChange: (scale: number) => void;
     toolbarItems: readonly OutletItem[];
     onRunToolbarItem: (id: string) => void;
-    onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
     onIngredientContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
 }
@@ -582,7 +581,6 @@ export const RecipeView = ({
     onScaleChange,
     toolbarItems,
     onRunToolbarItem,
-    onAddToShoppingList,
     onNavigateToRecipe,
     onIngredientContextMenu,
 }: RecipeViewProps): React.ReactElement => {
@@ -625,13 +623,6 @@ export const RecipeView = ({
                             title='Scale factor'
                         />
                     </div>
-                    {onAddToShoppingList && (
-                        <button className='recipe-add-shopping-list' onClick={() => onAddToShoppingList(scale)}
-                            title='Add to Shopping List'>
-                            <span className='codicon codicon-add'></span>
-                            <span className='theia-shopping-cart-icon'></span>
-                        </button>
-                    )}
                     <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
                 </div>
             </div>

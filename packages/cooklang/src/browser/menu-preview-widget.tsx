@@ -247,10 +247,6 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
         this.parseCurrentContent();
     };
 
-    protected handleAddToShoppingList = (currentScale: number): void => {
-        this.commandRegistry.executeCommand('cooklang.addMenuToShoppingList', this, currentScale);
-    };
-
     protected handleNavigateToRecipe = (referencePath: string): void => {
         this.navigator.navigate(referencePath);
     };
@@ -268,7 +264,6 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
                     toolbarItems={toolbarItems}
                     onRunToolbarItem={this.handleRunToolbarItem}
                     onRecipeContextMenu={this.handleRecipeContextMenu}
-                    onAddToShoppingList={this.handleAddToShoppingList}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
                 />
             );
