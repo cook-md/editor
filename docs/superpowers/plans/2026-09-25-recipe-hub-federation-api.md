@@ -22,7 +22,9 @@
 | `src/indexer/filters.rs` | Create | `SearchFilters`, `SortOrder`, `normalize_difficulty`: the filter model, with no HTTP or Tantivy types. |
 | `src/indexer/extras.rs` | Create | `IndexExtras` (non-`recipes` inputs of a document), `IndexExtras::load`, `reindex_recipes` (load + locked write + commit). |
 | `src/indexer/search.rs` | Modify | `index_recipe_full`, card fields on `SearchResult`, `search_with` (filters + sort), `LockedWriter` writer gate. Delete the no-op `add_recipe_tags` / `add_recipe_ingredients`. |
-| `src/indexer/mod.rs` | Modify | Declare `extras`, `filters`. |
+| `src/indexer/recipe_facts.rs` | Create | `RecipeFacts`: servings, total time and difficulty read with the `cooklang` crate's `Metadata` helpers. Used by the GitHub indexer, the crawler and the backfill. |
+| `src/indexer/cooklang_parser.rs` | Modify | `ParsedRecipeData.facts`, computed once per parse. |
+| `src/indexer/mod.rs` | Modify | Declare `extras`, `filters`, `recipe_facts`. |
 | `src/api/filters.rs` | Create | `FilterParams`: string query params → `(SearchFilters, SortOrder)` with 400s for bad input, plus `query_pairs` for links. |
 | `src/api/facets.rs` | Create | `language_facets` (shared with the website dropdown), `load_facets`, `FacetsCache`, `parse_tag_limit`. |
 | `src/api/rate_limit.rs` | Create | `client_ip` key logic, `ClientIpKeyExtractor`, `governor_period`. |
@@ -31,17 +33,17 @@
 | `src/api/handlers.rs` | Modify | `search_recipes` uses filters and sort; new `get_facets`; `AppState.facets_cache`. |
 | `src/api/routes.rs` | Modify | `/api/facets` route; new key extractor and correct governor period; HTTP tests. |
 | `src/db/tags.rs` | Modify | `top_tags(pool, limit)`. |
-| `src/db/recipes.rs` | Modify | `list_difficulties(pool)`. |
-| `src/github/indexer.rs` | Modify | Index through `reindex_recipes`; use `locked_writer` for deletions. |
-| `src/cli/commands.rs` | Modify | `backfill_locales` / `cleanup_recipes` index with `IndexExtras::load` (the rebuild path populates feed titles). |
-| `src/crawler/mod.rs` | Modify | The crawler (re)indexes the recipes it creates or updates, with their tags. |
-| `src/main.rs` | Modify | Share the search index with the crawler; add `AppState.facets_cache`; `into_make_service_with_connect_info`; banner lists `/api/facets`. |
+| `src/db/recipes.rs` | Modify | `list_difficulties(pool)`, `update_recipe_facts`. |
+| `src/github/indexer.rs` | Modify | Index through `reindex_recipes`; use `locked_writer` for deletions; store servings/time/difficulty from Cooklang metadata. |
+| `src/cli/commands.rs` | Modify | `backfill_locales` / `cleanup_recipes` index with `IndexExtras::load` (the rebuild path populates feed titles). `backfill_locales` also fills empty servings/time/difficulty from metadata (`BackfillStats.facts_filled`). |
+| `src/crawler/mod.rs` | Modify | The crawler (re)indexes the recipes it creates or updates, with their tags. Servings/time/difficulty fall back to the `.cook` metadata (`entry_facts`). |
+| `src/main.rs` | Modify | Share the search index with the crawler; add `AppState.facets_cache`; `into_make_service_with_connect_info`; banner lists `/api/facets`; backfill summary prints `facts_filled`. |
 | `src/web/handlers.rs` | Modify | Search page parses the same filters, echoes them into the form, uses `language_facets`. |
 | `src/web/templates/search.html` | Modify | Collapsible Filters panel; pagination keeps filters. |
 | `src/web/templates/about.html` | Modify | API docs rewritten to match the real endpoints and shapes. |
 | `README.md` | Modify | API section, upgrade/reindex release notes. |
-| `tests/search_index_tags_test.rs` | Create | Tag regression, writer gate, and rebuild (backfill) populating tags and feed titles. |
-| `tests/github_indexer_test.rs` | Modify | GitHub-indexed recipes carry tags and feed title. |
+| `tests/search_index_tags_test.rs` | Create | Tag regression, writer gate, and rebuild (backfill) populating tags, feed titles and servings/time/difficulty. |
+| `tests/github_indexer_test.rs` | Modify | GitHub-indexed recipes carry tags, feed title, and servings/time/difficulty. |
 
 ---
 
@@ -3043,6 +3045,776 @@ git commit -m "Index crawled feed recipes and their tags as they change"
 
 ---
 
+### Task 13b: GitHub-indexed recipes carry servings, time and difficulty from Cooklang metadata
+
+The `max_time`, `min_servings`/`max_servings` and `difficulty` filters (Task 6) and the difficulty facet (Task 14) read `recipes.servings`, `recipes.total_time_minutes` and `recipes.difficulty`. Right now nothing fills those columns:
+
+- `GitHubIndexer::index_recipe` (`src/github/indexer.rs:347-356`) hard-codes `servings = None` and `total_time = None`, writes `difficulty: None` on create, and keeps the old value on update.
+- The crawler copies them from `entry.metadata`, but `crawler::parser::parse_entry` always sets that to `RecipeMetadata::default()` (`src/crawler/parser.rs:155-156`, "placeholder for now"). Feed recipes get `None` as well, even though the crawler has already parsed the `.cook` enclosure.
+
+`src/indexer/cooklang_parser.rs::parse_recipe` already parses every recipe with the `cooklang` 0.17.1 crate. This task derives the three values there, once, from the crate's own `Metadata` helpers: `Metadata::servings()`, `Metadata::time(&Converter)` with `RecipeTime::total()`, and `Metadata::get(StdKey::Difficulty)`. Those helpers own the key names (`time`, `prep time` + `cook time`, a `{prep, cook}` mapping) and the unit parsing (`1h 30min`, `90`, `45 min`), so nothing here re-derives them. The GitHub indexer, the crawler and the rebuild all use that one value, a `RecipeFacts`.
+
+Scope decisions:
+- **Servings** comes from `Metadata::servings()`. When the crate returns `Servings::Text` (`"2-4"`, `"4 people"`), the first number in the text is used. When the value is a YAML list (`[4, 6]`), for which the crate returns `None`, the first element is used. Zero means unknown.
+- **Total time** is `RecipeTime::total()`: `time` if present, otherwise `prep time` + `cook time`. Zero means unknown.
+- **Difficulty** is the trimmed value as written, `None` if blank. Task 3 normalises it to lowercase in the index, and Task 14's facet query lowercases it.
+- **Active time** is not derived. Cooklang has no standard key for it (`StdKey` has no `ActiveTime`), so the GitHub indexer keeps what the row holds, and the crawler keeps the feed entry's value.
+- **Precedence:** for a GitHub recipe the file is the only source, so an edit that removes a key clears the column. For a feed recipe, a value the feed entry states wins, and the `.cook` metadata fills the gaps (`RecipeFacts::or`).
+- **The values live in the `recipes` table.** `reindex_recipes` (Task 11) builds documents from the row, so nothing re-derives them at reindex time. GitHub recipes that are already stored are skipped while their file SHA is unchanged, so a re-crawl would not fill them. `backfill-locales` therefore fills empty columns from the stored `content` before indexing each recipe. The Task 18 full rebuild (`backfill-locales --force`) is then enough, with no re-crawl.
+
+**Files:**
+- Create: `src/indexer/recipe_facts.rs`
+- Modify: `src/indexer/mod.rs` (module list from Task 3)
+- Modify: `src/indexer/cooklang_parser.rs:1-15` (imports, `ParsedRecipeData`), `:436-442` (`Ok(ParsedRecipeData {...})`)
+- Modify: `src/github/indexer.rs:347-356` (metadata block), `:398-409` (`UpdateRecipe`), `:442-461` (`NewRecipe`)
+- Modify: `src/crawler/mod.rs` (imports, `process_entry` after the locale block, update and create arms, new `entry_facts`, tests module)
+- Modify: `src/db/recipes.rs` (append `update_recipe_facts` after `update_recipe_locale`)
+- Modify: `src/cli/commands.rs:400-409` (`BackfillStats`), `backfill_locales` body
+- Modify: `src/main.rs` (`backfill_locales` summary line)
+- Test: `src/indexer/recipe_facts.rs` `mod tests`, `src/crawler/mod.rs` `mod tests`, `tests/github_indexer_test.rs`, `tests/search_index_tags_test.rs`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `src/indexer/recipe_facts.rs` with only its tests for now:
+
+```rust
+//! Servings, total time and difficulty taken from a recipe's Cooklang metadata.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::indexer::parse_cooklang_full;
+
+    fn facts(content: &str) -> RecipeFacts {
+        parse_cooklang_full(content).unwrap().facts
+    }
+
+    #[test]
+    fn servings_time_and_difficulty_come_from_the_metadata() {
+        assert_eq!(
+            facts("---\nservings: 4\ntime: 1h 30min\ndifficulty: \" Medium \"\n---\nSimmer @beef{500%g}.\n"),
+            RecipeFacts {
+                servings: Some(4),
+                total_time_minutes: Some(90),
+                difficulty: Some("Medium".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_servings_range_or_list_counts_as_its_first_number() {
+        assert_eq!(facts("---\nservings: 2-4\n---\nStir.\n").servings, Some(2));
+        assert_eq!(facts("---\nservings: 4 people\n---\nStir.\n").servings, Some(4));
+        assert_eq!(facts("---\nservings: [6, 8]\n---\nStir.\n").servings, Some(6));
+    }
+
+    #[test]
+    fn prep_and_cook_time_add_up_when_there_is_no_total_time() {
+        assert_eq!(
+            facts("---\nprep time: 15 min\ncook time: 30\n---\nStir.\n").total_time_minutes,
+            Some(45)
+        );
+    }
+
+    #[test]
+    fn unusable_or_missing_values_are_unknown() {
+        assert_eq!(
+            facts("---\nservings: a few\ntime: soon\ndifficulty: \"  \"\n---\nStir.\n"),
+            RecipeFacts::default()
+        );
+        assert_eq!(facts("---\nservings: 0\n---\nStir.\n").servings, None);
+        assert_eq!(facts("Just @salt{}.\n"), RecipeFacts::default());
+    }
+
+    #[test]
+    fn or_keeps_known_values_and_fills_the_gaps() {
+        let known = RecipeFacts {
+            servings: Some(2),
+            total_time_minutes: None,
+            difficulty: Some("hard".to_string()),
+        };
+        let fallback = RecipeFacts {
+            servings: Some(4),
+            total_time_minutes: Some(30),
+            difficulty: Some("easy".to_string()),
+        };
+        assert_eq!(
+            known.or(fallback),
+            RecipeFacts {
+                servings: Some(2),
+                total_time_minutes: Some(30),
+                difficulty: Some("hard".to_string()),
+            }
+        );
+    }
+}
+```
+
+In `src/indexer/mod.rs`, add `pub mod recipe_facts;` directly after `pub mod recipe;` in the module list from Task 3.
+
+Append inside `mod tests` in `src/crawler/mod.rs`:
+
+```rust
+    fn entry_with(metadata: crate::crawler::parser::RecipeMetadata) -> ParsedEntry {
+        ParsedEntry {
+            id: "stew".to_string(),
+            title: "Stew".to_string(),
+            summary: None,
+            source_url: None,
+            enclosure_url: Some("https://example.com/stew.cook".to_string()),
+            image_url: None,
+            published: None,
+            updated: None,
+            tags: Vec::new(),
+            metadata,
+        }
+    }
+
+    fn stew() -> crate::indexer::ParsedRecipeData {
+        parse_cooklang_full(
+            "---\nservings: 4\ntime: 1h 30min\ndifficulty: Medium\n---\nSimmer @beef{500%g}.\n",
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn cooklang_metadata_fills_what_the_feed_entry_leaves_out() {
+        let entry = entry_with(crate::crawler::parser::RecipeMetadata::default());
+        assert_eq!(
+            entry_facts(&entry, Some(&stew())),
+            RecipeFacts {
+                servings: Some(4),
+                total_time_minutes: Some(90),
+                difficulty: Some("Medium".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn feed_entry_values_win_over_cooklang_metadata() {
+        let entry = entry_with(crate::crawler::parser::RecipeMetadata {
+            servings: Some(2),
+            total_time: None,
+            active_time: None,
+            difficulty: Some("hard".to_string()),
+        });
+        assert_eq!(
+            entry_facts(&entry, Some(&stew())),
+            RecipeFacts {
+                servings: Some(2),
+                total_time_minutes: Some(90),
+                difficulty: Some("hard".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn without_parsed_content_only_feed_entry_values_are_used() {
+        let entry = entry_with(crate::crawler::parser::RecipeMetadata::default());
+        assert_eq!(entry_facts(&entry, None), RecipeFacts::default());
+    }
+```
+
+Append to `tests/github_indexer_test.rs`:
+
+```rust
+#[tokio::test]
+async fn metadata_servings_time_and_difficulty_are_stored_and_filterable() {
+    use federation::indexer::filters::{SearchFilters, SortOrder};
+
+    let h = Harness::new().await;
+    let mut repo = FakeRepo::new("alice", "recipes").await;
+    repo.set_files(&[(
+        "Stew.cook",
+        "---\nservings: 4\ntime: 1h 30min\ndifficulty: Medium\n---\nSimmer @beef{500%g}.\n",
+    )])
+    .await;
+    let feed_id = h.indexer(&repo).add_repository(&repo.url()).await.unwrap();
+
+    let recipe = db::recipes::list_all_recipes(&h.pool, 100, 0)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(recipe.servings, Some(4));
+    assert_eq!(recipe.total_time_minutes, Some(90));
+    assert_eq!(recipe.difficulty.as_deref(), Some("Medium"));
+
+    let query = SearchQuery {
+        q: String::new(),
+        page: 1,
+        limit: 10,
+        locale: None,
+    };
+    let matching = SearchFilters {
+        max_time: Some(90),
+        min_servings: Some(4),
+        difficulty: Some("medium".to_string()),
+        ..SearchFilters::default()
+    };
+    let found = h
+        .search
+        .search_with(&query, &matching, SortOrder::Relevance, 100)
+        .unwrap();
+    assert_eq!(found.results.len(), 1);
+    assert_eq!(found.results[0].recipe_id, recipe.id);
+
+    let too_slow = SearchFilters {
+        max_time: Some(60),
+        ..SearchFilters::default()
+    };
+    assert!(h
+        .search
+        .search_with(&query, &too_slow, SortOrder::Relevance, 100)
+        .unwrap()
+        .results
+        .is_empty());
+
+    // The file is the only source: an edit that drops a key clears the column.
+    repo.set_files(&[(
+        "Stew.cook",
+        "---\nservings: 6\n---\nSimmer @beef{500%g}.\n",
+    )])
+    .await;
+    h.indexer(&repo).index_repository(feed_id).await.unwrap();
+
+    let after = db::recipes::get_recipe(&h.pool, recipe.id).await.unwrap();
+    assert_eq!(after.servings, Some(6));
+    assert_eq!(after.total_time_minutes, None);
+    assert_eq!(after.difficulty, None);
+}
+```
+
+Append to `tests/search_index_tags_test.rs`:
+
+```rust
+/// A recipe row with `content` and the given stored servings/time/difficulty,
+/// like a GitHub recipe indexed before servings and time were extracted.
+async fn seed_with_facts(
+    pool: &DbPool,
+    content: &str,
+    servings: Option<i64>,
+    total_time_minutes: Option<i64>,
+    difficulty: Option<&str>,
+) -> i64 {
+    let feed = feeds::create_feed(
+        pool,
+        &NewFeed {
+            url: "https://github.com/alice/recipes".to_string(),
+            title: Some("alice/recipes".to_string()),
+        },
+    )
+    .await
+    .unwrap();
+
+    recipes::create_recipe(
+        pool,
+        &NewRecipe {
+            feed_id: feed.id,
+            external_id: "Lentil Soup.cook".to_string(),
+            title: "Lentil Soup".to_string(),
+            source_url: None,
+            enclosure_url: "https://example.com/Lentil%20Soup.cook".to_string(),
+            content: Some(content.to_string()),
+            summary: None,
+            servings,
+            total_time_minutes,
+            active_time_minutes: None,
+            difficulty: difficulty.map(str::to_string),
+            image_url: None,
+            published_at: None,
+            content_hash: None,
+            content_etag: None,
+            content_last_modified: None,
+            feed_entry_updated: None,
+            locale: None,
+            locale_source: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+const LENTIL_SOUP: &str =
+    "---\nservings: 2-4\ntime: 1h 15min\ndifficulty: Easy\n---\nSimmer @lentils{200%g}.\n";
+
+#[tokio::test]
+async fn rebuilding_fills_servings_time_and_difficulty_from_cooklang_metadata() {
+    let pool = pool().await;
+    let recipe_id = seed_with_facts(&pool, LENTIL_SOUP, None, None, None).await;
+    let dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::new(dir.path()).unwrap();
+
+    let stats = federation::cli::commands::backfill_locales(&pool, &index, true)
+        .await
+        .unwrap();
+    assert_eq!(stats.facts_filled, 1);
+
+    let stored = recipes::get_recipe(&pool, recipe_id).await.unwrap();
+    assert_eq!(stored.servings, Some(2));
+    assert_eq!(stored.total_time_minutes, Some(75));
+    assert_eq!(stored.difficulty.as_deref(), Some("Easy"));
+
+    let filters = SearchFilters {
+        max_time: Some(90),
+        min_servings: Some(2),
+        difficulty: Some("easy".to_string()),
+        ..SearchFilters::default()
+    };
+    assert_eq!(ids(&index, &everything(), &filters), vec![recipe_id]);
+}
+
+#[tokio::test]
+async fn rebuilding_keeps_servings_time_and_difficulty_already_stored() {
+    let pool = pool().await;
+    let recipe_id = seed_with_facts(&pool, LENTIL_SOUP, Some(8), None, Some("hard")).await;
+    let dir = tempfile::tempdir().unwrap();
+    let index = SearchIndex::new(dir.path()).unwrap();
+
+    let stats = federation::cli::commands::backfill_locales(&pool, &index, true)
+        .await
+        .unwrap();
+    assert_eq!(stats.facts_filled, 1, "only the missing time was filled");
+
+    let stored = recipes::get_recipe(&pool, recipe_id).await.unwrap();
+    assert_eq!(stored.servings, Some(8));
+    assert_eq!(stored.total_time_minutes, Some(75));
+    assert_eq!(stored.difficulty.as_deref(), Some("hard"));
+
+    // Running it again changes nothing.
+    let again = federation::cli::commands::backfill_locales(&pool, &index, true)
+        .await
+        .unwrap();
+    assert_eq!(again.facts_filled, 0);
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `cargo test --lib recipe_facts`
+Expected: compile errors `cannot find type `RecipeFacts` in this scope` and `no field `facts` on type `ParsedRecipeData``. (The `crawler::tests` additions also fail to compile, with `cannot find function `entry_facts``.)
+
+Run: `cargo test --test github_indexer_test metadata_servings_time_and_difficulty`
+Expected: FAIL at `assert_eq!(recipe.servings, Some(4))` with `left: None`, `right: Some(4)`.
+
+Run: `cargo test --test search_index_tags_test rebuilding_`
+Expected: compile error `no field `facts_filled` on type `BackfillStats``.
+
+- [ ] **Step 3: Implement**
+
+Replace `src/indexer/recipe_facts.rs` from its first line down to (not including) `#[cfg(test)]` with:
+
+```rust
+//! Servings, total time and difficulty taken from a recipe's Cooklang metadata.
+//!
+//! The `cooklang` crate's `Metadata` helpers own the key names (`time`,
+//! `prep time` + `cook time`, ...) and the time-unit parsing. Nothing here
+//! re-derives them.
+
+use cooklang::metadata::{CooklangValueExt, Metadata, Servings, StdKey};
+use cooklang::Converter;
+use serde::{Deserialize, Serialize};
+
+use crate::db::models::Recipe;
+
+/// The servings, total time and difficulty of a recipe, as stored in the
+/// `recipes` columns of the same names and used by the search filters.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecipeFacts {
+    pub servings: Option<i64>,
+    pub total_time_minutes: Option<i64>,
+    pub difficulty: Option<String>,
+}
+
+impl RecipeFacts {
+    /// Read the facts from parsed Cooklang metadata. Unusable values (no
+    /// number in `servings`, an unparseable `time`, a blank `difficulty`)
+    /// and zero counts are unknown (`None`).
+    pub fn from_metadata(metadata: &Metadata, converter: &Converter) -> Self {
+        Self {
+            servings: servings(metadata),
+            total_time_minutes: metadata
+                .time(converter)
+                .map(|time| i64::from(time.total()))
+                .filter(|&minutes| minutes > 0),
+            difficulty: metadata
+                .get(StdKey::Difficulty)
+                .and_then(|value| value.as_str_like())
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+        }
+    }
+
+    /// The facts currently stored on a recipe row.
+    pub fn from_recipe(recipe: &Recipe) -> Self {
+        Self {
+            servings: recipe.servings,
+            total_time_minutes: recipe.total_time_minutes,
+            difficulty: recipe.difficulty.clone(),
+        }
+    }
+
+    /// Keep every known value of `self`; take the rest from `fallback`.
+    pub fn or(self, fallback: RecipeFacts) -> RecipeFacts {
+        RecipeFacts {
+            servings: self.servings.or(fallback.servings),
+            total_time_minutes: self.total_time_minutes.or(fallback.total_time_minutes),
+            difficulty: self.difficulty.or(fallback.difficulty),
+        }
+    }
+}
+
+/// `servings` as a count: a number, the first number in a text value such as
+/// `2-4` or `4 people`, or the first element of a list such as `[4, 6]`.
+fn servings(metadata: &Metadata) -> Option<i64> {
+    let servings = metadata.servings().or_else(|| {
+        metadata
+            .get(StdKey::Servings)?
+            .as_sequence()?
+            .first()?
+            .as_servings()
+    })?;
+    let count = match servings {
+        Servings::Number(count) => count,
+        Servings::Text(text) => first_number(&text)?,
+    };
+    (count > 0).then_some(i64::from(count))
+}
+
+/// The first run of ASCII digits in `text`, e.g. `2` in `"2-4"`.
+fn first_number(text: &str) -> Option<u32> {
+    let digits: String = text
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
+}
+
+```
+
+In `src/indexer/cooklang_parser.rs`, add after `use serde::{Deserialize, Serialize};` (line 4):
+
+```rust
+use crate::indexer::recipe_facts::RecipeFacts;
+```
+
+Replace the `ParsedRecipeData` struct (lines 8-15) with:
+
+```rust
+/// Parsed recipe structure for JSON storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParsedRecipeData {
+    pub sections: Vec<RecipeSection>,
+    pub ingredients: Vec<IngredientData>,
+    pub cookware: Vec<CookwareData>,
+    pub timers: Vec<TimerData>,
+    pub metadata: Option<RecipeMetadata>,
+    /// Servings, total time and difficulty, read with the cooklang crate's
+    /// metadata helpers. Empty when the recipe declares none.
+    #[serde(default)]
+    pub facts: RecipeFacts,
+}
+```
+
+In `parse_recipe`, directly after `let meta = &recipe.metadata;` add:
+
+```rust
+    let facts = RecipeFacts::from_metadata(meta, &Converter::default());
+```
+
+and replace the final `Ok(ParsedRecipeData { ... })` (lines 436-442) with:
+
+```rust
+    Ok(ParsedRecipeData {
+        sections,
+        ingredients,
+        cookware,
+        timers,
+        metadata,
+        facts,
+    })
+```
+
+In `src/github/indexer.rs` `index_recipe`, replace lines 346-356 (from `let title = recipe_title(parsed.as_ref().ok(), file_path);` through the closing `};` of the `let (summary, servings, total_time, metadata_image) = ...` block) with:
+
+```rust
+        let title = recipe_title(parsed.as_ref().ok(), file_path);
+
+        // The file is the only source of a GitHub recipe's servings, total
+        // time and difficulty: a key removed upstream clears the column.
+        let facts = parsed
+            .as_ref()
+            .map(|parsed_data| parsed_data.facts.clone())
+            .unwrap_or_default();
+        let metadata_image = parsed
+            .as_ref()
+            .ok()
+            .and_then(|parsed_data| parsed_data.metadata.as_ref())
+            .and_then(|m| m.image.clone());
+```
+
+In the `UpdateRecipe { ... }` literal (line 398), replace
+
+```rust
+                summary,
+                servings,
+                total_time_minutes: total_time,
+                active_time_minutes: recipe.active_time_minutes,
+                difficulty: recipe.difficulty.clone(),
+```
+
+with
+
+```rust
+                summary: None,
+                servings: facts.servings,
+                total_time_minutes: facts.total_time_minutes,
+                // Cooklang has no standard active-time key; keep what we have.
+                active_time_minutes: recipe.active_time_minutes,
+                difficulty: facts.difficulty.clone(),
+```
+
+In the `NewRecipe { ... }` literal (line 442), replace
+
+```rust
+                summary,
+                servings,
+                total_time_minutes: total_time,
+                active_time_minutes: None,
+                difficulty: None,
+```
+
+with
+
+```rust
+                summary: None,
+                servings: facts.servings,
+                total_time_minutes: facts.total_time_minutes,
+                active_time_minutes: None,
+                difficulty: facts.difficulty,
+```
+
+(`summary` was always `None` here. It stays `None`.)
+
+In `src/crawler/mod.rs`, replace the import `use crate::indexer::parse_cooklang_full;` with:
+
+```rust
+use crate::indexer::recipe_facts::RecipeFacts;
+use crate::indexer::{parse_cooklang_full, ParsedRecipeData};
+```
+
+Add this function above `#[cfg(test)]` at the end of the file:
+
+```rust
+/// Servings, total time and difficulty for a feed entry. Values the feed
+/// entry states win, and the `.cook` enclosure's Cooklang metadata fills the
+/// rest. (`parse_entry` does not read any from the feed XML yet.)
+fn entry_facts(entry: &ParsedEntry, parsed: Option<&ParsedRecipeData>) -> RecipeFacts {
+    let from_entry = RecipeFacts {
+        servings: entry.metadata.servings,
+        total_time_minutes: entry.metadata.total_time,
+        difficulty: entry.metadata.difficulty.clone(),
+    };
+    match parsed {
+        Some(parsed) => from_entry.or(parsed.facts.clone()),
+        None => from_entry,
+    }
+}
+```
+
+In `process_entry`, directly after the `let (locale_code, locale_source) = match &locale { ... };` statement, add:
+
+```rust
+        let facts = entry_facts(entry, parsed_content.as_ref());
+```
+
+In the update arm (`Some(recipe) => {`), inside `if let Some(ref content_str) = content {` and directly after the `db::recipes::update_recipe_with_content(...).await?;` call, add:
+
+```rust
+                    db::recipes::update_recipe_facts(
+                        pool,
+                        recipe.id,
+                        facts.servings,
+                        facts.total_time_minutes,
+                        facts.difficulty.as_deref(),
+                    )
+                    .await?;
+```
+
+In the create arm's `NewRecipe { ... }` literal, replace
+
+```rust
+                    servings: entry.metadata.servings,
+                    total_time_minutes: entry.metadata.total_time,
+                    active_time_minutes: entry.metadata.active_time,
+                    difficulty: entry.metadata.difficulty.clone(),
+```
+
+with
+
+```rust
+                    servings: facts.servings,
+                    total_time_minutes: facts.total_time_minutes,
+                    active_time_minutes: entry.metadata.active_time,
+                    difficulty: facts.difficulty.clone(),
+```
+
+In `src/db/recipes.rs`, add directly after `update_recipe_locale`:
+
+```rust
+/// Set a recipe's servings, total time and difficulty, all three as given.
+pub async fn update_recipe_facts(
+    pool: &DbPool,
+    recipe_id: i64,
+    servings: Option<i64>,
+    total_time_minutes: Option<i64>,
+    difficulty: Option<&str>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE recipes SET servings = ?, total_time_minutes = ?, difficulty = ? WHERE id = ?",
+    )
+    .bind(servings)
+    .bind(total_time_minutes)
+    .bind(difficulty)
+    .bind(recipe_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+```
+
+In `src/cli/commands.rs`, replace `BackfillStats` (lines 400-409) with:
+
+```rust
+/// What a backfill pass did.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BackfillStats {
+    /// Recipes considered (had content, and matched the locale predicate).
+    pub scanned: usize,
+    /// Recipes whose locale we resolved and stored.
+    pub updated: usize,
+    /// Recipes we could not resolve a locale for.
+    pub skipped: usize,
+    /// Recipes whose empty servings, total time or difficulty were filled
+    /// from their Cooklang metadata.
+    pub facts_filled: usize,
+}
+```
+
+Add this paragraph to the end of the `backfill_locales` doc comment:
+
+```rust
+///
+/// Servings, total time and difficulty that a row lacks are filled from the
+/// recipe's Cooklang metadata, indexed, and written after the same commit.
+/// Stored values are never overwritten. If the process dies before the write,
+/// a `--force` rerun fills them again.
+```
+
+In the body of `backfill_locales`, add `use crate::indexer::recipe_facts::RecipeFacts;` next to `use crate::indexer::locale::RecipeLocale;`, and directly after `let mut resolved: Vec<(i64, Option<RecipeLocale>)> = Vec::new();` add:
+
+```rust
+        // Facts filled per recipe in this batch, written after the commit too.
+        let mut filled_facts: Vec<(i64, RecipeFacts)> = Vec::new();
+```
+
+Inside `for mut recipe in batch`, replace everything from `let locale = match crate::indexer::parse_cooklang_full(&content) {` through `resolved.push((recipe.id, locale));` (this includes the `IndexExtras::load` / `index_recipe_full` lines from Task 12) with:
+
+```rust
+            let parsed = match crate::indexer::parse_cooklang_full(&content) {
+                Ok(parsed) => Some(parsed),
+                Err(e) => {
+                    warn!("Recipe {}: failed to parse content: {}", recipe.id, e);
+                    None
+                }
+            };
+            let locale = parsed.as_ref().and_then(crate::indexer::resolve_locale);
+
+            if locale.is_none() {
+                stats.skipped += 1;
+            }
+
+            // Apply the resolved locale (if any) to the in-memory recipe so the
+            // index reflects it, then index unconditionally: a recipe with
+            // content is always searchable, resolved locale or not.
+            if let Some(locale) = &locale {
+                recipe.locale = Some(locale.code.clone());
+                recipe.locale_source = Some(locale.source.as_str().to_string());
+            }
+
+            // Servings, total time and difficulty the row lacks come from the
+            // recipe's Cooklang metadata (GitHub recipes indexed before this
+            // release have none). Values already stored win.
+            if let Some(parsed) = &parsed {
+                let stored = RecipeFacts::from_recipe(&recipe);
+                let filled = stored.clone().or(parsed.facts.clone());
+                if filled != stored {
+                    recipe.servings = filled.servings;
+                    recipe.total_time_minutes = filled.total_time_minutes;
+                    recipe.difficulty = filled.difficulty.clone();
+                    filled_facts.push((recipe.id, filled));
+                }
+            }
+
+            let extras = crate::indexer::extras::IndexExtras::load(pool, &recipe).await?;
+            search_index.index_recipe_full(&mut writer, &recipe, &extras)?;
+
+            resolved.push((recipe.id, locale));
+```
+
+Directly after `search_index.commit(&mut writer)?;` (and before `for (recipe_id, locale) in resolved {`), add:
+
+```rust
+        for (recipe_id, facts) in filled_facts {
+            crate::db::recipes::update_recipe_facts(
+                pool,
+                recipe_id,
+                facts.servings,
+                facts.total_time_minutes,
+                facts.difficulty.as_deref(),
+            )
+            .await?;
+            stats.facts_filled += 1;
+        }
+```
+
+In `src/main.rs` `backfill_locales`, replace the `println!` with:
+
+```rust
+    println!(
+        "\x1b[32m\u{2713}\x1b[0m Backfill complete: {} scanned, {} tagged, {} left without a locale, {} given servings/time/difficulty from metadata",
+        stats.scanned, stats.updated, stats.skipped, stats.facts_filled
+    );
+```
+
+- [ ] **Step 4: Run to verify it passes**
+
+Run: `cargo test --lib recipe_facts && cargo test --lib crawler::tests`
+Expected: `ok. 5 passed` for `recipe_facts`, and `ok. 10 passed` for `crawler::tests` (Task 13's 7 plus 3).
+
+Run: `cargo test --test github_indexer_test && cargo test --test search_index_tags_test && cargo test --test locale_test`
+Expected: all ok. `locale_test` checks that the backfill's locale behaviour did not change.
+
+Run: `cargo test 2>&1 | grep -E "^test result|FAILED"`
+Expected: all ok.
+
+Run: `cargo clippy --all-targets --all-features -- -D warnings`
+Expected: exits 0.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cargo fmt --all
+git add src/indexer/recipe_facts.rs src/indexer/mod.rs src/indexer/cooklang_parser.rs \
+    src/github/indexer.rs src/crawler/mod.rs src/db/recipes.rs src/cli/commands.rs src/main.rs \
+    tests/github_indexer_test.rs tests/search_index_tags_test.rs
+git commit -m "Store servings, total time and difficulty from Cooklang metadata"
+```
+
+---
+
 ### Task 14: Facet queries and a shared language list
 
 **Files:**
@@ -4796,7 +5568,8 @@ docker compose up -d app
 ```
 
 `backfill-locales --force` is the full rebuild: it re-indexes every recipe with
-its tags, ingredients and feed title. (`federation reindex <url>` is a
+its tags, ingredients and feed title, and fills missing servings, total time
+and difficulty from the recipe's Cooklang metadata. (`federation reindex <url>` is a
 different command: it deletes one feed's recipes from the database and
 re-crawls that feed, and it does not rebuild the search index.)
 
@@ -4805,6 +5578,18 @@ Other behaviour changes:
 - **Feed recipes are indexed as they are crawled.** Before, recipes from
   RSS/Atom feeds (and their `<category>` tags) reached the search index only
   through `backfill-locales`.
+- **Servings, total time and difficulty come from Cooklang metadata.**
+  GitHub and feed recipes now store `servings`, `time` (or `prep time` +
+  `cook time`) and `difficulty` from their `.cook` metadata, so the
+  `max_time`, `min_servings`/`max_servings` and `difficulty` filters and the
+  difficulty facet also match them. Before, those columns stayed empty for
+  GitHub recipes, and for feed recipes unless the feed entry set them. The
+  values live in the database, not only in the index, so existing recipes
+  get them from the full rebuild above: `backfill-locales --force` fills
+  empty columns from each recipe's stored content, writes them to the
+  database and indexes them. No re-crawl is needed. A re-crawl would not
+  help anyway, because the GitHub indexer skips files whose SHA has not
+  changed.
 - **Rate limiting is per client and matches `API_RATE_LIMIT`.** It used to be
   one bucket for everyone that refilled one request every `API_RATE_LIMIT`
   seconds. Now each client gets `API_RATE_LIMIT` requests per second with
@@ -4882,6 +5667,7 @@ Do not push or open a PR from this plan. Hand off with superpowers:finishing-a-d
 | §1.1 `max_time` ≤ | Task 6, 9, 10 |
 | §1.1 `min_servings`/`max_servings` inclusive | Task 6, 9, 10 (min>max → 400 too) |
 | §1.1 `difficulty` exact, lowercase | Task 3 (normalised at index time), Task 6, 9 |
+| §1.1 time/servings/difficulty filters match GitHub and feed recipes (values extracted from Cooklang metadata) | Task 13b (`RecipeFacts`, GitHub indexer, crawler `entry_facts`, backfill fill-in) |
 | §1.1 `feed_id` | Task 2 (field), Task 6, 9 |
 | §1.1 `sort` relevance/newest | Task 7, 9, 10 |
 | §1.1 comma lists trimmed, empties ignored | Task 9 (`split_list`), Task 5 (blank value → no clause) |
@@ -4892,7 +5678,7 @@ Do not push or open a PR from this plan. Hand off with superpowers:finishing-a-d
 | §1.2 card fields from stored index fields | Task 3 (store), Task 4 (read), Task 10 (`RecipeCard`, `CardFeed`) |
 | §1.3 `/api/facets` tags top N (`tag_limit` 200/1000) | Task 14 (`top_tags`), Task 15 (`parse_tag_limit`, truncate) |
 | §1.3 locales reuse website query | Task 14 (`language_facets`, web handler switched to it) |
-| §1.3 difficulties | Task 14 (`list_difficulties`) |
+| §1.3 difficulties | Task 14 (`list_difficulties`); values populated for GitHub/feed recipes by Task 13b |
 | §1.3 5-minute cache, same `/api` rate limit | Task 15 (`FacetsCache`, route under `api_routes`) |
 | §1.4 index tags at every call site; remove placeholders | Task 3 (placeholders removed), Task 11 (`reindex_recipes`), Task 12 (GitHub/backfill/cleanup), Task 13 (crawler) |
 | §1.4 tags regression (`tags:` and `tags=`) | Task 11 `database_tags_are_found_by_tags_query_and_tags_filter` |
@@ -4914,6 +5700,7 @@ Placeholder scan: no TBD/TODO. Every code step has complete code, and every type
 - `result_from_doc`/`stored_*`: Task 4
 - `unscored`/`text_match_query`/`filter_clauses`: Tasks 5 and 6
 - `LockedWriter`/`locked_writer`/`reindex_recipes`: Task 11
+- `RecipeFacts`/`ParsedRecipeData.facts`/`entry_facts`/`update_recipe_facts`/`BackfillStats.facts_filled`: Task 13b
 - `FilterParams`: Task 9
 - `CardFeed`: Task 10
 - facet models, `language_facets` and `load_facets`: Task 14
@@ -4928,6 +5715,7 @@ Type consistency:
 
 Gaps found during review and fixed inline:
 - The spec's crawler call site did not exist, so Task 13 was added.
+- Nothing filled `servings`/`total_time_minutes`/`difficulty`. The GitHub indexer hard-coded `None`, and the feed parser's entry metadata is a placeholder `default()`. So the time, servings and difficulty filters matched no real recipe. Task 13b was added, and the Task 18 rebuild fills existing rows.
 - `limit=0` panicked, fixed in Task 7.
 - The governor quota was inverted, fixed in Task 16.
 - Pagination links did not carry filters, fixed in Task 17.
