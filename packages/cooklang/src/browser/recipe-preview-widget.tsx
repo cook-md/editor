@@ -411,7 +411,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             return undefined;
         }
         if (location.kind === 'remote') {
-            return location.url;
+            // A non-`file` recipe's metadata comes from a third party: only
+            // `https:` is loaded, so its images never travel in the clear.
+            return this.hasLocalSource() || /^https:/i.test(location.url) ? location.url : undefined;
         }
         // A non-`file` recipe has no folder: a relative or absolute path in its
         // metadata names nothing the preview may read.

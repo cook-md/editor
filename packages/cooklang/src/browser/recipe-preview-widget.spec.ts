@@ -84,6 +84,8 @@ class PreviewHarness {
     readonly runElements: Array<HTMLElement | undefined> = [];
     /** What `recipeImagesFromContent` reports as the title image. */
     contentImage: string | undefined = REMOTE_IMAGE;
+    /** What `recipeImages` reports as the title image of a local recipe. */
+    localImage: string | undefined;
     readonly widget: RecipePreviewWidget;
 
     constructor() {
@@ -106,7 +108,7 @@ class PreviewHarness {
                 parse: async () => JSON.stringify({ recipe: RECIPE, title: 'Pancakes', errors: [], warnings: [] }),
                 recipeImages: async (path: string) => {
                     this.nativeImageLookups.push(path);
-                    return JSON.stringify({ title: null, steps: {} });
+                    return JSON.stringify({ title: this.localImage ?? null, steps: {} });
                 },
                 recipeImagesFromContent: async (content: string) => {
                     this.contentImageLookups.push(content);
@@ -222,8 +224,8 @@ describe('RecipePreviewWidget for non-file recipes', () => {
         expect(harness.imageReads).to.deep.equal([]);
     });
 
-    it('never uses a javascript: or data: value as an image src in a remote recipe', async () => {
-        for (const value of ['javascript:alert(1)', 'data:image/png;base64,AAAA', '/etc/passwd']) {
+    it('never uses an http:, javascript: or data: value as an image src in a remote recipe', async () => {
+        for (const value of ['http://cdn.example/pancakes.jpg', 'javascript:alert(1)', 'data:image/png;base64,AAAA', '/etc/passwd']) {
             const harness = new PreviewHarness();
             harness.contentImage = value;
             await harness.open(HUB);
@@ -239,6 +241,13 @@ describe('RecipePreviewWidget for non-file recipes', () => {
         expect(harness.nativeImageLookups).to.include(LOCAL.path.fsPath());
         expect(harness.contentImageLookups).to.deep.equal([]);
         expect(harness.watched).to.deep.equal(['file:///ws/Breakfast']);
+    });
+
+    it('still shows an http image named by a local recipe', async () => {
+        const harness = new PreviewHarness();
+        harness.localImage = 'http://cdn.example/pancakes.jpg';
+        await harness.open(LOCAL);
+        expect(harness.internals.images.title).to.equal('http://cdn.example/pancakes.jpg');
     });
 
     it('renders recipe references as plain text in a remote recipe', async () => {

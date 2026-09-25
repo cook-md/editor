@@ -264,7 +264,9 @@ const RecipeImage = ({ src, alt, className }: RecipeImageProps): React.ReactElem
     if (failed) {
         return <></>;
     }
-    return <img className={className} src={src} alt={alt} onError={onError} />;
+    // No referrer: an image host (a recipe hub's CDN, say) has no business
+    // learning which recipe is being viewed.
+    return <img className={className} src={src} alt={alt} onError={onError} referrerPolicy='no-referrer' />;
 };
 
 // ---------------------------------------------------------------------------
