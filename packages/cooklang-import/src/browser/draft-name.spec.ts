@@ -39,6 +39,10 @@ describe('DraftName', () => {
         it('unquotes a single-quoted frontmatter title', () => {
             expect(DraftName.resolveTitle("---\ntitle: 'Pancakes'\n---\nMix.", undefined)).to.equal('Pancakes');
         });
+        it('does not read a title after a lone mid-body ---', () => {
+            expect(DraftName.resolveTitle('Do this first.\n---\ntitle: Should Not Count\nBake now.', undefined))
+                .to.equal(undefined);
+        });
     });
 
     describe('ensureTitleFrontmatter', () => {
@@ -65,6 +69,10 @@ describe('DraftName', () => {
         it('collapses newlines in the title to prevent frontmatter injection', () => {
             expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes\nservings: 99'))
                 .to.equal('---\ntitle: Pancakes servings: 99\n---\n\nMix.');
+        });
+        it('treats a lone mid-body --- as no frontmatter and prepends a fresh one', () => {
+            expect(DraftName.ensureTitleFrontmatter('Mix everything.\n\n---\n\nBake for 10 min.', 'My Recipe'))
+                .to.equal('---\ntitle: My Recipe\n---\n\nMix everything.\n\n---\n\nBake for 10 min.');
         });
     });
 
@@ -127,8 +135,13 @@ describe('DraftName', () => {
             expect(DraftName.mergeFrontmatter('---\ntags:\n  - source: x\n---\nMix.', { source: 'https://e.example' }))
                 .to.equal('---\ntags:\n  - source: x\nsource: https://e.example\n---\nMix.');
         });
-        it('leaves an unterminated frontmatter unchanged', () => {
-            expect(DraftName.mergeFrontmatter('---\ntitle: P\nMix.', { source: 'x' })).to.equal('---\ntitle: P\nMix.');
+        it('treats an unterminated frontmatter as no frontmatter, matching cooklang-rs', () => {
+            expect(DraftName.mergeFrontmatter('---\ntitle: P\nMix.', { source: 'x' }))
+                .to.equal('---\nsource: x\n---\n\n---\ntitle: P\nMix.');
+        });
+        it('treats a lone mid-body --- as no frontmatter and prepends a fresh block', () => {
+            expect(DraftName.mergeFrontmatter('Mix everything.\n\n---\n\nBake for 10 min.', { source: 'https://e.example' }))
+                .to.equal('---\nsource: https://e.example\n---\n\nMix everything.\n\n---\n\nBake for 10 min.');
         });
         it('returns the content unchanged when there is nothing to add', () => {
             const src = '---\r\ntitle: P\r\nsource: s\r\n---\r\nMix.';

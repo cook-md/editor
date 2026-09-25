@@ -86,7 +86,9 @@ export namespace DraftName {
      * recipe's own values always win), and keys that are not plain YAML keys
      * are skipped. Values become single-line YAML scalars, double-quoted when
      * YAML would otherwise misread them. Never writes the deprecated `>>`
-     * metadata syntax. An unterminated frontmatter is returned unchanged.
+     * metadata syntax. A document with fewer than two fences has no
+     * frontmatter, matching cooklang-rs, so a fresh block is prepended ahead
+     * of the whole (unmodified) original content.
      */
     export function mergeFrontmatter(cooklang: string, entries: Record<string, string>): string {
         const additions = Object.entries(entries).filter(([key]) => isFrontmatterKey(key));
@@ -98,9 +100,6 @@ export namespace DraftName {
             return ['---', ...additions.map(([key, value]) => frontmatterLine(key, value)), '---', '', cooklang].join('\n');
         }
         const { lines, start, end } = split;
-        if (end === -1) {
-            return cooklang;
-        }
         const existing = new Set<string>();
         for (const line of lines.slice(start + 1, end)) {
             const match = line.match(/^([^\s#:][^:]*):/);
@@ -155,8 +154,7 @@ export namespace DraftName {
             return undefined;
         }
         const { lines, start, end } = split;
-        const stop = end === -1 ? lines.length : end;
-        for (let i = start + 1; i < stop; i++) {
+        for (let i = start + 1; i < end; i++) {
             const match = lines[i].match(/^title:\s*(.+)$/);
             if (match) {
                 return unquote(match[1].trim());
@@ -170,10 +168,11 @@ export namespace DraftName {
      * (`cooklang` 0.17 `src/parser/frontmatter.rs`): a fence is any line whose
      * trailing whitespace is stripped and equals `---` — leading indentation
      * is significant, so an indented `---` inside a literal block scalar does
-     * not count. `start` is the first fence found (leading blank lines before
-     * it are fine), `end` is the next one after it, or `-1` when the
-     * frontmatter is unterminated. Returns `undefined` when there is no fence
-     * at all.
+     * not count. The opening fence is simply the first such line, wherever it
+     * falls — it may follow any content, blank or not. Both an opening and a
+     * closing fence are required: a document with only one `---` line has no
+     * frontmatter at all (it is not "unterminated", cooklang-rs does not
+     * recognize it either), so this returns `undefined` in that case too.
      */
     function splitFrontmatter(cooklang: string): { lines: string[]; start: number; end: number } | undefined {
         const lines = cooklang.split(/\r?\n/);
@@ -182,6 +181,9 @@ export namespace DraftName {
             return undefined;
         }
         const end = lines.findIndex((line, index) => index > start && line.trimEnd() === '---');
+        if (end === -1) {
+            return undefined;
+        }
         return { lines, start, end };
     }
 
