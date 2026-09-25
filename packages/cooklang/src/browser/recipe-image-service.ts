@@ -49,10 +49,16 @@ export class RecipeImageService {
 
     /**
      * A `blob:` URL for `uri`, or `undefined` when the file is missing,
-     * unreadable, too large, or not a supported image type. Repeated calls for
-     * the same URI reuse one object URL, and concurrent calls share one read.
+     * unreadable, too large, not a supported image type, or not a local
+     * (`file`) file. Recipes from other file systems (plugins such as the Recipe
+     * Hub) have no sibling images, and their metadata images are remote URLs the
+     * preview loads directly. Repeated calls for the same URI reuse one object
+     * URL, and concurrent calls share one read.
      */
     resolve(uri: URI): Promise<string | undefined> {
+        if (uri.scheme !== 'file') {
+            return Promise.resolve(undefined);
+        }
         const key = uri.toString();
         const inFlight = this.pending.get(key);
         if (inFlight) {
