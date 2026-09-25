@@ -238,3 +238,17 @@ implementation of PR 3 after checking the shopping-list code.
   preview outlet context for a non-`file` URI; context key value.
 - **E2E (manual, Electron via CDP):** search → filter → open preview → Save to
   Drafts → file exists in `Drafts/` with `title:` and `source:` frontmatter.
+
+---
+
+## Corrections found while planning
+
+These supersede the sections above; the plans in `docs/superpowers/plans/2026-09-25-recipe-hub-*.md` follow them.
+
+- **No API version bump.** `CooklangPluginApi.VERSION` is the integer `1` and shopping-list disables itself on any other value. It stays `1`; recipe-hub detects `cooklang.api.saveDraft` / `cooklang.api.openPreview` via `commands.getCommands(true)`.
+- **`cooklang.api.saveDraft` lives in a `CooklangImportApi` namespace** in `cooklang-import` (which does not depend on `@theia/cooklang`).
+- **New `cooklang.api.openPreview({ uri })`.** No preview-opening command existed; the preview open handler stays `file`-only.
+- **No CSP change.** The recipe preview is not a webview; `image: https://…` already renders. Non-`file` recipes get images via a new native `recipeImagesFromContent`.
+- **§3.5 decided:** shopping-list's preview-toolbar entry gets `when: cooklangPreviewScheme == file` (0.1.2) — it resolves recipes by workspace path.
+- **Federation:** invalid `q` returned 500 (now 400); full rebuild is `rm -rf <INDEX_PATH> && federation backfill-locales --force`; the crawler never indexed feed recipes (fixed); `indexed_at` is never set so `sort=newest` uses `created_at`; the rate limiter was one global bucket with an inverted rate (fixed).
+- **Known gap:** the GitHub indexer does not record servings / time / difficulty, so those filters match only feed recipes that carry the metadata.
