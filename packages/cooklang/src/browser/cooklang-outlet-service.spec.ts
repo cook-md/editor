@@ -157,6 +157,34 @@ describe('CooklangOutletService', () => {
     it('describes a resource with its URI and workspace-relative path', () => {
         const service = new Fixture().create();
         expect(service.describe(new URI('file:///ws/Dinner/Soup.cook'))).to.deep.equal({ uri: 'file:///ws/Dinner/Soup.cook', path: 'Dinner/Soup.cook' });
-        expect(service.describe(new URI('file:///elsewhere/Cake.cook'))).to.deep.equal({ uri: 'file:///elsewhere/Cake.cook', path: 'Cake.cook' });
+    });
+
+    it('describes a resource outside the workspace with an empty path', () => {
+        const service = new Fixture().create();
+        expect(service.describe(new URI('file:///elsewhere/Cake.cook'))).to.deep.equal({ uri: 'file:///elsewhere/Cake.cook', path: '' });
+    });
+
+    it('keeps the real scheme of a non-file resource and gives it an empty path', () => {
+        const service = new Fixture().create();
+        expect(service.describe(new URI('cooklang-hub:/recipes/12/Pancakes.cook')))
+            .to.deep.equal({ uri: 'cooklang-hub:/recipes/12/Pancakes.cook', path: '' });
+    });
+
+    it('evaluates visibility against the element it is given', async () => {
+        const fixture = new Fixture();
+        const seen: unknown[] = [];
+        fixture.root!.children = [{
+            ...fixture.command('save', '1'),
+            isVisible: (_path: MenuPath, _matcher: unknown, scope: unknown) => {
+                seen.push(scope);
+                return true;
+            },
+        }];
+        const element = document.createElement('div');
+        const service = fixture.create();
+        expect(service.getItems(PATH, CONTEXT, element).map(item => item.id)).to.deep.equal(['save']);
+        await service.run(PATH, 'save', CONTEXT, element);
+        expect(seen).to.deep.equal([element, element]);
+        expect(fixture.runs.map(run => run.id)).to.deep.equal(['save']);
     });
 });
