@@ -16,6 +16,7 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
+import { ContextKeyService, ScopedValueStore } from '@theia/core/lib/browser/context-key-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -88,6 +89,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(CooklangOutletService)
     protected readonly outlets: CooklangOutletService;
 
+    @inject(ContextKeyService)
+    protected readonly contextKeyService: ContextKeyService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     /** The `title` the native parser resolved from the recipe's metadata, if any. */
@@ -101,11 +105,19 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected imageDebounceTimer: ReturnType<typeof setTimeout> | undefined;
     /** File URIs the last successful refresh actually resolved (remote ones excluded). */
     protected resolvedImageUris: ReadonlySet<string> = new Set<string>();
+    /**
+     * Context keys scoped to this preview's DOM node. Outlet `when` clauses are
+     * evaluated against the node, so `cooklangPreviewScheme` applies to this
+     * preview's toolbar and context menus only.
+     */
+    protected scopedContextKeys: ScopedValueStore | undefined;
 
     @postConstruct()
     protected init(): void {
         this.addClass('theia-recipe-preview');
         this.node.tabIndex = 0;
+        this.scopedContextKeys = this.contextKeyService.createScoped(this.node);
+        this.toDispose.push(this.scopedContextKeys);
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
@@ -145,6 +157,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
      */
     setUri(uri: URI): void {
         this.uri = uri;
+        this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY, uri.scheme);
         this.id = createRecipePreviewWidgetId(uri);
         this.recipeTitle = undefined;
         this.updateTitleLabel();
@@ -401,7 +414,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected handleRunToolbarItem = (id: string): void => {
         const context = this.previewContext();
         if (context) {
-            this.outlets.run(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, id, context);
+            this.outlets.run(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, id, context, this.node);
         }
     };
 
@@ -457,7 +470,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected render(): React.ReactNode {
         if (this.recipe) {
             const context = this.previewContext();
-            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, context) : [];
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, context, this.node) : [];
             return (
                 <TimerBindingProvider value={this.timerBinding}>
                     <LinkOpenerProvider value={this.handleOpenLink}>
