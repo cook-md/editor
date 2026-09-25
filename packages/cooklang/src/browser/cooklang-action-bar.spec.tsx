@@ -13,7 +13,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-const disableJSDOM = enableJSDOM();
+enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 try {
@@ -30,8 +30,6 @@ import { CooklangActionBar } from './cooklang-action-bar';
 const { act } = React;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (global as any).IS_REACT_ACT_ENVIRONMENT = true;
-
-after(() => disableJSDOM());
 
 describe('CooklangActionBar', () => {
     let host: HTMLElement;

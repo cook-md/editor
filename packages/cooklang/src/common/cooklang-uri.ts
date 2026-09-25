@@ -20,8 +20,8 @@ import URI from '@theia/core/lib/common/uri';
  * extension (registered in {@link cooklang-grammar-contribution}). Monaco
  * matches those extensions case-insensitively, so a file named `Recipe.COOK`
  * is highlighted and served by the language server just like `recipe.cook`.
- * Feature gates (preview toolbar buttons, open handlers, shopping-list/report
- * commands) must therefore match case-insensitively too — a case-sensitive
+ * Feature gates (preview toolbar buttons, open handlers, report commands)
+ * must therefore match case-insensitively too — a case-sensitive
  * `uri.path.ext === '.cook'` check silently hides the preview affordance for
  * such files even though they are fully recognized as Cooklang.
  *

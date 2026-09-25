@@ -13,7 +13,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-const disableJSDOM = enableJSDOM();
+enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 try {
@@ -27,8 +27,6 @@ import URI from '@theia/core/lib/common/uri';
 import { Emitter } from '@theia/core/lib/common/event';
 import { MenuPath } from '@theia/core/lib/common/menu';
 import { CooklangOutletService } from './cooklang-outlet-service';
-
-after(() => disableJSDOM());
 
 const PATH: MenuPath = ['cooklang/recipePreview/toolbar'];
 

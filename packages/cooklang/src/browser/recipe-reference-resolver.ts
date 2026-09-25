@@ -50,7 +50,7 @@ export function flattenReferences(
 /**
  * Resolves `@recipe` sub-references in a `.cook`/`.menu` to `{ path, scale }`
  * pairs, since the `.shopping-list` format only stores a numeric multiplier.
- * Shared by the shopping-list commands and the `generateShoppingList` AI tool.
+ * Shared by the `cooklang.api.resolveRecipeReferences` command and the `generateShoppingList` AI tool.
  *
  * Per spec/conventions.md:
  *   {2}            → plain multiplier

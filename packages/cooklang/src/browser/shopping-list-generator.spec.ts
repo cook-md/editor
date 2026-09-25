@@ -13,7 +13,7 @@
 
 import { enableJSDOM } from '@theia/core/lib/browser/test/jsdom';
 
-const disableJSDOM = enableJSDOM();
+enableJSDOM();
 
 import { FrontendApplicationConfigProvider } from '@theia/core/lib/browser/frontend-application-config-provider';
 try {
@@ -25,8 +25,6 @@ try {
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { ShoppingListGenerator } from './shopping-list-generator';
-
-after(() => disableJSDOM());
 
 class Fakes {
     files = new Map<string, string>();

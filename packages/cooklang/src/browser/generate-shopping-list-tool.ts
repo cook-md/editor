@@ -84,9 +84,9 @@ export class GenerateShoppingListTool implements ToolProvider {
             displayName: 'Generate Shopping List',
             description: 'Build a shopping list from recipes (with optional scale multipliers) or from a .menu file — ingredients '
                 + 'aggregated, grouped by aisle (config/aisle.conf), pantry items (config/pantry.conf) subtracted, sub-recipe references '
-                + 'included — exactly like the Shopping List view / `cook shopping-list`. Pass exactly one of `recipes` or `menu`. '
+                + 'included — exactly like the Shopping List plugin / `cook shopping-list`. Pass exactly one of `recipes` or `menu`. '
                 + 'By default it only returns the computed list ({ categories: [{ name, items: [{ name, quantities }] }], other, pantryItems, recipes }). '
-                + 'With addToList:true it also adds the recipes to the user\'s live shopping list, opens the Shopping List view and returns the whole current list. '
+                + 'With addToList:true it also adds the recipes to the user\'s live shopping list, opens the Shopping List plugin\'s view and returns the whole current list. '
                 + 'Use addToList only when the user asks to add/put items on their shopping list; for "what do I need for X" stay headless. '
                 + 'Paths are workspace-relative (use searchRecipes to find them).',
             parameters: {

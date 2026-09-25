@@ -14,18 +14,21 @@
 import { formatQuantity, Ingredient } from './recipe-types';
 import { ReportOutputFormat } from './report-templates';
 
-/**
+/*
  * Contexts passed as the single argument to commands contributed to the
  * Cooklang outlets (see `CooklangOutlets`). Plain JSON so they cross the
  * plugin-host boundary unchanged. Version 1; later versions only add optional
  * fields. Paths are workspace-relative; URIs are `file://` strings.
- *
- * Context for the `cooklang/recipePreview/toolbar` and `cooklang/menuPreview/toolbar` outlets.
  */
+
+/** Context for the `cooklang/recipePreview/toolbar` and `cooklang/menuPreview/toolbar` outlets. */
 export interface PreviewOutletContext {
     version: 1;
+    /** `file://` URI string of the recipe or menu. */
     uri: string;
+    /** Workspace-relative path of the recipe or menu. */
     path: string;
+    /** The scale the preview shows — the recipe scale, or the menu scale on the menu toolbar. */
     scale: number;
 }
 
@@ -34,7 +37,8 @@ export namespace PreviewOutletContext {
         return typeof arg === 'object' && arg !== undefined && arg !== null // eslint-disable-line no-null/no-null
             && typeof (arg as PreviewOutletContext).version === 'number'
             && typeof (arg as PreviewOutletContext).uri === 'string'
-            && typeof (arg as PreviewOutletContext).path === 'string';
+            && typeof (arg as PreviewOutletContext).path === 'string'
+            && typeof (arg as PreviewOutletContext).scale === 'number';
     }
 }
 
