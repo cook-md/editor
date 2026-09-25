@@ -200,3 +200,58 @@ describe('RecipePreviewWidget context key and outlets', () => {
             .to.deep.equal({ version: 1, uri: 'cooklang-hub:/recipes/12/Pancakes.cook', path: '', scale: 1 });
     });
 });
+
+describe('RecipePreviewWidget for non-file recipes', () => {
+
+    it('shows the metadata image of a remote recipe without touching the file system', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(HUB);
+        expect(harness.internals.images.title).to.equal(REMOTE_IMAGE);
+        expect(harness.contentImageLookups).to.deep.equal([CONTENT]);
+        expect(harness.nativeImageLookups).to.deep.equal([]);
+        expect(harness.watched).to.deep.equal([]);
+        expect(harness.imageReads).to.deep.equal([]);
+    });
+
+    it('ignores a relative image path in a remote recipe', async () => {
+        const harness = new PreviewHarness();
+        harness.contentImage = 'Pancakes.jpg';
+        await harness.open(HUB);
+        expect(harness.contentImageLookups).to.deep.equal([CONTENT]);
+        expect(harness.internals.images.title).to.be.undefined;
+        expect(harness.imageReads).to.deep.equal([]);
+    });
+
+    it('never uses a javascript: or data: value as an image src in a remote recipe', async () => {
+        for (const value of ['javascript:alert(1)', 'data:image/png;base64,AAAA', '/etc/passwd']) {
+            const harness = new PreviewHarness();
+            harness.contentImage = value;
+            await harness.open(HUB);
+            expect(harness.contentImageLookups).to.deep.equal([CONTENT]);
+            expect(harness.internals.images.title, value).to.be.undefined;
+            expect(harness.imageReads, value).to.deep.equal([]);
+        }
+    });
+
+    it('keeps the on-disk image lookup and folder watch for local recipes', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(LOCAL);
+        expect(harness.nativeImageLookups).to.include(LOCAL.path.fsPath());
+        expect(harness.contentImageLookups).to.deep.equal([]);
+        expect(harness.watched).to.deep.equal(['file:///ws/Breakfast']);
+    });
+
+    it('renders recipe references as plain text in a remote recipe', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(HUB);
+        const markup = harness.markup();
+        expect(markup).to.contain('Syrup');
+        expect(markup).to.not.contain('ingredient-ref-link');
+    });
+
+    it('keeps recipe reference links in a local recipe', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(LOCAL);
+        expect(harness.markup()).to.contain('ingredient-ref-link');
+    });
+});
