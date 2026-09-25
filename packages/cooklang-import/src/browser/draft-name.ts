@@ -30,16 +30,16 @@ export namespace DraftName {
     }
 
     export function ensureTitleFrontmatter(cooklang: string, title: string): string {
-        const safeTitle = sanitizeTitleValue(title);
+        const titleLine = frontmatterLine('title', title);
         const split = splitFrontmatter(cooklang);
         if (split) {
             if (frontmatterTitle(cooklang) !== undefined) {
                 return cooklang;
             }
             const { lines, start } = split;
-            return [...lines.slice(0, start + 1), `title: ${safeTitle}`, ...lines.slice(start + 1)].join('\n');
+            return [...lines.slice(0, start + 1), titleLine, ...lines.slice(start + 1)].join('\n');
         }
-        return `---\ntitle: ${safeTitle}\n---\n\n${cooklang}`;
+        return `---\n${titleLine}\n---\n\n${cooklang}`;
     }
 
     export function sanitizeFilename(title: string): string {

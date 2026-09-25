@@ -68,11 +68,19 @@ describe('DraftName', () => {
         });
         it('collapses newlines in the title to prevent frontmatter injection', () => {
             expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes\nservings: 99'))
-                .to.equal('---\ntitle: Pancakes servings: 99\n---\n\nMix.');
+                .to.equal('---\ntitle: "Pancakes servings: 99"\n---\n\nMix.');
         });
         it('treats a lone mid-body --- as no frontmatter and prepends a fresh one', () => {
             expect(DraftName.ensureTitleFrontmatter('Mix everything.\n\n---\n\nBake for 10 min.', 'My Recipe'))
                 .to.equal('---\ntitle: My Recipe\n---\n\nMix everything.\n\n---\n\nBake for 10 min.');
+        });
+        it('quotes a title YAML would otherwise misread', () => {
+            expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes: the best'))
+                .to.equal('---\ntitle: "Pancakes: the best"\n---\n\nMix.');
+        });
+        it('quotes a title into an existing frontmatter without one', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\nservings: 4\n---\nMix.', '2 Pancakes'))
+                .to.equal('---\ntitle: "2 Pancakes"\nservings: 4\n---\nMix.');
         });
     });
 
