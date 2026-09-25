@@ -15,7 +15,6 @@ import { injectable, inject, postConstruct, interfaces } from '@theia/core/share
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
-import { CommandRegistry } from '@theia/core/lib/common/command';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -59,9 +58,6 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
 
     @inject(FileService)
     protected readonly fileService: FileService;
-
-    @inject(CommandRegistry)
-    protected readonly commandRegistry: CommandRegistry;
 
     @inject(EditorManager)
     protected readonly editorManager: EditorManager;

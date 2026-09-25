@@ -248,7 +248,7 @@ export class GenerateShoppingListTool implements ToolProvider {
      * Adds through the Shopping List plugin and returns its live list. A
      * rejection from the plugin propagates and `execute` reports it as an error.
      */
-    protected async addToLiveList(request: object, recipes: unknown): Promise<string> {
+    protected async addToLiveList(request: { recipes: Array<{ path: string; scale: number }> } | { menu: string }, recipes: unknown): Promise<string> {
         if (!this.commandRegistry.getCommand(ADD_RECIPES_COMMAND)) {
             return this.fail(PLUGIN_MISSING);
         }

@@ -321,12 +321,13 @@ describe('GenerateShoppingListTool', () => {
     });
 
     it('addToList with a menu hands the menu path to the plugin', async () => {
-        const { tool, fs, resolver, commands } = createTool();
+        const { tool, gen, fs, resolver, commands } = createTool();
         fs.files.set('file:///ws/Plans/Week.menu', 'menu');
         resolver.refs.set('menu', [{ path: 'Pancakes', scale: 2 }]);
         const result = await invoke(tool, { menu: 'Plans/Week.menu', addToList: true });
         expect(commands.calls).to.deep.equal([{ id: 'shoppingList.addRecipes', args: { menu: 'Plans/Week.menu' } }]);
         expect(result).to.deep.equal({ ...LIVE_RESULT, added: true, recipes: [{ path: 'Pancakes', scale: 2 }] });
+        expect(gen.computeCalls).to.deep.equal([]);
     });
 
     it('addToList returns an empty list shape when the plugin has not computed a list yet', async () => {
