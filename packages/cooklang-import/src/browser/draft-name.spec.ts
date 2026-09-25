@@ -135,6 +135,28 @@ describe('DraftName', () => {
             expect(DraftName.mergeFrontmatter(src, {})).to.equal(src);
             expect(DraftName.mergeFrontmatter(src, { source: 'other' })).to.equal(src);
         });
+        it('does not let an indented line inside a literal block close the frontmatter early', () => {
+            expect(DraftName.mergeFrontmatter('---\nnotes: |\n  text\n  ---\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('---\nnotes: |\n  text\n  ---\nsource: https://e.example\n---\nMix.');
+        });
+        it('recognizes an existing frontmatter after leading blank lines', () => {
+            expect(DraftName.mergeFrontmatter('\n---\ntitle: P\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('\n---\ntitle: P\nsource: https://e.example\n---\nMix.');
+        });
+        it('quotes values that look like numbers, hex, exponents, dates or times', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', {
+                a: '007',
+                b: '0x1F',
+                c: '1e3',
+                d: '2024-01-01',
+                e: '1:30',
+                servings: '2',
+            })).to.equal('---\na: "007"\nb: "0x1F"\nc: "1e3"\nd: "2024-01-01"\ne: "1:30"\nservings: 2\n---\n\nMix.');
+        });
+        it('recognizes an existing key written with quotes', () => {
+            expect(DraftName.mergeFrontmatter('---\n"source": mine\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('---\n"source": mine\n---\nMix.');
+        });
     });
 
     describe('sanitizeFilename', () => {

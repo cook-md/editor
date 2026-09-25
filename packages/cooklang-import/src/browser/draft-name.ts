@@ -31,12 +31,13 @@ export namespace DraftName {
 
     export function ensureTitleFrontmatter(cooklang: string, title: string): string {
         const safeTitle = sanitizeTitleValue(title);
-        const lines = cooklang.split(/\r?\n/);
-        if (lines[0]?.trim() === '---') {
+        const split = splitFrontmatter(cooklang);
+        if (split) {
             if (frontmatterTitle(cooklang) !== undefined) {
                 return cooklang;
             }
-            return [lines[0], `title: ${safeTitle}`, ...lines.slice(1)].join('\n');
+            const { lines, start } = split;
+            return [...lines.slice(0, start + 1), `title: ${safeTitle}`, ...lines.slice(start + 1)].join('\n');
         }
         return `---\ntitle: ${safeTitle}\n---\n\n${cooklang}`;
     }
@@ -92,19 +93,19 @@ export namespace DraftName {
         if (additions.length === 0) {
             return cooklang;
         }
-        const lines = cooklang.split(/\r?\n/);
-        if (lines[0]?.trim() !== '---') {
+        const split = splitFrontmatter(cooklang);
+        if (!split) {
             return ['---', ...additions.map(([key, value]) => frontmatterLine(key, value)), '---', '', cooklang].join('\n');
         }
-        const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
+        const { lines, start, end } = split;
         if (end === -1) {
             return cooklang;
         }
         const existing = new Set<string>();
-        for (const line of lines.slice(1, end)) {
+        for (const line of lines.slice(start + 1, end)) {
             const match = line.match(/^([^\s#:][^:]*):/);
             if (match) {
-                existing.add(match[1].trim());
+                existing.add(unquote(match[1].trim()));
             }
         }
         const missing = additions.filter(([key]) => !existing.has(key));
@@ -127,12 +128,16 @@ export namespace DraftName {
      * collapses to single spaces, since a newline would start a new frontmatter
      * line. Anything YAML would read as another type, a comment or a mapping is
      * double-quoted; JSON string syntax is valid YAML double-quoted syntax.
+     * A value starting with a digit is only left plain when it is a canonical
+     * decimal integer (`2`, not `007`, `0x1F`, `1e3`, a date or a time), since
+     * anything else would come back from YAML as a number, not this string.
      */
     function yamlScalar(value: string): string {
         const single = sanitizeTitleValue(value);
         const plain = /^[A-Za-z0-9_(][^#]*$/.test(single)
             && !/:(\s|$)/.test(single)
-            && !/^(true|false|yes|no|on|off|y|n|null)$/i.test(single);
+            && !/^(true|false|yes|no|on|off|y|n|null)$/i.test(single)
+            && (!/^[0-9]/.test(single) || /^(0|[1-9][0-9]*)$/.test(single));
         return plain ? single : JSON.stringify(single);
     }
 
@@ -145,20 +150,39 @@ export namespace DraftName {
     }
 
     function frontmatterTitle(cooklang: string): string | undefined {
-        const lines = cooklang.split(/\r?\n/);
-        if (lines[0]?.trim() !== '---') {
+        const split = splitFrontmatter(cooklang);
+        if (!split) {
             return undefined;
         }
-        for (let i = 1; i < lines.length; i++) {
-            if (lines[i].trim() === '---') {
-                return undefined;
-            }
+        const { lines, start, end } = split;
+        const stop = end === -1 ? lines.length : end;
+        for (let i = start + 1; i < stop; i++) {
             const match = lines[i].match(/^title:\s*(.+)$/);
             if (match) {
                 return unquote(match[1].trim());
             }
         }
         return undefined;
+    }
+
+    /**
+     * Locates the recipe's YAML frontmatter fences the way cooklang-rs does
+     * (`cooklang` 0.17 `src/parser/frontmatter.rs`): a fence is any line whose
+     * trailing whitespace is stripped and equals `---` — leading indentation
+     * is significant, so an indented `---` inside a literal block scalar does
+     * not count. `start` is the first fence found (leading blank lines before
+     * it are fine), `end` is the next one after it, or `-1` when the
+     * frontmatter is unterminated. Returns `undefined` when there is no fence
+     * at all.
+     */
+    function splitFrontmatter(cooklang: string): { lines: string[]; start: number; end: number } | undefined {
+        const lines = cooklang.split(/\r?\n/);
+        const start = lines.findIndex(line => line.trimEnd() === '---');
+        if (start === -1) {
+            return undefined;
+        }
+        const end = lines.findIndex((line, index) => index > start && line.trimEnd() === '---');
+        return { lines, start, end };
     }
 
     /**
