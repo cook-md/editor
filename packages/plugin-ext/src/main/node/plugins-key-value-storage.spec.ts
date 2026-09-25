@@ -30,21 +30,26 @@ import { FileSystemLockingImpl } from '@theia/core/lib/node/filesystem-locking';
 import { WorkspaceFileService } from '@theia/workspace/lib/common';
 import { UntitledWorkspaceService } from '@theia/workspace/lib/common/untitled-workspace-service';
 import * as temp from 'temp';
+import * as fs from '@theia/core/shared/fs-extra';
+import * as path from 'path';
+import { PluginPaths } from './paths/const';
 
 const GlobalStorageKind = undefined;
 
 describe('Plugins Key Value Storage', () => {
 
     let container: Container;
+    let configDir: string;
 
     beforeEach(async () => {
+        configDir = temp.track().mkdirSync();
         container = new Container();
         container.bind(PluginsKeyValueStorage).toSelf().inSingletonScope();
         container.bind(PluginCliContribution).toSelf().inSingletonScope();
         container.bind(UntitledWorkspaceService).toSelf().inSingletonScope();
         container.bind(WorkspaceFileService).toSelf().inSingletonScope();
         container.bind(FileSystemLocking).to(FileSystemLockingImpl).inSingletonScope();
-        container.bind(EnvVariablesServer).toConstantValue(new MockEnvVariablesServerImpl(FileUri.create(temp.track().mkdirSync())));
+        container.bind(EnvVariablesServer).toConstantValue(new MockEnvVariablesServerImpl(FileUri.create(configDir)));
         container.bind(PluginPathsService).to(PluginPathsServiceImpl).inSingletonScope();
         container.bind(ILogger).toConstantValue(MockLogger);
         const storage = container.get(PluginsKeyValueStorage);
@@ -78,6 +83,29 @@ describe('Plugins Key Value Storage', () => {
         const storage = container.get(PluginsKeyValueStorage);
         await populateStorage(storage, key, valuePropName, n);
         await checkStorageContent(storage, key, valuePropName, n);
+    });
+
+    it('Should write pending entries to disk on backend stop without waiting for the sync timer', async () => {
+        const storage = container.get(PluginsKeyValueStorage);
+        const value = { 'set right before quitting': 'abc' };
+        await storage.set('akey', value, GlobalStorageKind);
+        const globalStatePath = path.join(configDir, PluginPaths.PLUGINS_GLOBAL_STORAGE_DIR, 'global-state.json');
+        expect(fs.existsSync(globalStatePath), 'Expected the periodic sync not to have run yet').to.be.false;
+
+        storage.onStop();
+
+        expect(fs.readJSONSync(globalStatePath)).to.be.deep.equal({ akey: value });
+    });
+
+    it('Should write pending entries to disk on dispose', async () => {
+        const storage = container.get(PluginsKeyValueStorage);
+        const value = { 'set right before exit': 'def' };
+        await storage.set('akey', value, GlobalStorageKind);
+
+        storage['dispose']();
+
+        const globalStatePath = path.join(configDir, PluginPaths.PLUGINS_GLOBAL_STORAGE_DIR, 'global-state.json');
+        expect(fs.readJSONSync(globalStatePath)).to.be.deep.equal({ akey: value });
     });
 
 });

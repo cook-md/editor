@@ -15,7 +15,7 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
-import { FileSystemLocking } from '@theia/core/lib/node';
+import { BackendApplicationContribution, FileSystemLocking } from '@theia/core/lib/node';
 import * as fs from '@theia/core/shared/fs-extra';
 import * as path from 'path';
 import { FileUri } from '@theia/core/lib/common/file-uri';
@@ -31,8 +31,12 @@ export interface Store {
     values: KeysToKeysToAnyValue
 }
 
+/**
+ * Backs plugin `globalState` / `workspaceState`. Changes are kept in memory and written to disk
+ * periodically; pending changes are also written when the backend stops (see {@link onStop}).
+ */
 @injectable()
-export class PluginsKeyValueStorage {
+export class PluginsKeyValueStorage implements BackendApplicationContribution {
 
     private stores: Record<string, Store> = Object.create(null);
     private storesToSync = new Set<Store>();
@@ -154,8 +158,38 @@ export class PluginsKeyValueStorage {
         await fs.writeJSON(pathToFile, data);
     }
 
+    /**
+     * Runs on backend shutdown: `BackendApplication` calls it from `process.on('exit')`, which is
+     * also reached on SIGINT/SIGTERM (e.g. when the Electron main process kills the backend).
+     * Without it, values set since the last periodic sync (up to ~70 s) would be lost.
+     */
+    onStop(): void {
+        this.dispose();
+    }
+
+    /**
+     * Synchronously writes every store with pending changes. It must be synchronous because
+     * shutdown hooks (`process.on('exit')`, `onStop`) are not awaited.
+     *
+     * Unlike the periodic sync it does not go through `fsLocking.lockPath` (which is async): the
+     * process is ending, so the in-memory values are the final state of this backend and last
+     * writer wins, which is the same outcome the lock would produce for sequential writers.
+     */
+    protected flushSync(): void {
+        for (const store of this.storesToSync) {
+            try {
+                fs.ensureDirSync(path.dirname(store.fsPath));
+                fs.writeJSONSync(store.fsPath, store.values);
+            } catch (error) {
+                console.error('Failed to write plugin storage to "', store.fsPath, '". Reason:', error);
+            }
+        }
+        this.storesToSync.clear();
+    }
+
     private dispose(): void {
         clearTimeout(this.syncStoresTimeout);
         this.syncStoresTimeout = undefined;
+        this.flushSync();
     }
 }

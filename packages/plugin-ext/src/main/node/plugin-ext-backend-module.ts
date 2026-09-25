@@ -76,6 +76,7 @@ export function bindMainBackend(bind: interfaces.Bind, unbind: interfaces.Unbind
     bind(PluginServer).to(PluginServerImpl).inSingletonScope();
 
     bind(PluginsKeyValueStorage).toSelf().inSingletonScope();
+    bind(BackendApplicationContribution).toService(PluginsKeyValueStorage);
 
     bind(PluginPathsService).to(PluginPathsServiceImpl).inSingletonScope();
     bind(ConnectionHandler).toDynamicValue(ctx =>
