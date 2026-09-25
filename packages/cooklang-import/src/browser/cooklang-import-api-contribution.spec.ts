@@ -135,6 +135,47 @@ describe('CooklangImportApiContribution', () => {
         expect(saverFixture.opened).to.deep.equal([result]);
     });
 
+    it('rejects a title containing control characters', async () => {
+        const fixture = new ApiFixture();
+        expect(await fixture.error({ version: 1, content: 'Mix.', title: 'Pan\u0001cakes' }))
+            .to.equal('Invalid arguments: `title` must not contain control characters.');
+        expect(fixture.calls).to.deep.equal([]);
+    });
+
+    it('rejects a frontmatter value containing control characters', async () => {
+        const fixture = new ApiFixture();
+        expect(await fixture.error({ version: 1, content: 'Mix.', frontmatter: { source: 'a\u0001b' } }))
+            .to.equal('Invalid arguments: frontmatter value for `source` must not contain control characters.');
+        expect(fixture.calls).to.deep.equal([]);
+    });
+
+    it('rejects content over 1 MB', async () => {
+        const fixture = new ApiFixture();
+        expect(await fixture.error({ version: 1, content: 'a'.repeat(1024 * 1024 + 1) }))
+            .to.equal('Invalid arguments: `content` must not exceed 1 MB.');
+        expect(fixture.calls).to.deep.equal([]);
+    });
+
+    it('accepts content of exactly 1 MB', async () => {
+        const fixture = new ApiFixture();
+        await fixture.run({ version: 1, content: 'a'.repeat(1024 * 1024) });
+        expect(fixture.calls.length).to.equal(1);
+    });
+
+    it('rejects a title over 200 characters', async () => {
+        const fixture = new ApiFixture();
+        expect(await fixture.error({ version: 1, content: 'Mix.', title: 'a'.repeat(201) }))
+            .to.equal('Invalid arguments: `title` must not exceed 200 characters.');
+        expect(fixture.calls).to.deep.equal([]);
+    });
+
+    it('rejects a frontmatter value over 2000 characters', async () => {
+        const fixture = new ApiFixture();
+        expect(await fixture.error({ version: 1, content: 'Mix.', frontmatter: { source: 'a'.repeat(2001) } }))
+            .to.equal('Invalid arguments: frontmatter value for `source` must not exceed 2000 characters.');
+        expect(fixture.calls).to.deep.equal([]);
+    });
+
     it('rejects with the no-workspace message when no folder is open', async () => {
         const saverFixture = new DraftSaverFixture([]);
         const fixture = new ApiFixture(saverFixture.saver);

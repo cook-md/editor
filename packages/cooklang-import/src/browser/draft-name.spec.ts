@@ -178,6 +178,14 @@ describe('DraftName', () => {
             expect(DraftName.mergeFrontmatter('---\n"source": mine\n---\nMix.', { source: 'https://e.example' }))
                 .to.equal('---\n"source": mine\n---\nMix.');
         });
+        it('quotes values containing control characters that plain YAML forbids', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { note: 'a\u0001b' }))
+                .to.equal('---\nnote: "a\\u0001b"\n---\n\nMix.');
+        });
+        it('quotes values containing DEL and C1 control characters', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { note: 'a\u007fb\u009fc' }))
+                .to.equal(`---\nnote: ${JSON.stringify('a\u007fb\u009fc')}\n---\n\nMix.`);
+        });
     });
 
     describe('sanitizeFilename', () => {

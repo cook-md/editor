@@ -16,6 +16,11 @@ import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/com
 import { DraftName } from './draft-name';
 import { DraftSaver } from './draft-saver';
 
+/** Keeps a single malicious or mistaken plugin call from writing an oversized draft to disk. */
+const MAX_CONTENT_LENGTH = 1024 * 1024;
+const MAX_TITLE_LENGTH = 200;
+const MAX_FRONTMATTER_VALUE_LENGTH = 2000;
+
 /**
  * The part of the public Cooklang plugin API that `@theia/cooklang-import`
  * owns. It follows the conventions of `CooklangPluginApi` in `@theia/cooklang`:
@@ -72,9 +77,18 @@ export class CooklangImportApiContribution implements CommandContribution {
         if (typeof content !== 'string' || content.trim() === '') {
             throw this.invalid('`content` must be a non-empty string.');
         }
+        if (content.length > MAX_CONTENT_LENGTH) {
+            throw this.invalid('`content` must not exceed 1 MB.');
+        }
         const title = request.title;
-        if (title !== undefined && typeof title !== 'string') {
-            throw this.invalid('`title` must be a string.');
+        if (title !== undefined) {
+            if (typeof title !== 'string') {
+                throw this.invalid('`title` must be a string.');
+            }
+            this.noControlCharacters(title, '`title`');
+            if (title.length > MAX_TITLE_LENGTH) {
+                throw this.invalid('`title` must not exceed 200 characters.');
+            }
         }
         return { version: 1, content, title, frontmatter: this.frontmatter(request.frontmatter) };
     }
@@ -92,9 +106,21 @@ export class CooklangImportApiContribution implements CommandContribution {
             if (typeof entry !== 'string') {
                 throw this.invalid(`frontmatter value for \`${key}\` must be a string.`);
             }
+            this.noControlCharacters(entry, `frontmatter value for \`${key}\``);
+            if (entry.length > MAX_FRONTMATTER_VALUE_LENGTH) {
+                throw this.invalid(`frontmatter value for \`${key}\` must not exceed 2000 characters.`);
+            }
             result[key] = entry;
         }
         return result;
+    }
+
+    /** Matches `noControlCharacters` in `CooklangPluginApiContribution`: the Rust writers do not escape control characters. */
+    protected noControlCharacters(value: string, name: string): void {
+        // eslint-disable-next-line no-control-regex
+        if (/[\u0000-\u001f\u007f]/.test(value)) {
+            throw this.invalid(`${name} must not contain control characters.`);
+        }
     }
 
     protected object(value: unknown, detail: string): Record<string, unknown> {

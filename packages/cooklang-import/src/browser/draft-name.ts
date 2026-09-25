@@ -130,10 +130,19 @@ export namespace DraftName {
      * A value starting with a digit is only left plain when it is a canonical
      * decimal integer (`2`, not `007`, `0x1F`, `1e3`, a date or a time), since
      * anything else would come back from YAML as a number, not this string.
+     * A value containing control characters other than the whitespace already
+     * collapsed above (`\t`, `\n`, `\r`, form feed, vertical tab) is always
+     * quoted too — plain YAML scalars forbid them, and an unquoted one would
+     * make cooklang-rs discard the whole frontmatter block. `JSON.stringify`
+     * already escapes every character in that range (`\u0001`, etc.) the same
+     * way YAML double-quoted scalars do.
      */
     function yamlScalar(value: string): string {
         const single = sanitizeTitleValue(value);
-        const plain = /^[A-Za-z0-9_(][^#]*$/.test(single)
+        // eslint-disable-next-line no-control-regex
+        const hasControlCharacters = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(single);
+        const plain = !hasControlCharacters
+            && /^[A-Za-z0-9_(][^#]*$/.test(single)
             && !/:(\s|$)/.test(single)
             && !/^(true|false|yes|no|on|off|y|n|null)$/i.test(single)
             && (!/^[0-9]/.test(single) || /^(0|[1-9][0-9]*)$/.test(single));
