@@ -36,6 +36,8 @@ class Fixture {
     handlers = new Map<string, Handler>();
     labels = new Map<string, string | undefined>();
     keys: Array<{ key: string; value: unknown }> = [];
+    opened: string[] = [];
+    hasProvider: (scheme: string) => boolean = () => true;
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -69,6 +71,8 @@ class Fixture {
             },
         };
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
+        (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
+        (contribution as any).fileService = { hasProvider: (scheme: string) => this.hasProvider(scheme) };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -192,5 +196,35 @@ describe('CooklangPluginApiContribution', () => {
             .to.match(/^Invalid arguments/);
         expect(await fixture.error(CooklangPluginApi.Commands.WRITE_SHOPPING_CHECKED, { entries: [{ type: 'checked', name: 'flour\nmilk' }] }))
             .to.match(/^Invalid arguments/);
+    });
+
+    it('opens the recipe preview for a .cook URI of any scheme', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(CooklangPluginApi.Commands.OPEN_PREVIEW, { uri: 'cooklang-hub:/recipes/12/Pancakes.cook' });
+        await fixture.run(CooklangPluginApi.Commands.OPEN_PREVIEW, { uri: 'file:///ws/Dinner/SOUP.COOK' });
+        expect(fixture.opened).to.deep.equal(['cooklang-hub:/recipes/12/Pancakes.cook', 'file:///ws/Dinner/SOUP.COOK']);
+    });
+
+    it('rejects anything but an absolute .cook URI', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.OPEN_PREVIEW;
+        expect(await fixture.error(id, undefined)).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { uri: '' })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { uri: 'Pancakes.cook' })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { uri: 'cooklang-hub:/recipes/12/notes.md' })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { uri: 'cooklang-hub:/recipes/12/Pan\ncakes.cook' })).to.match(/^Invalid arguments/);
+        expect(fixture.opened).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system, instead of hanging on activateProvider', async () => {
+        const fixture = new Fixture();
+        fixture.hasProvider = scheme => scheme !== 'https';
+        fixture.create();
+        const id = CooklangPluginApi.Commands.OPEN_PREVIEW;
+        expect(await fixture.error(id, { uri: 'https://example.com/recipes/12/Pancakes.cook' }))
+            .to.match(/^Invalid arguments: no file system for scheme "https"\.$/);
+        expect(fixture.opened).to.deep.equal([]);
     });
 });

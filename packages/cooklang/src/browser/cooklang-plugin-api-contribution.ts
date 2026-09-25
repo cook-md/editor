@@ -16,7 +16,9 @@ import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/com
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import URI from '@theia/core/lib/common/uri';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
+import { CooklangUri } from '../common/cooklang-uri';
 import {
     CheckEntry,
     ShoppingListFile,
@@ -31,13 +33,20 @@ import {
 import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
+import { RecipePreviewContribution } from './recipe-preview-contribution';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
  * palette) that plugins call with `vscode.commands.executeCommand(id, args)`.
  * Arguments and results are plain JSON; paths are workspace-relative (absolute
- * paths and `file://` URIs inside the workspace are accepted). Version 1 —
- * changes are additive; bump `VERSION` for anything breaking.
+ * paths and `file://` URIs inside the workspace are accepted). Version 1.
+ * Changes are additive and leave `VERSION` alone, because plugins compare it
+ * for equality; bump it only for a breaking change. Plugins detect commands
+ * added later with `vscode.commands.getCommands(true)`.
+ * `cooklang.api.saveDraft` belongs to this API too, but `@theia/cooklang-import`
+ * registers it (`CooklangImportApi`), next to the `DraftSaver` it wraps.
+ * Unlike every command here, `cooklang.api.saveDraft`'s argument carries its
+ * own `version: 1` field, separate from this namespace's `VERSION`.
  */
 export namespace CooklangPluginApi {
     export const VERSION = 1;
@@ -51,6 +60,8 @@ export namespace CooklangPluginApi {
         PARSE_SHOPPING_CHECKED: 'cooklang.api.parseShoppingChecked',
         WRITE_SHOPPING_CHECKED: 'cooklang.api.writeShoppingChecked',
         COMPACT_SHOPPING_CHECKED: 'cooklang.api.compactShoppingChecked',
+        /** `{ uri }`: open the recipe preview for a `.cook` URI of any scheme (e.g. `cooklang-hub:`). */
+        OPEN_PREVIEW: 'cooklang.api.openPreview',
     } as const;
 }
 
@@ -79,6 +90,12 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(ContextKeyService)
     protected readonly contextKeys: ContextKeyService;
 
+    @inject(RecipePreviewContribution)
+    protected readonly recipePreview: RecipePreviewContribution;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -93,6 +110,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.PARSE_SHOPPING_CHECKED }, { execute: (args: unknown) => this.parseShoppingChecked(args) });
         registry.registerCommand({ id: Commands.WRITE_SHOPPING_CHECKED }, { execute: (args: unknown) => this.writeShoppingChecked(args) });
         registry.registerCommand({ id: Commands.COMPACT_SHOPPING_CHECKED }, { execute: (args: unknown) => this.compactShoppingChecked(args) });
+        registry.registerCommand({ id: Commands.OPEN_PREVIEW }, { execute: (args: unknown) => this.openPreview(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -158,6 +176,28 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             throw this.invalid('`ingredients` must be an array of strings.');
         }
         return fromWireCheckedLog(await this.languageService.compactChecked(toWireCheckedLog(entries), ingredients));
+    }
+
+    /**
+     * Opens the recipe preview for any `.cook` URI whose scheme `FileService`
+     * can read, such as a plugin's `FileSystemProvider`. The preview open
+     * handler only claims `file` URIs on its own, so `git:` and other schemes
+     * keep opening in the text editor; plugins ask for the preview explicitly.
+     */
+    protected async openPreview(args: unknown): Promise<void> {
+        const raw = this.string(this.object(args).uri, '`uri`');
+        const uri = new URI(raw);
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !CooklangUri.isRecipe(uri)) {
+            throw this.invalid('`uri` must be an absolute URI of a .cook recipe.');
+        }
+        // Fail closed: FileService.activateProvider() never settles for a
+        // scheme with no registered (or registering) FileSystemProvider, so
+        // an unhandled scheme would hang the preview forever instead of
+        // rejecting.
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
+        }
+        await this.recipePreview.open(uri);
     }
 
     // --- argument helpers ---

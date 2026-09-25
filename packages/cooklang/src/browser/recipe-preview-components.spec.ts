@@ -164,4 +164,11 @@ describe('InstructionsPanel timer positions', () => {
         expect(markup).to.contain('5 minutes');
         expect(markup).to.contain('7 minutes');
     });
+
+    // Hub images are third-party URLs: loading one must not tell that host
+    // which recipe (or which local path) the user is looking at.
+    it('loads step images without a referrer', () => {
+        const markup = render([{ name: null, content: [step('one', 1)] }], { steps: { '0': { '0': 'https://cdn.example/one.jpg' } } });
+        expect(markup).to.match(/<img [^>]*referrerPolicy="no-referrer"/i);
+    });
 });

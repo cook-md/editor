@@ -107,6 +107,14 @@ describe('RecipeImageService', () => {
         expect(url).to.equal(created[0]);
     });
 
+    it('never reads an image through a non-file file system', async () => {
+        const { service, files, created } = createService();
+        const url = await service.resolve(new URI('cooklang-hub:/recipes/12/Pancakes.jpg'));
+        expect(url).to.be.undefined;
+        expect(files.reads).to.deep.equal([]);
+        expect(created).to.deep.equal([]);
+    });
+
     it('reads each file once and reuses the cached URL', async () => {
         const { service, files } = createService();
         const uri = new URI('file:///r/Pancakes.jpg');

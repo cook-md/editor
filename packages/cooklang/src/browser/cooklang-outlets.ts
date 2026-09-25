@@ -23,6 +23,14 @@ import { MenuPath } from '@theia/core/lib/common/menu';
 export namespace CooklangOutlets {
     /** Outlet contract version; equals the `version` field of every context passed to outlet commands. */
     export const VERSION = 1;
+    /**
+     * Context key set on the recipe preview element to the scheme of the
+     * recipe's URI: `file`, or e.g. `cooklang-hub` for a recipe served by a
+     * plugin's file system. Outlet `when` clauses can target or exclude remote
+     * previews, e.g. `"when": "cooklangPreviewScheme == file"`. Only the recipe
+     * preview sets it; elsewhere it is undefined.
+     */
+    export const PREVIEW_SCHEME_CONTEXT_KEY = 'cooklangPreviewScheme';
     /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
     export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];
     /** Icon buttons in the menu preview header. Context: `PreviewOutletContext`. */

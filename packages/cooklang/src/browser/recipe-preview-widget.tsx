@@ -16,6 +16,7 @@ import { Message } from '@theia/core/shared/@lumino/messaging';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
+import { ContextKeyService, ScopedValueStore } from '@theia/core/lib/browser/context-key-service';
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
@@ -88,6 +89,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(CooklangOutletService)
     protected readonly outlets: CooklangOutletService;
 
+    @inject(ContextKeyService)
+    protected readonly contextKeyService: ContextKeyService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     /** The `title` the native parser resolved from the recipe's metadata, if any. */
@@ -101,16 +105,27 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected imageDebounceTimer: ReturnType<typeof setTimeout> | undefined;
     /** File URIs the last successful refresh actually resolved (remote ones excluded). */
     protected resolvedImageUris: ReadonlySet<string> = new Set<string>();
+    /**
+     * Context keys scoped to this preview's DOM node. Outlet `when` clauses are
+     * evaluated against the node, so `cooklangPreviewScheme` applies to this
+     * preview's toolbar and context menus only.
+     */
+    protected scopedContextKeys: ScopedValueStore | undefined;
+    /** The recipe text last parsed. A non-`file` recipe takes its images from it. */
+    protected content: string | undefined;
 
     @postConstruct()
     protected init(): void {
         this.addClass('theia-recipe-preview');
         this.node.tabIndex = 0;
+        this.scopedContextKeys = this.contextKeyService.createScoped(this.node);
+        this.toDispose.push(this.scopedContextKeys);
         this.scrollOptions = {
             suppressScrollX: true,
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
+        this.listenToProviderRegistrations();
         this.toDispose.push(this.timerService.onDidChangeTimers(() => {
             // A tick is only interesting to this preview if one of its own
             // timers is in it. Ticks fire for every timer in the window, and a
@@ -141,12 +156,25 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     /**
+     * Whether the recipe is a local file. Recipes from other file systems (a
+     * plugin's `cooklang-hub:` provider, say) are read through `FileService` like
+     * any other, but have no folder to find sibling images in or to watch, and
+     * their recipe references cannot be resolved against the workspace.
+     */
+    protected hasLocalSource(): boolean {
+        return this.uri?.scheme === 'file';
+    }
+
+    /**
      * Bind this widget to a source `.cook` file URI and trigger the first parse.
      */
     setUri(uri: URI): void {
         this.uri = uri;
+        this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY, uri.scheme);
         this.id = createRecipePreviewWidgetId(uri);
         this.recipeTitle = undefined;
+        // Text parsed for a previous URI must not name this recipe's images.
+        this.content = undefined;
         this.updateTitleLabel();
         this.title.caption = `Recipe preview for ${uri.toString()}`;
         this.title.closable = true;
@@ -194,6 +222,21 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         );
     }
 
+    /**
+     * A preview restored at startup can come up before the plugin providing
+     * its file system (e.g. `cooklang-hub:`) has activated. Such a read either
+     * waits for the provider or is cancelled after a timeout, so the preview
+     * does not read until the provider exists, and reads again once it
+     * registers. Local recipes are unaffected: `file:` is always there.
+     */
+    protected listenToProviderRegistrations(): void {
+        this.toDispose.push(this.fileService.onDidChangeFileSystemProviderRegistrations(({ added, scheme }) => {
+            if (added && this.uri && !this.hasLocalSource() && scheme === this.uri.scheme) {
+                this.parseCurrentContent();
+            }
+        }));
+    }
+
     // --- Parse helpers ---
 
     protected debouncedParse(content: string): void {
@@ -213,6 +256,10 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         const model = this.monacoWorkspace.getTextDocument(this.uri.toString());
         if (model) {
             this.parseContent(model.getText());
+        } else if (!this.hasLocalSource() && !this.fileService.hasProvider(this.uri.scheme)) {
+            // Read once the provider registers; see `listenToProviderRegistrations`.
+            this.parseErrors = [];
+            this.update();
         } else {
             this.fileService.read(this.uri).then(
                 content => this.parseContent(content.value),
@@ -225,6 +272,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     protected parseContent(content: string): void {
+        this.content = content;
         const sequence = ++this.parseSequence;
         this.service.parse(content).then(json => {
             if (this.isDisposed || sequence !== this.parseSequence) {
@@ -262,6 +310,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
      * an already-open preview, and a deleted one disappears.
      */
     protected watchImageFolder(): void {
+        if (!this.hasLocalSource()) {
+            return;
+        }
         const folder = this.uri.parent;
         this.toDispose.push(this.fileService.watch(folder));
         this.toDispose.push(this.fileService.onDidFilesChange(event => {
@@ -301,8 +352,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     /**
-     * Ask the backend which images exist for this recipe and turn each one into
-     * an `<img>` src. Guarded by `imageSequence` so a slow refresh cannot
+     * Ask `cooklang-find` which images exist for this recipe and turn each one
+     * into an `<img>` src. Guarded by `imageSequence` so a slow refresh cannot
      * overwrite a newer one.
      */
     protected async refreshImages(): Promise<void> {
@@ -313,16 +364,15 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         const resolved: ResolvedRecipeImages = { steps: {} };
         const fileUris = new Set<string>();
         try {
-            const json = await this.service.recipeImages(this.uri.path.fsPath());
-            const discovered = JSON.parse(json) as RecipeImages;
+            const discovered = await this.discoverImages();
             // Every entry is a `FileService` read over RPC, so they are flattened
             // and awaited together: a 20-image recipe should not pay for forty
             // sequential round-trips before anything renders.
             const entries: Array<{ section?: string; step?: string; raw: string }> = [];
-            if (discovered.title) {
+            if (discovered?.title) {
                 entries.push({ raw: discovered.title });
             }
-            for (const [section, steps] of Object.entries(discovered.steps ?? {})) {
+            for (const [section, steps] of Object.entries(discovered?.steps ?? {})) {
                 for (const [step, raw] of Object.entries(steps)) {
                     entries.push({ section, step, raw });
                 }
@@ -353,6 +403,22 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     /**
+     * The recipe's images as `cooklang-find` reports them. A local recipe is
+     * looked up on disk (metadata first, then sibling files). Any other recipe
+     * has no folder, so only its metadata can name an image, which is read from
+     * the parsed text; before the first parse there is nothing to report.
+     */
+    protected async discoverImages(): Promise<RecipeImages | undefined> {
+        if (this.hasLocalSource()) {
+            return JSON.parse(await this.service.recipeImages(this.uri.path.fsPath())) as RecipeImages;
+        }
+        if (this.content === undefined) {
+            return undefined;
+        }
+        return JSON.parse(await this.service.recipeImagesFromContent(this.content)) as RecipeImages;
+    }
+
+    /**
      * Resolve one raw image value to a URL an `<img>` can load, recording every
      * local file URI in `fileUris` so the watcher knows what this recipe reads.
      */
@@ -365,7 +431,14 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             return undefined;
         }
         if (location.kind === 'remote') {
-            return location.url;
+            // A non-`file` recipe's metadata comes from a third party: only
+            // `https:` is loaded, so its images never travel in the clear.
+            return this.hasLocalSource() || /^https:/i.test(location.url) ? location.url : undefined;
+        }
+        // A non-`file` recipe has no folder: a relative or absolute path in its
+        // metadata names nothing the preview may read.
+        if (!this.hasLocalSource()) {
+            return undefined;
         }
         // Recorded even when the read fails: a file that is missing now may be
         // created later, and the watcher should notice when it is.
@@ -401,7 +474,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected handleRunToolbarItem = (id: string): void => {
         const context = this.previewContext();
         if (context) {
-            this.outlets.run(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, id, context);
+            this.outlets.run(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, id, context, this.node);
         }
     };
 
@@ -457,7 +530,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected render(): React.ReactNode {
         if (this.recipe) {
             const context = this.previewContext();
-            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, context) : [];
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.RECIPE_PREVIEW_TOOLBAR, context, this.node) : [];
             return (
                 <TimerBindingProvider value={this.timerBinding}>
                     <LinkOpenerProvider value={this.handleOpenLink}>
@@ -470,7 +543,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                             toolbarItems={toolbarItems}
                             onRunToolbarItem={this.handleRunToolbarItem}
                             onIngredientContextMenu={this.handleIngredientContextMenu}
-                            onNavigateToRecipe={this.handleNavigateToRecipe}
+                            onNavigateToRecipe={this.hasLocalSource() ? this.handleNavigateToRecipe : undefined}
                         />
                     </LinkOpenerProvider>
                 </TimerBindingProvider>

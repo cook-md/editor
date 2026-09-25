@@ -94,6 +94,16 @@ export interface CooklangLanguageService {
     recipeImages(recipePath: string): Promise<string>;
 
     /**
+     * Title image for recipe *text*, for recipes that are not files on disk
+     * (e.g. a `cooklang-hub:` recipe served by a plugin). Asks `cooklang-find`'s
+     * content-based entry, so only frontmatter (`image:`, `images:`, `picture:`,
+     * `pictures:`) can name one; the value is returned verbatim.
+     *
+     * Returns the same JSON shape as {@link recipeImages}; `steps` is always empty.
+     */
+    recipeImagesFromContent(content: string): Promise<string>;
+
+    /**
      * Search recipes under `baseDir` like `cook search` (cooklang-find: filename
      * + content term scoring over `.cook` and `.menu`). A blank query lists every
      * recipe. Same disk-access caveat as `findRecipe` (OS path, Electron-only).

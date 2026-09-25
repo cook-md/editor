@@ -39,6 +39,10 @@ describe('DraftName', () => {
         it('unquotes a single-quoted frontmatter title', () => {
             expect(DraftName.resolveTitle("---\ntitle: 'Pancakes'\n---\nMix.", undefined)).to.equal('Pancakes');
         });
+        it('does not read a title after a lone mid-body ---', () => {
+            expect(DraftName.resolveTitle('Do this first.\n---\ntitle: Should Not Count\nBake now.', undefined))
+                .to.equal(undefined);
+        });
     });
 
     describe('ensureTitleFrontmatter', () => {
@@ -64,7 +68,135 @@ describe('DraftName', () => {
         });
         it('collapses newlines in the title to prevent frontmatter injection', () => {
             expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes\nservings: 99'))
-                .to.equal('---\ntitle: Pancakes servings: 99\n---\n\nMix.');
+                .to.equal('---\ntitle: "Pancakes servings: 99"\n---\n\nMix.');
+        });
+        it('treats a lone mid-body --- as no frontmatter and prepends a fresh one', () => {
+            expect(DraftName.ensureTitleFrontmatter('Mix everything.\n\n---\n\nBake for 10 min.', 'My Recipe'))
+                .to.equal('---\ntitle: My Recipe\n---\n\nMix everything.\n\n---\n\nBake for 10 min.');
+        });
+        it('quotes a title YAML would otherwise misread', () => {
+            expect(DraftName.ensureTitleFrontmatter('Mix.', 'Pancakes: the best'))
+                .to.equal('---\ntitle: "Pancakes: the best"\n---\n\nMix.');
+        });
+        it('quotes a title into an existing frontmatter without one', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\nservings: 4\n---\nMix.', '2 Pancakes'))
+                .to.equal('---\ntitle: "2 Pancakes"\nservings: 4\n---\nMix.');
+        });
+        it('replaces an empty title: line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\ntitle:\nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+        it('replaces a whitespace-only title: line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\ntitle:   \nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+        it('replaces an empty quoted "title": line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\n"title":\nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+    });
+
+    describe('isFrontmatterKey', () => {
+        it('accepts plain YAML keys', () => {
+            expect(DraftName.isFrontmatterKey('source')).to.equal(true);
+            expect(DraftName.isFrontmatterKey('prep_time')).to.equal(true);
+            expect(DraftName.isFrontmatterKey('source.url')).to.equal(true);
+            expect(DraftName.isFrontmatterKey('_private-key2')).to.equal(true);
+        });
+        it('rejects keys that would need quoting or break the line', () => {
+            expect(DraftName.isFrontmatterKey('')).to.equal(false);
+            expect(DraftName.isFrontmatterKey('bad key')).to.equal(false);
+            expect(DraftName.isFrontmatterKey('a\nb')).to.equal(false);
+            expect(DraftName.isFrontmatterKey('a:b')).to.equal(false);
+            expect(DraftName.isFrontmatterKey('2nd')).to.equal(false);
+            expect(DraftName.isFrontmatterKey('>>')).to.equal(false);
+        });
+    });
+
+    describe('mergeFrontmatter', () => {
+        it('adds a key to an existing frontmatter before the closing fence', () => {
+            expect(DraftName.mergeFrontmatter('---\ntitle: Pancakes\n---\nMix.', { source: 'https://example.com/p' }))
+                .to.equal('---\ntitle: Pancakes\nsource: https://example.com/p\n---\nMix.');
+        });
+        it('never overwrites a key the recipe already has', () => {
+            expect(DraftName.mergeFrontmatter('---\ntitle: P\nsource: mine\n---\nMix.', { source: 'https://x.example', servings: '2' }))
+                .to.equal('---\ntitle: P\nsource: mine\nservings: 2\n---\nMix.');
+        });
+        it('creates a YAML frontmatter when there is none', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { source: 'https://example.com/p' }))
+                .to.equal('---\nsource: https://example.com/p\n---\n\nMix.');
+        });
+        it('never writes the deprecated >> metadata syntax', () => {
+            const merged = DraftName.mergeFrontmatter('Mix @eggs{2}.', { source: 'https://example.com/p', author: 'Ann' });
+            expect(merged).to.not.contain('>>');
+            expect(merged.startsWith('---\n')).to.equal(true);
+        });
+        it('normalizes CRLF content to LF when it adds keys', () => {
+            expect(DraftName.mergeFrontmatter('---\r\ntitle: P\r\n---\r\nMix.', { author: 'Ann' }))
+                .to.equal('---\ntitle: P\nauthor: Ann\n---\nMix.');
+        });
+        it('quotes values YAML would misread', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', {
+                a: 'Pancakes: the best',
+                b: 'yes',
+                c: '#1 pick',
+                d: 'https://example.com/p#top',
+                e: '',
+            })).to.equal('---\na: "Pancakes: the best"\nb: "yes"\nc: "#1 pick"\nd: "https://example.com/p#top"\ne: ""\n---\n\nMix.');
+        });
+        it('collapses newlines in values so they cannot inject frontmatter lines', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { note: 'line one\nservings: 99' }))
+                .to.equal('---\nnote: "line one servings: 99"\n---\n\nMix.');
+        });
+        it('skips keys that are not plain YAML keys', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { 'bad key': 'x', 'a\nb': 'y', '': 'z' })).to.equal('Mix.');
+        });
+        it('treats only top-level lines as existing keys', () => {
+            expect(DraftName.mergeFrontmatter('---\ntags:\n  - source: x\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('---\ntags:\n  - source: x\nsource: https://e.example\n---\nMix.');
+        });
+        it('treats an unterminated frontmatter as no frontmatter, matching cooklang-rs', () => {
+            expect(DraftName.mergeFrontmatter('---\ntitle: P\nMix.', { source: 'x' }))
+                .to.equal('---\nsource: x\n---\n\n---\ntitle: P\nMix.');
+        });
+        it('treats a lone mid-body --- as no frontmatter and prepends a fresh block', () => {
+            expect(DraftName.mergeFrontmatter('Mix everything.\n\n---\n\nBake for 10 min.', { source: 'https://e.example' }))
+                .to.equal('---\nsource: https://e.example\n---\n\nMix everything.\n\n---\n\nBake for 10 min.');
+        });
+        it('returns the content unchanged when there is nothing to add', () => {
+            const src = '---\r\ntitle: P\r\nsource: s\r\n---\r\nMix.';
+            expect(DraftName.mergeFrontmatter(src, {})).to.equal(src);
+            expect(DraftName.mergeFrontmatter(src, { source: 'other' })).to.equal(src);
+        });
+        it('does not let an indented line inside a literal block close the frontmatter early', () => {
+            expect(DraftName.mergeFrontmatter('---\nnotes: |\n  text\n  ---\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('---\nnotes: |\n  text\n  ---\nsource: https://e.example\n---\nMix.');
+        });
+        it('recognizes an existing frontmatter after leading blank lines', () => {
+            expect(DraftName.mergeFrontmatter('\n---\ntitle: P\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('\n---\ntitle: P\nsource: https://e.example\n---\nMix.');
+        });
+        it('quotes values that look like numbers, hex, exponents, dates or times', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', {
+                a: '007',
+                b: '0x1F',
+                c: '1e3',
+                d: '2024-01-01',
+                e: '1:30',
+                servings: '2',
+            })).to.equal('---\na: "007"\nb: "0x1F"\nc: "1e3"\nd: "2024-01-01"\ne: "1:30"\nservings: 2\n---\n\nMix.');
+        });
+        it('recognizes an existing key written with quotes', () => {
+            expect(DraftName.mergeFrontmatter('---\n"source": mine\n---\nMix.', { source: 'https://e.example' }))
+                .to.equal('---\n"source": mine\n---\nMix.');
+        });
+        it('quotes values containing control characters that plain YAML forbids', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { note: 'a\u0001b' }))
+                .to.equal('---\nnote: "a\\u0001b"\n---\n\nMix.');
+        });
+        it('quotes values containing DEL and C1 control characters', () => {
+            expect(DraftName.mergeFrontmatter('Mix.', { note: 'a\u007fb\u009fc' }))
+                .to.equal(`---\nnote: ${JSON.stringify('a\u007fb\u009fc')}\n---\n\nMix.`);
         });
     });
 

@@ -1005,6 +1005,23 @@ pub fn napi_recipe_images(recipe_path: String) -> napi::Result<String> {
         .map_err(|e| napi::Error::from_reason(format!("recipeImages serialize: {e}")))
 }
 
+/// Title image for recipe text that has no file on disk, such as a recipe a
+/// plugin serves from its own file system, using `cooklang-find`'s
+/// content-based entry. Only metadata (`image:`, `images:`, `picture:`,
+/// `pictures:`) can name an image, and it comes back verbatim. Same JSON shape
+/// as `recipeImages`; `steps` is always empty.
+#[napi(js_name = "recipeImagesFromContent")]
+pub fn napi_recipe_images_from_content(content: String) -> napi::Result<String> {
+    let entry = cooklang_find::RecipeEntry::from_content(content, None)
+        .map_err(|e| napi::Error::from_reason(format!("recipeImagesFromContent: {e}")))?;
+    let payload = serde_json::json!({
+        "title": entry.title_image(),
+        "steps": entry.step_images().images,
+    });
+    serde_json::to_string(&payload)
+        .map_err(|e| napi::Error::from_reason(format!("recipeImagesFromContent serialize: {e}")))
+}
+
 #[napi(js_name = "compactChecked")]
 pub fn napi_compact_checked(
     entries_json: String,
@@ -2029,5 +2046,34 @@ mod recipe_images_tests {
     #[test]
     fn errors_when_the_recipe_does_not_exist() {
         assert!(napi_recipe_images("/definitely/not/here/Nope.cook".to_string()).is_err());
+    }
+
+    #[test]
+    fn content_reports_the_metadata_image_verbatim() {
+        let json = napi_recipe_images_from_content(
+            "---\ntitle: Pancakes\nimage: https://cdn.example/p.jpg\n---\nMix @eggs{2}.\n".to_string(),
+        )
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["title"], "https://cdn.example/p.jpg");
+        assert_eq!(value["steps"].as_object().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn content_takes_the_first_entry_of_an_images_list() {
+        let json = napi_recipe_images_from_content(
+            "---\nimages:\n  - https://cdn.example/a.jpg\n  - https://cdn.example/b.jpg\n---\nMix.\n".to_string(),
+        )
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["title"], "https://cdn.example/a.jpg");
+    }
+
+    #[test]
+    fn content_without_an_image_has_no_title_image() {
+        let json = napi_recipe_images_from_content("Mix @eggs{2}.\n".to_string()).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value["title"].is_null());
+        assert_eq!(value["steps"].as_object().unwrap().len(), 0);
     }
 }

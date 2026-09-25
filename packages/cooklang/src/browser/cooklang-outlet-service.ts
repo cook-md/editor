@@ -79,8 +79,14 @@ export class CooklangOutletService {
         this.commands.onCommandsChanged(() => this.onDidChangeEmitter.fire());
     }
 
-    getItems(menuPath: MenuPath, context: object): OutletItem[] {
-        return this.visibleCommands(menuPath, context).map(node => {
+    /**
+     * The outlet's visible entries. `element` scopes `when` clauses: context keys
+     * set on it or on an ancestor (like the recipe preview's
+     * `cooklangPreviewScheme`) apply. Without it, `when` clauses are evaluated
+     * against the focused element.
+     */
+    getItems(menuPath: MenuPath, context: object, element?: HTMLElement): OutletItem[] {
+        return this.visibleCommands(menuPath, context, element).map(node => {
             const item: OutletItem = { id: node.id, label: node.label };
             if (node.icon) {
                 item.iconClass = node.icon;
@@ -89,8 +95,9 @@ export class CooklangOutletService {
         });
     }
 
-    async run(menuPath: MenuPath, id: string, context: object): Promise<void> {
-        const node = this.visibleCommands(menuPath, context).find(candidate => candidate.id === id);
+    /** Runs one visible entry with `context`; `element` scopes `when` clauses as in {@link getItems}. */
+    async run(menuPath: MenuPath, id: string, context: object, element?: HTMLElement): Promise<void> {
+        const node = this.visibleCommands(menuPath, context, element).find(candidate => candidate.id === id);
         if (!node) {
             return;
         }
@@ -121,11 +128,15 @@ export class CooklangOutletService {
         });
     }
 
-    /** `uri` and workspace-relative `path` for an outlet context. */
+    /**
+     * `uri` (with its real scheme) and workspace-relative `path` for an outlet
+     * context. `path` is `''` when the resource is outside the workspace:
+     * another folder, or a non-`file` URI such as `cooklang-hub:`.
+     */
     describe(uri: URI): { uri: string; path: string } {
         const root = this.workspaceService.tryGetRoots()[0]?.resource;
         const relative = root && root.isEqualOrParent(uri) ? root.relative(uri)?.toString() : undefined;
-        return { uri: uri.toString(), path: relative ?? uri.path.base };
+        return { uri: uri.toString(), path: relative ?? '' };
     }
 
     protected visibleCommands(menuPath: MenuPath, context: object, element?: HTMLElement): CommandMenu[] {

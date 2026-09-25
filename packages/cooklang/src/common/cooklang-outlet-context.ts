@@ -18,15 +18,17 @@ import { ReportOutputFormat } from './report-templates';
  * Contexts passed as the single argument to commands contributed to the
  * Cooklang outlets (see `CooklangOutlets`). Plain JSON so they cross the
  * plugin-host boundary unchanged. Version 1; later versions only add optional
- * fields. Paths are workspace-relative; URIs are `file://` strings.
+ * fields. Paths are workspace-relative, or `''` for a resource outside the
+ * workspace (another folder, or a non-`file` URI such as `cooklang-hub:`).
+ * URIs are strings that keep their real scheme.
  */
 
 /** Context for the `cooklang/recipePreview/toolbar` and `cooklang/menuPreview/toolbar` outlets. */
 export interface PreviewOutletContext {
     version: 1;
-    /** `file://` URI string of the recipe or menu. */
+    /** URI string of the recipe or menu, with its real scheme (`file:`, or e.g. `cooklang-hub:`). */
     uri: string;
-    /** Workspace-relative path of the recipe or menu. */
+    /** Workspace-relative path of the recipe or menu; `''` when it is outside the workspace. */
     path: string;
     /** The scale the preview shows — the recipe scale, or the menu scale on the menu toolbar. */
     scale: number;
