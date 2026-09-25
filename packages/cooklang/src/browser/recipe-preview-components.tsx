@@ -37,6 +37,8 @@ import {
 import { ResolvedRecipeImages, lookupStepImage } from '../common/recipe-images';
 import { linkify } from '../common/recipe-links';
 import { TimerBadge } from './timer-components';
+import { CooklangActionBar } from './cooklang-action-bar';
+import { OutletItem } from './cooklang-outlet-service';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -396,15 +398,17 @@ export const InstructionsPanel = ({
 interface IngredientRowProps {
     ingredient: Ingredient;
     onNavigateToRecipe?: (referencePath: string) => void;
+    onContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
 }
 
-const IngredientRow = ({ ingredient, onNavigateToRecipe }: IngredientRowProps): React.ReactElement => {
+const IngredientRow = ({ ingredient, onNavigateToRecipe, onContextMenu }: IngredientRowProps): React.ReactElement => {
     const qty = formatQuantity(ingredient.quantity);
     const displayName = ingredient.alias ?? ingredient.name;
     const isRef = ingredient.reference !== null && ingredient.reference !== undefined;
 
     return (
-        <li className={`ingredient-item${isRef ? ' ingredient-ref' : ''}`}>
+        <li className={`ingredient-item${isRef ? ' ingredient-ref' : ''}`}
+            onContextMenu={onContextMenu ? event => onContextMenu(ingredient, event) : undefined}>
             <span className='ingredient-name'>
                 {isRef && onNavigateToRecipe ? (
                     <a className='ingredient-ref-link'
@@ -433,6 +437,7 @@ interface IngredientsSidebarProps {
     ingredients: Ingredient[];
     cookware: Cookware[];
     onNavigateToRecipe?: (referencePath: string) => void;
+    onIngredientContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
 }
 
 export const IngredientsSidebar = ({
@@ -440,6 +445,7 @@ export const IngredientsSidebar = ({
     ingredients,
     cookware,
     onNavigateToRecipe,
+    onIngredientContextMenu,
 }: IngredientsSidebarProps): React.ReactElement => {
     const multiSection = sections.length > 1;
 
@@ -455,7 +461,8 @@ export const IngredientsSidebar = ({
         <ul className='ingredient-list'>
             {sortRefsFirst(indices).map(idx => (
                 ingredients[idx] && (
-                    <IngredientRow key={idx} ingredient={ingredients[idx]} onNavigateToRecipe={onNavigateToRecipe} />
+                    <IngredientRow key={idx} ingredient={ingredients[idx]} onNavigateToRecipe={onNavigateToRecipe}
+                        onContextMenu={onIngredientContextMenu} />
                 )
             ))}
         </ul>
@@ -560,9 +567,11 @@ export interface RecipeViewProps {
     images?: ResolvedRecipeImages;
     scale: number;
     onScaleChange: (scale: number) => void;
-    onShowSource?: () => void;
+    toolbarItems: readonly OutletItem[];
+    onRunToolbarItem: (id: string) => void;
     onAddToShoppingList?: (scale: number) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
+    onIngredientContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
 }
 
 export const RecipeView = ({
@@ -571,9 +580,11 @@ export const RecipeView = ({
     images,
     scale,
     onScaleChange,
-    onShowSource,
+    toolbarItems,
+    onRunToolbarItem,
     onAddToShoppingList,
     onNavigateToRecipe,
+    onIngredientContextMenu,
 }: RecipeViewProps): React.ReactElement => {
     const meta = recipe.metadata.map;
 
@@ -621,12 +632,7 @@ export const RecipeView = ({
                             <span className='theia-shopping-cart-icon'></span>
                         </button>
                     )}
-                    {onShowSource && (
-                        <button className='recipe-show-source' onClick={onShowSource}
-                            title='Show Source'>
-                            <span className='codicon codicon-go-to-file'></span>
-                        </button>
-                    )}
+                    <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
                 </div>
             </div>
 
@@ -650,6 +656,7 @@ export const RecipeView = ({
                     ingredients={scaled.ingredients}
                     cookware={scaled.cookware}
                     onNavigateToRecipe={onNavigateToRecipe}
+                    onIngredientContextMenu={onIngredientContextMenu}
                 />
                 <InstructionsPanel
                     sections={scaled.sections}

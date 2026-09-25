@@ -114,6 +114,8 @@ describe('RecipeView link wiring', () => {
                 title: 'Soup',
                 scale: 1,
                 onScaleChange: () => undefined,
+                toolbarItems: [],
+                onRunToolbarItem: () => undefined,
             })
         );
         expect(markup).to.contain('class="recipe-description"');
