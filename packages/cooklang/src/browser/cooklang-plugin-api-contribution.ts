@@ -45,6 +45,8 @@ import { RecipePreviewContribution } from './recipe-preview-contribution';
  * added later with `vscode.commands.getCommands(true)`.
  * `cooklang.api.saveDraft` belongs to this API too, but `@theia/cooklang-import`
  * registers it (`CooklangImportApi`), next to the `DraftSaver` it wraps.
+ * Unlike every command here, `cooklang.api.saveDraft`'s argument carries its
+ * own `version: 1` field, separate from this namespace's `VERSION`.
  */
 export namespace CooklangPluginApi {
     export const VERSION = 1;
