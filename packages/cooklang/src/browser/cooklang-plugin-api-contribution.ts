@@ -16,6 +16,7 @@ import { CommandContribution, CommandRegistry } from '@theia/core/lib/common/com
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import URI from '@theia/core/lib/common/uri';
+import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 import { CooklangUri } from '../common/cooklang-uri';
 import {
@@ -89,6 +90,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
 
     @inject(RecipePreviewContribution)
     protected readonly recipePreview: RecipePreviewContribution;
+
+    @inject(FileService)
+    protected readonly fileService: FileService;
 
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
@@ -183,6 +187,13 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         const uri = new URI(raw);
         if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !CooklangUri.isRecipe(uri)) {
             throw this.invalid('`uri` must be an absolute URI of a .cook recipe.');
+        }
+        // Fail closed: FileService.activateProvider() never settles for a
+        // scheme with no registered (or registering) FileSystemProvider, so
+        // an unhandled scheme would hang the preview forever instead of
+        // rejecting.
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
         }
         await this.recipePreview.open(uri);
     }

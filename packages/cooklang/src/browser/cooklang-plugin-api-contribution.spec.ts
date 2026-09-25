@@ -37,6 +37,7 @@ class Fixture {
     labels = new Map<string, string | undefined>();
     keys: Array<{ key: string; value: unknown }> = [];
     opened: string[] = [];
+    hasProvider: (scheme: string) => boolean = () => true;
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -71,6 +72,7 @@ class Fixture {
         };
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
         (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
+        (contribution as any).fileService = { hasProvider: (scheme: string) => this.hasProvider(scheme) };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -213,6 +215,16 @@ describe('CooklangPluginApiContribution', () => {
         expect(await fixture.error(id, { uri: 'Pancakes.cook' })).to.match(/^Invalid arguments/);
         expect(await fixture.error(id, { uri: 'cooklang-hub:/recipes/12/notes.md' })).to.match(/^Invalid arguments/);
         expect(await fixture.error(id, { uri: 'cooklang-hub:/recipes/12/Pan\ncakes.cook' })).to.match(/^Invalid arguments/);
+        expect(fixture.opened).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system, instead of hanging on activateProvider', async () => {
+        const fixture = new Fixture();
+        fixture.hasProvider = scheme => scheme !== 'https';
+        fixture.create();
+        const id = CooklangPluginApi.Commands.OPEN_PREVIEW;
+        expect(await fixture.error(id, { uri: 'https://example.com/recipes/12/Pancakes.cook' }))
+            .to.match(/^Invalid arguments: no file system for scheme "https"\.$/);
         expect(fixture.opened).to.deep.equal([]);
     });
 });
