@@ -18,9 +18,11 @@ import { WidgetFactory } from '@theia/core/lib/browser/widget-manager';
 import { bindViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
+import { CommandContribution } from '@theia/core/lib/common/command';
 import { RecipeImportService, RecipeImportServicePath } from '../common/recipe-import-protocol';
 import { bindCooklangImportPreferences } from './import-preferences';
 import { DraftSaver } from './draft-saver';
+import { CooklangImportApiContribution } from './cooklang-import-api-contribution';
 import { ImportWidget, IMPORT_WIDGET_ID } from './import-widget';
 import { ImportContribution } from './import-contribution';
 import { ExternalRecipeContribution } from './external-recipe-contribution';
@@ -33,6 +35,10 @@ export default new ContainerModule(bind => {
     ).inSingletonScope();
 
     bind(DraftSaver).toSelf().inSingletonScope();
+
+    // `cooklang.api.saveDraft` for plugins, registered next to the saver it wraps.
+    bind(CooklangImportApiContribution).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(CooklangImportApiContribution);
 
     bind(ExternalRecipeContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(ExternalRecipeContribution);
