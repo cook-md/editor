@@ -13,6 +13,20 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.47](https://github.com/cook-md/editor/compare/v0.1.0-alpha.46...v0.1.0-alpha.47) (2026-09-25)
+
+
+### Features
+
+* **cooklang:** editor API for the Recipe Hub plugin ([#149](https://github.com/cook-md/editor/issues/149)) ([f5fd087](https://github.com/cook-md/editor/commit/f5fd0873435e95c0324fe623c94f723ad31cf742))
+* **cooklang:** plugin outlets, Cooklang plugin API, shopping list as a default plugin ([#148](https://github.com/cook-md/editor/issues/148)) ([0fba6e4](https://github.com/cook-md/editor/commit/0fba6e4bca53418a8efff79c8ea24048c9f873e3))
+* ship the recipe-hub plugin by default; shopping-list 0.1.2 ([#150](https://github.com/cook-md/editor/issues/150)) ([adf7969](https://github.com/cook-md/editor/commit/adf79698e0540169a79c5226244df0f65a5a001e))
+
+
+### Bug Fixes
+
+* **shopping-list:** expand recipe references at every depth ([#145](https://github.com/cook-md/editor/issues/145)) ([8ea79d2](https://github.com/cook-md/editor/commit/8ea79d2682ef7083ef4824071c7c8180a8d4fc06))
+
 ## [0.1.0-alpha.46](https://github.com/cook-md/editor/compare/v0.1.0-alpha.45...v0.1.0-alpha.46) (2026-09-24)
 
 
