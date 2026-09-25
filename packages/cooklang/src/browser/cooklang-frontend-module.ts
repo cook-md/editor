@@ -34,6 +34,7 @@ import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { ShoppingListWidget, SHOPPING_LIST_WIDGET_ID } from './shopping-list-widget';
 import { ShoppingListService } from './shopping-list-service';
 import { RecipeReferenceResolver } from './recipe-reference-resolver';
+import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeNavigator } from './recipe-navigator';
 import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget';
 import { ImageViewerContribution } from './image-viewer-contribution';
@@ -208,6 +209,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     // Shopping list
     bind(RecipeReferenceResolver).toSelf().inSingletonScope();
+    bind(ShoppingListGenerator).toSelf().inSingletonScope();
     bind(RecipeNavigator).toSelf().inSingletonScope();
     bind(ShoppingListService).toSelf().inSingletonScope();
 

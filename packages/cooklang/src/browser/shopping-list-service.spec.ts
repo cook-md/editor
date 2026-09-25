@@ -37,6 +37,7 @@ import { expect } from 'chai';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Emitter } from '@theia/core/lib/common/event';
 import { ShoppingListService } from './shopping-list-service';
+import { ShoppingListGenerator } from './shopping-list-generator';
 import { ShoppingListRecipeItem } from '../common/shopping-list-types';
 
 after(() => disableJSDOM());
@@ -161,6 +162,11 @@ function makeService(): { svc: ShoppingListService; fs: FakeFileService; ls: Fak
     (svc as any).languageService = ls;
     (svc as any).workspaceService = ws;
     (svc as any).toDispose = new DisposableCollection();
+    const generator = new ShoppingListGenerator();
+    (generator as any).fileService = fs;
+    (generator as any).languageService = ls;
+    (generator as any).workspaceService = ws;
+    (svc as any).generator = generator;
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { svc, fs, ls };
 }

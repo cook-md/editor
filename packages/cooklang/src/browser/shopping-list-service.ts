@@ -29,6 +29,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 import { ResolvedRecipeReference } from './recipe-reference-resolver';
+import { ShoppingListGenerator } from './shopping-list-generator';
 import {
     ShoppingListFile,
     ShoppingListRecipeItem,
@@ -63,6 +64,9 @@ export class ShoppingListService implements Disposable {
 
     @inject(WorkspaceService)
     protected readonly workspaceService: WorkspaceService;
+
+    @inject(ShoppingListGenerator)
+    protected readonly generator: ShoppingListGenerator;
 
     protected readonly toDispose = new DisposableCollection();
     protected list: ShoppingListFile = { items: [] };
@@ -214,43 +218,11 @@ export class ShoppingListService implements Disposable {
     }
 
     /**
-     * Headless aggregation: resolve each `{ path, scale }` through cooklang-find,
-     * read `config/aisle.conf` + `config/pantry.conf`, and run the native
-     * `generateShoppingList`. Does not touch the persisted list or `result`.
-     * Missing recipes are skipped with a warning (as before). Throws when no
-     * workspace is open or the native call fails.
+     * Headless aggregation, delegated to {@link ShoppingListGenerator}. Does not
+     * touch the persisted list or `result`.
      */
     async computeResult(items: ReadonlyArray<{ path: string; scale: number }>): Promise<ShoppingListResult> {
-        const root = this.getWorkspaceRootUri();
-        if (!root) {
-            throw new Error('No workspace is open');
-        }
-        const baseDir = root.path.fsPath();
-        const recipeInputs: Array<{ content: string; scale: number }> = [];
-        for (const { path, scale } of items) {
-            try {
-                // Use cooklang-find via RPC: auto-resolves `.cook`/`.menu` extensions
-                // when paths from menu references are stored without one.
-                const content = await this.languageService.findRecipe(baseDir, path);
-                if (content === undefined) {
-                    console.warn(`[shopping-list] Recipe not found: ${path}`);
-                    continue;
-                }
-                recipeInputs.push({ content, scale });
-            } catch (e) {
-                console.warn(`[shopping-list] Failed to read recipe ${path}:`, e);
-            }
-        }
-
-        const aisleConf = await this.readConfigFile(root, 'config/aisle.conf');
-        const pantryConf = await this.readConfigFile(root, 'config/pantry.conf');
-
-        const json = await this.languageService.generateShoppingList(
-            JSON.stringify(recipeInputs),
-            aisleConf,
-            pantryConf,
-        );
-        return JSON.parse(json);
+        return this.generator.computeResult(items);
     }
 
     async addRecipe(
@@ -302,15 +274,6 @@ export class ShoppingListService implements Disposable {
             try { await this.fileService.delete(root.resolve(CHECKED_FILE)); } catch { /* already gone */ }
         }
         this.onDidChangeEmitter.fire();
-    }
-
-    protected async readConfigFile(root: URI, relativePath: string): Promise<string | null> {
-        try {
-            const content = await this.fileService.read(root.resolve(relativePath));
-            return content.value;
-        } catch {
-            return null;
-        }
     }
 
     async checkItem(name: string): Promise<void> {
