@@ -33,10 +33,17 @@ export namespace DraftName {
         const titleLine = frontmatterLine('title', title);
         const split = splitFrontmatter(cooklang);
         if (split) {
-            if (frontmatterTitle(cooklang) !== undefined) {
+            const { lines, start, end } = split;
+            const found = findTitleLine(lines, start, end);
+            if (found && found.value.length > 0) {
                 return cooklang;
             }
-            const { lines, start } = split;
+            if (found) {
+                // An empty `title:` (or `"title":`) key already reserves the
+                // name; replace it instead of adding a second `title` key,
+                // which serde_yaml (and YAML in general) rejects.
+                return [...lines.slice(0, found.index), titleLine, ...lines.slice(found.index + 1)].join('\n');
+            }
             return [...lines.slice(0, start + 1), titleLine, ...lines.slice(start + 1)].join('\n');
         }
         return `---\n${titleLine}\n---\n\n${cooklang}`;
@@ -162,11 +169,22 @@ export namespace DraftName {
         if (!split) {
             return undefined;
         }
-        const { lines, start, end } = split;
+        const found = findTitleLine(split.lines, split.start, split.end);
+        return found && found.value.length > 0 ? unquote(found.value) : undefined;
+    }
+
+    /**
+     * Finds the frontmatter's `title` key line — unquoted or single/double
+     * quoted, matching the key-detection `mergeFrontmatter` already uses —
+     * and returns its line index and raw (still possibly quoted), trimmed
+     * value. The value is an empty string for `title:`, `title:   ` and
+     * `"title":`, so callers can tell an empty title key from a missing one.
+     */
+    function findTitleLine(lines: string[], start: number, end: number): { index: number; value: string } | undefined {
         for (let i = start + 1; i < end; i++) {
-            const match = lines[i].match(/^title:\s*(.+)$/);
-            if (match) {
-                return unquote(match[1].trim());
+            const match = lines[i].match(/^([^\s#:][^:]*):(.*)$/);
+            if (match && unquote(match[1].trim()) === 'title') {
+                return { index: i, value: match[2].trim() };
             }
         }
         return undefined;

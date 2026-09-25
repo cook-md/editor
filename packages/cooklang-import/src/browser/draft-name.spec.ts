@@ -82,6 +82,18 @@ describe('DraftName', () => {
             expect(DraftName.ensureTitleFrontmatter('---\nservings: 4\n---\nMix.', '2 Pancakes'))
                 .to.equal('---\ntitle: "2 Pancakes"\nservings: 4\n---\nMix.');
         });
+        it('replaces an empty title: line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\ntitle:\nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+        it('replaces a whitespace-only title: line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\ntitle:   \nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
+        it('replaces an empty quoted "title": line instead of adding a duplicate key', () => {
+            expect(DraftName.ensureTitleFrontmatter('---\n"title":\nservings: 4\n---\nMix.', 'Pancakes'))
+                .to.equal('---\ntitle: Pancakes\nservings: 4\n---\nMix.');
+        });
     });
 
     describe('isFrontmatterKey', () => {
