@@ -27,6 +27,9 @@
     color: var(--theia-descriptionForeground);
     text-align: center;
     line-height: 1.2;
+    /* The selected grade cell below overhangs the strip by 3px (see its
+       negative margin); without this gap that overhang hides the title. */
+    margin-bottom: 4px;
 }
 
 .cooklang-nutriscore-strip {
