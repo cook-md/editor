@@ -1196,6 +1196,12 @@ struct PantryItemJson {
     expire: Option<String>,
     low: Option<String>,
     is_low: bool,
+    /// The quantity parses to zero. No quantity at all means "have it".
+    is_out_of_stock: bool,
+    /// `expire` normalised to `YYYY-MM-DD`; null when absent or unparseable.
+    expire_date: Option<String>,
+    /// `bought` normalised to `YYYY-MM-DD`; null when absent or unparseable.
+    bought_date: Option<String>,
 }
 
 impl PantryItemJson {
@@ -1207,6 +1213,9 @@ impl PantryItemJson {
             expire: item.expire().map(str::to_string),
             low: item.low().map(str::to_string),
             is_low: item.is_low(),
+            is_out_of_stock: item.parsed_quantity().is_some_and(|(value, _)| value <= 0.0),
+            expire_date: item.expire().and_then(pantry_file::normalise_pantry_date),
+            bought_date: item.bought().and_then(pantry_file::normalise_pantry_date),
         }
     }
 }
@@ -1233,7 +1242,8 @@ fn parse_pantry_conf(text: &str, caller: &str) -> napi::Result<cooklang::pantry:
 
 /// Parse a `config/pantry.conf` (TOML) and return its sections and items.
 ///
-/// Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }],
+/// Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow,
+///                  isOutOfStock, expireDate, boughtDate }] }],
 ///                  lowStock: [{ name, section, quantity, low }] }`.
 #[napi(js_name = "parsePantry")]
 pub fn parse_pantry(text: String) -> napi::Result<String> {
@@ -1292,6 +1302,20 @@ pub fn check_pantry(text: String, names: Vec<String>) -> napi::Result<String> {
         })
         .collect();
     serde_json::to_string(&results).map_err(|e| napi::Error::from_reason(e.to_string()))
+}
+
+/// Apply one edit to a `config/pantry.conf` text and return the new text,
+/// preserving comments and formatting (see `pantry_file`).
+///
+/// `edit_json`: `{ op: "add", section, name, quantity?, bought?, expire?, low? }`
+/// | `{ op: "update", section, name, fields: { quantity?, bought?, expire?, low? } }`
+/// (an empty string clears that attribute) | `{ op: "remove", section, name }`.
+#[napi(js_name = "editPantry")]
+pub fn edit_pantry(text: String, edit_json: String) -> napi::Result<String> {
+    let edit: pantry_file::PantryEdit = serde_json::from_str(&edit_json)
+        .map_err(|e| napi::Error::from_reason(format!("editPantry: invalid edit: {e}")))?;
+    pantry_file::apply_edit(&text, &edit)
+        .map_err(|message| napi::Error::from_reason(format!("editPantry: {message}")))
 }
 
 /// Configuration accepted by `render_report`, mirroring cooklang_reports::Config.
@@ -1801,6 +1825,53 @@ salt = {}
     fn parse_pantry_rejects_invalid_toml() {
         let err = parse_pantry("[fridge\nmilk = ".to_string()).unwrap_err();
         assert!(err.reason.starts_with("parsePantry:"), "{}", err.reason);
+    }
+
+    #[test]
+    fn parse_pantry_adds_stock_and_date_fields() {
+        let json = parse_pantry(
+            "[fridge]\nmilk = { quantity = \"0%L\", expire = \"10.05.2026\", bought = \"garbage\" }\n\
+             eggs = \"6\"\nsalt = \"\"\n"
+                .to_string(),
+        )
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let items = &v["sections"][0]["items"];
+        assert_eq!(items[0]["isOutOfStock"], true);
+        assert_eq!(items[0]["expireDate"], "2026-05-10");
+        assert_eq!(items[0]["boughtDate"], serde_json::Value::Null);
+        assert_eq!(items[0]["bought"], "garbage");
+        assert_eq!(items[1]["isOutOfStock"], false);
+        assert_eq!(items[2]["isOutOfStock"], false, "no quantity means we have it");
+    }
+
+    #[test]
+    fn parse_pantry_accepts_a_comment_only_file() {
+        let json = parse_pantry("# just a comment\n".to_string()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["sections"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn edit_pantry_applies_the_edit() {
+        let out = edit_pantry(
+            "[fridge]\nmilk = \"1%L\"\n".to_string(),
+            r#"{"op":"remove","section":"fridge","name":"milk"}"#.to_string(),
+        )
+        .unwrap();
+        assert!(!out.contains("milk"), "{out}");
+    }
+
+    #[test]
+    fn edit_pantry_errors_name_their_caller() {
+        let err = edit_pantry("".to_string(), "{\"op\":\"nope\"}".to_string()).unwrap_err();
+        assert!(err.reason.starts_with("editPantry:"), "{}", err.reason);
+        let err = edit_pantry(
+            "[fridge]\n".to_string(),
+            r#"{"op":"remove","section":"fridge","name":"milk"}"#.to_string(),
+        )
+        .unwrap_err();
+        assert_eq!(err.reason, "editPantry: item 'milk' not found in section 'fridge'");
     }
 
     #[test]

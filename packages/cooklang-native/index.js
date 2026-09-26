@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { parse, generateShoppingList, parseMenu, LspServer, startSync, stopSync, getSyncStatus, onSyncStatusChanged, parseShoppingList, writeShoppingList, parseChecked, writeCheckEntry, checkedSet, findRecipe, findRecipePath, recipeImages, recipeImagesFromContent, compactChecked, searchRecipes, searchRecipesFiltered, parsePantry, checkPantry, renderReport } = nativeBinding
+const { parse, generateShoppingList, parseMenu, LspServer, startSync, stopSync, getSyncStatus, onSyncStatusChanged, parseShoppingList, writeShoppingList, parseChecked, writeCheckEntry, checkedSet, findRecipe, findRecipePath, recipeImages, recipeImagesFromContent, compactChecked, searchRecipes, searchRecipesFiltered, parsePantry, checkPantry, editPantry, renderReport } = nativeBinding
 
 module.exports.parse = parse
 module.exports.generateShoppingList = generateShoppingList
@@ -334,4 +334,5 @@ module.exports.searchRecipes = searchRecipes
 module.exports.searchRecipesFiltered = searchRecipesFiltered
 module.exports.parsePantry = parsePantry
 module.exports.checkPantry = checkPantry
+module.exports.editPantry = editPantry
 module.exports.renderReport = renderReport
