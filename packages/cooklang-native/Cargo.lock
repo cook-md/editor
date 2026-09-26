@@ -461,7 +461,6 @@ dependencies = [
  "cooklang-sync-client",
  "cookmd-nutrition-client",
  "glob",
- "minijinja",
  "napi",
  "napi-build",
  "napi-derive",
