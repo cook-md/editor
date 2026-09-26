@@ -23,6 +23,9 @@ import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service
 import URI from '@theia/core/lib/common/uri';
 import { PreviewBadge } from '../common/cooklang-outlet-context';
 
+/** Sentinel `collectBadge` races a pending `executeCommand` against; never leaks outside this module. */
+const BADGE_TIMEOUT = Symbol('badge-timeout');
+
 /** One visible entry of an outlet, ready to render as a button. */
 export interface OutletItem {
     id: string;
@@ -46,6 +49,9 @@ export interface OutletMouseEvent {
  */
 @injectable()
 export class CooklangOutletService {
+
+    /** How long {@link collectBadge} waits for a badge provider before treating it as failed. */
+    static readonly BADGE_TIMEOUT_MS = 10000;
 
     @inject(MenuModelRegistry)
     protected readonly menus: MenuModelRegistry;
@@ -72,6 +78,12 @@ export class CooklangOutletService {
      * same pass and `onCommandsChanged` fires (debounced) right after.
      */
     readonly onDidChange: Event<void> = this.onDidChangeEmitter.event;
+
+    /** Overridable in tests; production code always uses {@link BADGE_TIMEOUT_MS}. */
+    protected badgeTimeoutMs = CooklangOutletService.BADGE_TIMEOUT_MS;
+
+    /** Command ids of badge providers whose last attempt failed (threw or timed out); used to log a failure only once. */
+    protected readonly failingBadgeProviders = new Set<string>();
 
     @postConstruct()
     protected init(): void {
@@ -113,21 +125,61 @@ export class CooklangOutletService {
 
     /**
      * Runs every visible command of a badge outlet with `context` and returns
-     * the valid badges in outlet order. A provider that fails or returns
-     * something else just shows no badge; badges are passive, so no error
-     * notification.
+     * the valid badges in outlet order. A provider that fails, times out or
+     * returns something else just shows no badge; badges are passive, so no
+     * error notification.
      */
     async collectBadges(menuPath: MenuPath, context: object, element?: HTMLElement): Promise<PreviewBadge[]> {
         const nodes = this.visibleCommands(menuPath, context, element);
-        const results = await Promise.all(nodes.map(async node => {
-            try {
-                return PreviewBadge.parse(await this.commands.executeCommand(node.id, context));
-            } catch (e) {
-                console.warn(`[cooklang] badge provider ${node.id} failed:`, e);
+        const results = await Promise.all(nodes.map(node => this.collectBadge(node, context)));
+        return results.filter((badge): badge is PreviewBadge => badge !== undefined);
+    }
+
+    /**
+     * Runs one badge provider with a timeout, so a single hung command cannot
+     * block the other badges in {@link collectBadges} (which awaits all of
+     * them together). An `undefined` or malformed result is not a failure and
+     * is never logged; a throw or a timeout is a failure and is logged once
+     * (see {@link failingBadgeProviders}).
+     */
+    protected async collectBadge(node: CommandMenu, context: object): Promise<PreviewBadge | undefined> {
+        // The Promise executor runs synchronously, so `timer` is assigned before it is read below.
+        let timer!: ReturnType<typeof setTimeout>;
+        const timeout = new Promise<typeof BADGE_TIMEOUT>(resolve => {
+            timer = setTimeout(() => resolve(BADGE_TIMEOUT), this.badgeTimeoutMs);
+        });
+        const execution = this.commands.executeCommand(node.id, context);
+        try {
+            const outcome = await Promise.race([execution, timeout]);
+            if (outcome === BADGE_TIMEOUT) {
+                // The command is still pending; don't let its eventual settlement become an unhandled rejection.
+                execution.catch(() => { /* already timed out */ });
+                this.reportBadgeFailure(node.id, `timed out after ${this.badgeTimeoutMs}ms`);
                 return undefined;
             }
-        }));
-        return results.filter((badge): badge is PreviewBadge => badge !== undefined);
+            clearTimeout(timer);
+            this.reportBadgeSuccess(node.id);
+            return PreviewBadge.parse(outcome);
+        } catch (e) {
+            clearTimeout(timer);
+            this.reportBadgeFailure(node.id, e);
+            return undefined;
+        }
+    }
+
+    /** Logs a warning the first time `id` fails; repeats are silent until it recovers. */
+    protected reportBadgeFailure(id: string, reason: unknown): void {
+        if (!this.failingBadgeProviders.has(id)) {
+            this.failingBadgeProviders.add(id);
+            console.warn(`[cooklang] badge provider ${id} failed:`, reason);
+        }
+    }
+
+    /** Logs a recovery info once for a provider that was previously failing. */
+    protected reportBadgeSuccess(id: string): void {
+        if (this.failingBadgeProviders.delete(id)) {
+            console.info(`[cooklang] badge provider ${id} recovered`);
+        }
     }
 
     /** Opens the outlet as a context menu; does nothing when it has no visible items. */
