@@ -21,6 +21,7 @@ import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import { ContextMenuRenderer } from '@theia/core/lib/browser/context-menu-renderer';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import URI from '@theia/core/lib/common/uri';
+import { PreviewBadge } from '../common/cooklang-outlet-context';
 
 /** One visible entry of an outlet, ready to render as a button. */
 export interface OutletItem {
@@ -108,6 +109,25 @@ export class CooklangOutletService {
             console.error(`[cooklang] outlet command ${id} failed:`, e);
             this.messages.error(nls.localize('theia/cooklang/outletCommandFailed', '{0} failed: {1}', node.label, reason));
         }
+    }
+
+    /**
+     * Runs every visible command of a badge outlet with `context` and returns
+     * the valid badges in outlet order. A provider that fails or returns
+     * something else just shows no badge; badges are passive, so no error
+     * notification.
+     */
+    async collectBadges(menuPath: MenuPath, context: object, element?: HTMLElement): Promise<PreviewBadge[]> {
+        const nodes = this.visibleCommands(menuPath, context, element);
+        const results = await Promise.all(nodes.map(async node => {
+            try {
+                return PreviewBadge.parse(await this.commands.executeCommand(node.id, context));
+            } catch (e) {
+                console.warn(`[cooklang] badge provider ${node.id} failed:`, e);
+                return undefined;
+            }
+        }));
+        return results.filter((badge): badge is PreviewBadge => badge !== undefined);
     }
 
     /** Opens the outlet as a context menu; does nothing when it has no visible items. */
