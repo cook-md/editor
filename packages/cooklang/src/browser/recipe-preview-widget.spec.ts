@@ -35,6 +35,7 @@ import { MenuPath } from '@theia/core/lib/common/menu';
 import URI from '@theia/core/lib/common/uri';
 import { Recipe } from '../common/recipe-types';
 import { ResolvedRecipeImages } from '../common/recipe-images';
+import { PreviewBadge } from '../common/cooklang-outlet-context';
 import { CooklangOutletService, OutletItem } from './cooklang-outlet-service';
 import { CooklangOutlets } from './cooklang-outlets';
 import { RecipePreviewWidget } from './recipe-preview-widget';
@@ -62,6 +63,14 @@ interface PreviewInternals {
     handleRunToolbarItem(id: string): void;
     recipe: Recipe | undefined;
     images: ResolvedRecipeImages;
+}
+
+/** The badge-related internals exercised directly by `RecipePreviewWidget badges` below. */
+interface BadgeInternals {
+    outlets: { collectBadges: (menuPath: MenuPath, context: object, element?: HTMLElement) => Promise<PreviewBadge[]> };
+    badgeDebounceMs: number;
+    badges: PreviewBadge[];
+    refreshBadges(): Promise<void>;
 }
 
 /** Poll until `condition` holds; the preview parses asynchronously and exposes no promise. */
@@ -105,6 +114,7 @@ class PreviewHarness {
             run: async (_path: MenuPath, _id: string, _context: object, element?: HTMLElement): Promise<void> => {
                 this.runElements.push(element);
             },
+            collectBadges: async () => [],
         });
         const widget = new RecipePreviewWidget();
         Object.assign(widget, {
@@ -143,6 +153,8 @@ class PreviewHarness {
             },
             timerService: { onDidChangeTimers: never, list: () => [] },
             outlets,
+            hoverService: { requestHover: () => undefined, cancelHover: () => undefined },
+            subscriptions: { onDidChangeSubscription: never },
             contextKeyService: {
                 createScoped: (target: HTMLElement) => {
                     this.scopedTarget = target;
@@ -350,5 +362,59 @@ describe('RecipePreviewWidget restored before its file system registers', () => 
         harness.registrations.fire({ added: true, scheme: 'file' });
         await new Promise(resolve => setTimeout(resolve, 20));
         expect(harness.fileReads).to.deep.equal([LOCAL.toString()]);
+    });
+});
+
+describe('RecipePreviewWidget badges', () => {
+
+    it('collects badges from the outlet with the preview context once the debounce elapses', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        // The default 500ms debounce would make this test slow for no benefit.
+        internals.badgeDebounceMs = 1;
+        const badge: PreviewBadge = { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 'Great choice' };
+        const calls: Array<{ menuPath: MenuPath; context: object }> = [];
+        internals.outlets.collectBadges = async (menuPath, context) => {
+            calls.push({ menuPath, context });
+            return [badge];
+        };
+
+        await harness.open(LOCAL);
+        await until(() => internals.badges.length > 0);
+
+        expect(calls).to.have.lengthOf(1);
+        expect(calls[0].menuPath).to.deep.equal(CooklangOutlets.RECIPE_PREVIEW_BADGE);
+        expect(calls[0].context).to.deep.equal({ version: 1, uri: LOCAL.toString(), path: 'Breakfast/Pancakes.cook', scale: 1 });
+        expect(internals.badges).to.deep.equal([badge]);
+    });
+
+    it('drops a stale badge refresh that resolves after a newer one', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        await harness.open(LOCAL);
+
+        const stale: PreviewBadge = { kind: 'pill', text: 'stale', tone: 'neutral', tooltipMarkdown: '' };
+        const fresh: PreviewBadge = { kind: 'pill', text: 'fresh', tone: 'neutral', tooltipMarkdown: '' };
+        let resolveStale!: (badges: PreviewBadge[]) => void;
+        let calls = 0;
+        internals.outlets.collectBadges = async () => {
+            calls++;
+            if (calls === 1) {
+                // Never resolves until the test does it explicitly, below.
+                return new Promise<PreviewBadge[]>(resolve => { resolveStale = resolve; });
+            }
+            return [fresh];
+        };
+
+        // Two refreshes in flight; the second (higher sequence number) settles first.
+        const firstRefresh = internals.refreshBadges();
+        const secondRefresh = internals.refreshBadges();
+        await secondRefresh;
+        expect(internals.badges).to.deep.equal([fresh]);
+
+        // The stale first refresh settles later and must not overwrite the newer result.
+        resolveStale([stale]);
+        await firstRefresh;
+        expect(internals.badges).to.deep.equal([fresh]);
     });
 });

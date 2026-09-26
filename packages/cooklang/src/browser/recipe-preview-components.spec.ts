@@ -16,9 +16,11 @@
 import { expect } from 'chai';
 import * as React from '@theia/core/shared/react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Section } from '../common/recipe-types';
+import { Recipe, Section } from '../common/recipe-types';
 import { ResolvedRecipeImages } from '../common/recipe-images';
-import { InstructionsPanel } from './recipe-preview-components';
+import { PreviewBadge } from '../common/cooklang-outlet-context';
+import { OutletItem } from './cooklang-outlet-service';
+import { InstructionsPanel, RecipeView, RecipeViewProps } from './recipe-preview-components';
 import { TimerBindingProvider } from './timer-components';
 
 /** A step whose only content is `text`, so it is identifiable in the markup. */
@@ -170,5 +172,62 @@ describe('InstructionsPanel timer positions', () => {
     it('loads step images without a referrer', () => {
         const markup = render([{ name: null, content: [step('one', 1)] }], { steps: { '0': { '0': 'https://cdn.example/one.jpg' } } });
         expect(markup).to.match(/<img [^>]*referrerPolicy="no-referrer"/i);
+    });
+});
+
+describe('RecipeView badges', () => {
+
+    const EMPTY_RECIPE: Recipe = {
+        metadata: { map: {} },
+        sections: [],
+        ingredients: [],
+        cookware: [],
+        timers: [],
+        inline_quantities: [],
+    };
+
+    const TOOLBAR_ITEMS: OutletItem[] = [{ id: 'save', label: 'Save' }];
+
+    const BADGES: PreviewBadge[] = [
+        { kind: 'nutriscore', grade: 'B', tooltipMarkdown: 'Nutri-Score B' },
+        { kind: 'pill', text: '540 kcal', tone: 'neutral', tooltipMarkdown: 'Per serving' },
+    ];
+
+    function renderView(props: Partial<RecipeViewProps> = {}): string {
+        return renderToStaticMarkup(
+            React.createElement(RecipeView, {
+                recipe: EMPTY_RECIPE,
+                title: 'Pancakes',
+                scale: 1,
+                onScaleChange: () => undefined,
+                toolbarItems: TOOLBAR_ITEMS,
+                onRunToolbarItem: () => undefined,
+                ...props,
+            })
+        );
+    }
+
+    it('renders badges in the header before the action bar when badges and handlers are provided', () => {
+        const markup = renderView({ badges: BADGES, onShowBadgeDetails: () => undefined, onHideBadgeDetails: () => undefined });
+        const nutriscoreIndex = markup.indexOf('cooklang-nutriscore');
+        const pillIndex = markup.indexOf('cooklang-badge-pill');
+        const actionBarIndex = markup.indexOf('theia-cooklang-action-bar');
+        expect(nutriscoreIndex, markup).to.be.greaterThan(-1);
+        expect(pillIndex, markup).to.be.greaterThan(-1);
+        expect(actionBarIndex, markup).to.be.greaterThan(-1);
+        expect(nutriscoreIndex).to.be.lessThan(actionBarIndex);
+        expect(pillIndex).to.be.lessThan(actionBarIndex);
+    });
+
+    it('renders no badges when badges are provided without handlers', () => {
+        const markup = renderView({ badges: BADGES });
+        expect(markup).to.not.contain('cooklang-nutriscore');
+        expect(markup).to.not.contain('cooklang-badge-pill');
+    });
+
+    it('renders no badges when handlers are provided without badges', () => {
+        const markup = renderView({ onShowBadgeDetails: () => undefined, onHideBadgeDetails: () => undefined });
+        expect(markup).to.not.contain('cooklang-nutriscore');
+        expect(markup).to.not.contain('cooklang-badge-pill');
     });
 });

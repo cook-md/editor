@@ -20,6 +20,9 @@ import { ContextKeyService, ScopedValueStore } from '@theia/core/lib/browser/con
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { HoverService } from '@theia/core/lib/browser/hover-service';
+import { MarkdownStringImpl } from '@theia/core/lib/common/markdown-rendering/markdown-string';
+import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -38,7 +41,7 @@ import { CookingTimerService } from './cooking-timer-service';
 import { TimerBinding, TimerBindingProvider } from './timer-components';
 import { CooklangOutletService } from './cooklang-outlet-service';
 import { CooklangOutlets } from './cooklang-outlets';
-import { IngredientOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
+import { IngredientOutletInfo, PreviewBadge, PreviewOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -92,11 +95,23 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
 
+    @inject(HoverService)
+    protected readonly hoverService: HoverService;
+
+    @inject(SubscriptionFrontendService)
+    protected readonly subscriptions: SubscriptionFrontendService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     /** The `title` the native parser resolved from the recipe's metadata, if any. */
     protected recipeTitle: string | undefined;
     protected scale = 1;
+    protected badges: PreviewBadge[] = [];
+    protected badgeSequence = 0;
+    protected badgeTimer: ReturnType<typeof setTimeout> | undefined;
+    static readonly BADGE_DEBOUNCE_MS = 500;
+    /** Overridable in tests; production code always uses {@link BADGE_DEBOUNCE_MS}. */
+    protected badgeDebounceMs = RecipePreviewWidget.BADGE_DEBOUNCE_MS;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected parseSequence = 0;
@@ -134,7 +149,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 this.update();
             }
         }));
-        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
+        this.toDispose.push(this.outlets.onDidChange(() => {
+            this.update();
+            this.scheduleBadges();
+        }));
+        this.toDispose.push(this.subscriptions.onDidChangeSubscription(() => this.scheduleBadges()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -173,6 +192,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY, uri.scheme);
         this.id = createRecipePreviewWidgetId(uri);
         this.recipeTitle = undefined;
+        // A reused widget must not keep showing a previous recipe's grade.
+        this.badges = [];
         // Text parsed for a previous URI must not name this recipe's images.
         this.content = undefined;
         this.updateTitleLabel();
@@ -293,6 +314,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             this.updateTitleLabel();
             this.refreshImages();
             this.update();
+            this.scheduleBadges();
         }).catch(e => {
             if (this.isDisposed || sequence !== this.parseSequence) {
                 return;
@@ -451,6 +473,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected handleScaleChange = (scale: number): void => {
         this.scale = scale;
         this.update();
+        this.scheduleBadges();
     };
 
     /**
@@ -461,6 +484,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         if (Number.isFinite(scale) && scale > 0 && scale !== this.scale) {
             this.scale = scale;
             this.update();
+            this.scheduleBadges();
         }
     }
 
@@ -470,6 +494,45 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         }
         return { version: CooklangOutlets.VERSION, ...this.outlets.describe(this.uri), scale: this.scale };
     }
+
+    /** Badges call plugins (and the network), so they refresh after edits settle. */
+    protected scheduleBadges(): void {
+        if (this.badgeTimer !== undefined) {
+            clearTimeout(this.badgeTimer);
+        }
+        this.badgeTimer = setTimeout(() => {
+            this.badgeTimer = undefined;
+            this.refreshBadges();
+        }, this.badgeDebounceMs);
+    }
+
+    protected async refreshBadges(): Promise<void> {
+        const sequence = ++this.badgeSequence;
+        const context = this.recipe ? this.previewContext() : undefined;
+        const badges = context ? await this.outlets.collectBadges(CooklangOutlets.RECIPE_PREVIEW_BADGE, context, this.node) : [];
+        if (this.isDisposed || sequence !== this.badgeSequence) {
+            return;
+        }
+        if (!PreviewBadge.equals(this.badges, badges)) {
+            this.badges = badges;
+            this.update();
+        }
+    }
+
+    protected handleShowBadgeDetails = (badge: PreviewBadge, target: HTMLElement, immediate: boolean): void => {
+        this.hoverService.requestHover({
+            // Untrusted, no HTML: plugin text never runs commands or injects markup.
+            content: new MarkdownStringImpl(badge.tooltipMarkdown, { isTrusted: false, supportHtml: false }),
+            target,
+            position: 'bottom',
+            cssClasses: ['cooklang-preview-badge-hover'],
+            skipHoverDelay: immediate,
+        });
+    };
+
+    protected handleHideBadgeDetails = (): void => {
+        this.hoverService.cancelHover();
+    };
 
     protected handleRunToolbarItem = (id: string): void => {
         const context = this.previewContext();
@@ -544,6 +607,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                             onRunToolbarItem={this.handleRunToolbarItem}
                             onIngredientContextMenu={this.handleIngredientContextMenu}
                             onNavigateToRecipe={this.hasLocalSource() ? this.handleNavigateToRecipe : undefined}
+                            badges={this.badges}
+                            onShowBadgeDetails={this.handleShowBadgeDetails}
+                            onHideBadgeDetails={this.handleHideBadgeDetails}
                         />
                     </LinkOpenerProvider>
                 </TimerBindingProvider>
@@ -580,6 +646,10 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         if (this.imageDebounceTimer !== undefined) {
             clearTimeout(this.imageDebounceTimer);
             this.imageDebounceTimer = undefined;
+        }
+        if (this.badgeTimer !== undefined) {
+            clearTimeout(this.badgeTimer);
+            this.badgeTimer = undefined;
         }
         this.imageService.releaseAll();
         super.dispose();
