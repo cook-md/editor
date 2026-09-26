@@ -38,27 +38,32 @@ export const PreviewBadgeView = ({ badge, onShowDetails, onHideDetails }: Previe
     const handleFocus = React.useCallback((event: React.FocusEvent<HTMLElement>) => {
         onShowDetails(badge, event.currentTarget, true);
     }, [badge, onShowDetails]);
+    const handleClick = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
+        // A click (or tap) shows details immediately, same as keyboard focus.
+        onShowDetails(badge, event.currentTarget, true);
+    }, [badge, onShowDetails]);
     if (badge.kind === 'pill') {
         return (
-            <span className={`cooklang-badge-pill ${badge.tone}`} tabIndex={0}
-                onMouseEnter={handleMouseEnter} onFocus={handleFocus} onBlur={onHideDetails}>
+            <button type='button' className={`cooklang-badge-pill ${badge.tone}`} aria-label={badge.text}
+                onMouseEnter={handleMouseEnter} onFocus={handleFocus} onBlur={onHideDetails} onClick={handleClick}>
                 {badge.text}
-            </span>
+            </button>
         );
     }
     const unknown = badge.grade === 'unknown';
     return (
-        <div
+        <button
+            type='button'
             className={`cooklang-nutriscore${unknown ? ' unknown' : ''}`}
-            role='img'
-            tabIndex={0}
             aria-label={nls.localize('theia/cooklang/nutriscoreLabel', 'Nutri-Score {0}', badge.grade)}
             onMouseEnter={handleMouseEnter}
             onFocus={handleFocus}
             onBlur={onHideDetails}
+            onClick={handleClick}
         >
+            {/* "NUTRI-SCORE" is the official logo wording, intentionally not localized. */}
             <span className='cooklang-nutriscore-title'>NUTRI-SCORE</span>
-            <span className='cooklang-nutriscore-strip'>
+            <span className='cooklang-nutriscore-strip' aria-hidden='true'>
                 {LETTERS.map(letter => (
                     <span key={letter}
                         className={`cooklang-nutriscore-cell cooklang-nutriscore-${letter.toLowerCase()}${letter === badge.grade ? ' selected' : ''}`}>
@@ -67,6 +72,6 @@ export const PreviewBadgeView = ({ badge, onShowDetails, onHideDetails }: Previe
                 ))}
                 {unknown && <span className='cooklang-nutriscore-cell selected'>?</span>}
             </span>
-        </div>
+        </button>
     );
 };
