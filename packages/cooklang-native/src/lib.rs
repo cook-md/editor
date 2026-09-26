@@ -2159,3 +2159,20 @@ mod recipe_images_tests {
         assert_eq!(value["steps"].as_object().unwrap().len(), 0);
     }
 }
+
+#[cfg(test)]
+mod tojson_tests {
+    use super::*;
+
+    #[test]
+    fn report_templates_can_return_json() {
+        let out = render_report(
+            "Mix @flour{200%g}.".to_string(),
+            r#"{{ {"a": [1, 2], "s": "x<y"} | tojson }}"#.to_string(),
+            "{}".to_string(),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let json: serde_json::Value = serde_json::from_str(v["output"].as_str().unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({ "a": [1, 2], "s": "x<y" }));
+    }
+}
