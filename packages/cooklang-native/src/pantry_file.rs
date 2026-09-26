@@ -22,7 +22,7 @@
 
 use chrono::Datelike;
 use serde::Deserialize;
-use toml_edit::{DocumentMut, InlineTable, Item, Table, TableLike, Value};
+use toml_edit::{Decor, DocumentMut, InlineTable, Item, RawString, Table, TableLike, Value};
 
 /// The section name that addresses the entries above the first `[header]`.
 pub(crate) const GENERAL: &str = "general";
@@ -241,13 +241,16 @@ fn check_general_attributes(target: SectionTarget, name: &str, attributes: &Attr
 
 /// Rewrite `fridge = ["milk"]` as a `[fridge]` table so an edit has somewhere
 /// to put a key. Arrays holding anything but strings are left alone (and then
-/// refused by the edit); a name listed twice cannot become two keys, so that
-/// is refused here rather than merged.
+/// refused by the edit); a name listed twice cannot become two keys, and a
+/// comment inside or after the list has no place in the table, so both are
+/// refused here rather than merged or dropped. The comment lines above the
+/// list move onto the `[fridge]` header. Each name becomes `milk = {}`, which
+/// the parser reads like a listed name: an item without a quantity.
 fn normalise_array_section(doc: &mut DocumentMut, target: SectionTarget) -> Result<(), String> {
     let SectionTarget::Key(section) = target else {
         return Ok(());
     };
-    let Some(array) = doc.get(section).and_then(Item::as_array) else {
+    let Some(Item::Value(Value::Array(array))) = doc.get(section) else {
         return Ok(());
     };
     let names: Vec<String> = array
@@ -256,6 +259,12 @@ fn normalise_array_section(doc: &mut DocumentMut, target: SectionTarget) -> Resu
         .collect();
     if names.len() != array.len() {
         return Ok(());
+    }
+    if array_has_comments(array) {
+        return Err(format!(
+            "section '{section}' is a list with comments; move it to a [{section}] table by hand in \
+             config/pantry.conf"
+        ));
     }
     let mut table = Table::new();
     table.set_implicit(false);
@@ -266,10 +275,26 @@ fn normalise_array_section(doc: &mut DocumentMut, target: SectionTarget) -> Resu
                  config/pantry.conf"
             ));
         }
-        table.insert(name, toml_edit::value(""));
+        table.insert(name, toml_edit::value(InlineTable::new()));
+    }
+    let comments = doc.as_table().key(section).and_then(|key| comment_lines(key.leaf_decor().prefix()));
+    if let Some(comments) = comments {
+        table.decor_mut().set_prefix(comments);
     }
     doc.insert(section, Item::Table(table));
     Ok(())
+}
+
+/// True when a comment is written anywhere in `array`: around a value,
+/// after the last one, or after the closing bracket.
+fn array_has_comments(array: &toml_edit::Array) -> bool {
+    let is_comment = |raw: Option<&RawString>| raw.and_then(RawString::as_str).is_some_and(|raw| raw.contains('#'));
+    is_comment(Some(array.trailing()))
+        || is_comment(array.decor().prefix())
+        || is_comment(array.decor().suffix())
+        || array
+            .iter()
+            .any(|value| is_comment(value.decor().prefix()) || is_comment(value.decor().suffix()))
 }
 
 /// How `item` is written, for messages ("an array", "a string", ...).
@@ -372,21 +397,183 @@ fn insert(doc: &mut DocumentMut, target: SectionTarget, name: &str, attributes: 
 
 /// Remove the item, and its section when that empties it (the parser drops
 /// empty sections anyway, so keeping one would not survive a round-trip).
+/// Comments written above whatever is removed are kept; see
+/// [`remove_keeping_comments`].
 fn remove(doc: &mut DocumentMut, target: SectionTarget, key: &str) {
     let SectionTarget::Key(section) = target else {
-        doc.remove(key);
+        remove_keeping_comments(doc, &[], key);
         return;
     };
-    let emptied = match doc.get_mut(section).and_then(Item::as_table_like_mut) {
-        Some(table) => {
+    let emptied = match doc.get_mut(section) {
+        // An inline table cannot hold comments, so a plain remove loses nothing.
+        Some(Item::Value(Value::InlineTable(table))) => {
             table.remove(key);
             table.is_empty()
         }
-        None => false,
+        Some(Item::Table(_)) => {
+            remove_keeping_comments(doc, &[(section.to_string(), None)], key);
+            doc.get(section).and_then(Item::as_table_like).is_some_and(TableLike::is_empty)
+        }
+        _ => false,
     };
     if emptied {
-        doc.remove(section);
+        remove_keeping_comments(doc, &[], section);
     }
+}
+
+/// A `[table]`'s place in the document: the keys leading to it from the root,
+/// each with the index into `[[array.of.tables]]` when the key holds one.
+type TablePath = [(String, Option<usize>)];
+
+/// An owned [`TablePath`].
+type TablePathBuf = Vec<(String, Option<usize>)>;
+
+/// Remove `key` from the table at `path`. In toml_edit a comment belongs to
+/// the key or `[header]` written below it, so the comment lines above the
+/// removed entry are first moved onto whatever renders next: the following
+/// key of the same table, else the next `[header]`, else the end of the file.
+fn remove_keeping_comments(doc: &mut DocumentMut, path: &TablePath, key: &str) {
+    let Some(table) = table_at_mut(doc, path) else {
+        return;
+    };
+    let (comments, next_key, after) = match table.get(key) {
+        None => return,
+        Some(item) if !headers(item).is_empty() => {
+            let headers = headers(item);
+            let comments: String = headers.iter().filter_map(|t| comment_lines(t.decor().prefix())).collect();
+            let index = matches!(item, Item::ArrayOfTables(_)).then(|| headers.len() - 1);
+            let mut after = path.to_vec();
+            after.push((key.to_string(), index));
+            (comments, None, after)
+        }
+        Some(_) => {
+            let comments = table.key(key).and_then(|key| comment_lines(key.leaf_decor().prefix()));
+            (comments.unwrap_or_default(), next_value_key(table, key), path.to_vec())
+        }
+    };
+    let next_header = next_header(doc, &after, path.len(), key);
+    if let Some(table) = table_at_mut(doc, path) {
+        table.remove(key);
+    }
+    if comments.is_empty() {
+        return;
+    }
+    if let Some(next) = next_key {
+        if let Some(mut next) = table_at_mut(doc, path).and_then(|table| table.key_mut(&next)) {
+            prepend_prefix(next.leaf_decor_mut(), &comments);
+        }
+    } else if let Some(header) = next_header.and_then(|header| table_at_mut(doc, &header)) {
+        prepend_prefix(header.decor_mut(), &comments);
+    } else {
+        let trailing = doc.trailing().as_str().unwrap_or("").to_string();
+        doc.set_trailing(format!("{trailing}{comments}"));
+    }
+}
+
+/// Put `lines` in front of what is already written above a key or header.
+fn prepend_prefix(decor: &mut Decor, lines: &str) {
+    let existing = decor.prefix().and_then(RawString::as_str).unwrap_or("").to_string();
+    decor.set_prefix(format!("{lines}{existing}"));
+}
+
+/// The `[header]` tables an entry is written as: none for a key/value (a
+/// dotted `a.b = 1` included), one for `[table]`, one per `[[table]]`.
+fn headers(item: &Item) -> Vec<&Table> {
+    match item {
+        Item::Table(table) if !table.is_dotted() => vec![table],
+        Item::ArrayOfTables(tables) => tables.iter().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The comment lines of a key or header prefix: everything up to its last
+/// line break (the rest is the indentation of the key itself). `None` when
+/// there is no comment, so blank lines alone are not moved around.
+fn comment_lines(prefix: Option<&RawString>) -> Option<String> {
+    let prefix = prefix?.as_str()?;
+    if !prefix.contains('#') {
+        return None;
+    }
+    Some(prefix[..=prefix.rfind('\n')?].to_string())
+}
+
+/// The key written right after `key` in `table`, among the entries rendered
+/// as `key = value` lines (sub-tables render later, under their own header).
+fn next_value_key(table: &Table, key: &str) -> Option<String> {
+    table
+        .iter()
+        .skip_while(|(candidate, _)| *candidate != key)
+        .skip(1)
+        .find(|(_, item)| headers(item).is_empty())
+        .map(|(candidate, _)| candidate.to_string())
+}
+
+/// The first `[header]` rendered after the table at `after`, skipping the
+/// headers of entry `key` of the table at `after[..depth]` (the entry being
+/// removed, and anything nested in it).
+fn next_header(doc: &DocumentMut, after: &TablePath, depth: usize, key: &str) -> Option<TablePathBuf> {
+    let inside_removed =
+        |path: &TablePath| path.len() > depth && path[..depth] == after[..depth] && path[depth].0 == key;
+    render_order(doc)
+        .into_iter()
+        .skip_while(|(path, _)| path.as_slice() != after)
+        .skip(1)
+        .find(|(path, has_header)| *has_header && !inside_removed(path))
+        .map(|(path, _)| path)
+}
+
+/// Every table in the order toml_edit renders them (by position, a table
+/// without one following the table visited before it), with whether a
+/// `[header]` line is written for it.
+fn render_order(doc: &DocumentMut) -> Vec<(TablePathBuf, bool)> {
+    fn visit(
+        table: &Table,
+        path: &mut TablePathBuf,
+        is_array: bool,
+        last_position: &mut usize,
+        out: &mut Vec<(usize, TablePathBuf, bool)>,
+    ) {
+        if !table.is_dotted() {
+            *last_position = table.position().unwrap_or(*last_position);
+            let has_values = table.iter().any(|(_, item)| headers(item).is_empty());
+            let has_header = !path.is_empty() && (is_array || !table.is_implicit() || has_values);
+            out.push((*last_position, path.clone(), has_header));
+        }
+        for (key, item) in table.iter() {
+            match item {
+                Item::Table(child) => {
+                    path.push((key.to_string(), None));
+                    visit(child, path, false, last_position, out);
+                    path.pop();
+                }
+                Item::ArrayOfTables(children) => {
+                    for (index, child) in children.iter().enumerate() {
+                        path.push((key.to_string(), Some(index)));
+                        visit(child, path, true, last_position, out);
+                        path.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    visit(doc.as_table(), &mut Vec::new(), false, &mut 0, &mut out);
+    out.sort_by_key(|(position, _, _)| *position);
+    out.into_iter().map(|(_, path, has_header)| (path, has_header)).collect()
+}
+
+/// The table at `path`, if it is still there.
+fn table_at_mut<'a>(doc: &'a mut DocumentMut, path: &TablePath) -> Option<&'a mut Table> {
+    let mut table = doc.as_table_mut();
+    for (key, index) in path {
+        table = match (table.get_mut(key)?, index) {
+            (Item::Table(child), None) => child,
+            (Item::ArrayOfTables(children), Some(index)) => children.get_mut(*index)?,
+            _ => return None,
+        };
+    }
+    Some(table)
 }
 
 /// Update the item at `key`. A `[section.item]` table has its keys edited in
@@ -424,9 +611,14 @@ fn apply(
         .entries()
         .iter()
         .all(|(key, value)| *key == "quantity" || value.map_or(true, str::is_empty));
-    if existing.is_str() && only_quantity {
-        if let Some(quantity) = &fields.quantity {
-            replace_value(existing, quantity.as_str().into());
+    // `milk = {}` (a listed name) has no attributes to keep either.
+    let bare = existing.is_str() || existing.as_inline_table().is_some_and(InlineTable::is_empty);
+    if bare && only_quantity {
+        match fields.quantity.as_deref() {
+            // Clearing the quantity of `milk = {}` leaves it as it is.
+            Some("") if !existing.is_str() => {}
+            Some(quantity) => replace_value(existing, quantity.into()),
+            None => {}
         }
         return Ok(());
     }
@@ -594,8 +786,8 @@ mod tests {
         )
         .unwrap();
         assert!(out.contains("[fridge]"), "{out}");
-        assert!(out.contains("milk = \"\""), "{out}");
-        assert!(out.contains("eggs = \"\""), "{out}");
+        assert!(out.contains("milk = {}"), "{out}");
+        assert!(out.contains("eggs = {}"), "{out}");
         assert!(out.contains("butter = \"200%g\""), "{out}");
     }
 
@@ -698,8 +890,6 @@ mod tests {
 
     #[test]
     fn remove_keeps_comments_and_drops_an_emptied_section() {
-        // A comment directly above `[fridge]` belongs to that header and goes
-        // with it; comments on other sections and items stay.
         let out = edit(
             "[fridge]\nmilk = \"1%L\"\n\n# dry goods\n[pantry]\n# staples\nrice = \"1%kg\"\n",
             r#"{"op":"remove","section":"fridge","name":"milk"}"#,
@@ -863,7 +1053,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             general_items(&out),
-            vec![("salt".to_string(), Some(String::new())), ("pepper".to_string(), Some("50%g".to_string()))]
+            vec![("salt".to_string(), None), ("pepper".to_string(), Some("50%g".to_string()))]
         );
     }
 
@@ -978,5 +1168,124 @@ mod tests {
             err,
             "section 'fridge' lists 'rice' more than once; remove the duplicate by hand in config/pantry.conf"
         );
+    }
+
+    /// `text` minus the item, checked to still parse.
+    fn removed(text: &str, section: &str, name: &str) -> String {
+        let out = edit(text, &format!(r#"{{"op":"remove","section":"{section}","name":"{name}"}}"#)).unwrap();
+        cooklang::pantry::parse_lenient(&out).into_output().expect("parses");
+        out
+    }
+
+    #[test]
+    fn removing_a_root_item_keeps_the_comment_above_it() {
+        let out = removed("# my pantry header\nsalt = \"1%kg\"\npepper = \"1\"\n", "general", "salt");
+        assert!(out.contains("# my pantry header\npepper = \"1\""), "{out}");
+        assert!(!out.contains("salt"), "{out}");
+    }
+
+    #[test]
+    fn removing_a_section_item_keeps_the_comment_above_it() {
+        let out = removed("[fridge]\n# dairy\nmilk = \"1\"\ncheese = \"2\"\n", "fridge", "milk");
+        assert!(out.contains("# dairy\ncheese = \"2\""), "{out}");
+        assert!(!out.contains("milk"), "{out}");
+    }
+
+    #[test]
+    fn removing_the_last_root_item_moves_its_comment_to_the_first_header() {
+        let out = removed("pepper = \"1\"\n# salt note\nsalt = \"1\"\n[fridge]\nmilk = \"1\"\n", "general", "salt");
+        assert!(out.contains("# salt note\n"), "{out}");
+        assert!(out.find("# salt note").unwrap() < out.find("[fridge]").unwrap(), "{out}");
+        assert!(!out.contains("salt ="), "{out}");
+    }
+
+    #[test]
+    fn removing_the_last_item_of_a_surviving_section_moves_its_comment_to_the_next_header() {
+        let out = removed(
+            "[fridge]\nmilk = \"1\"\n# eggs note\neggs = \"6\"\n\n[fridge.cheese]\nquantity = \"1\"\n",
+            "fridge",
+            "eggs",
+        );
+        assert!(out.contains("# eggs note\n"), "{out}");
+        assert!(out.find("# eggs note").unwrap() < out.find("[fridge.cheese]").unwrap(), "{out}");
+        assert!(!out.contains("eggs ="), "{out}");
+    }
+
+    #[test]
+    fn removing_the_last_item_of_the_file_moves_its_comment_to_the_end() {
+        let out = removed("[fridge]\nmilk = \"1\"\n# eggs note\neggs = \"6\"\n", "fridge", "eggs");
+        assert!(out.contains("milk = \"1\"\n# eggs note\n"), "{out}");
+        assert!(!out.contains("eggs ="), "{out}");
+    }
+
+    #[test]
+    fn removing_an_emptied_section_keeps_the_comment_above_its_header() {
+        let out = removed("# fridge notes\n[fridge]\nmilk = \"1\"\n[pantry]\nrice = \"1\"\n", "fridge", "milk");
+        assert!(!out.contains("[fridge]"), "{out}");
+        assert!(out.contains("# fridge notes\n"), "{out}");
+        assert!(out.find("# fridge notes").unwrap() < out.find("[pantry]").unwrap(), "{out}");
+
+        let out = removed("[pantry]\nrice = \"1\"\n\n# fridge notes\n[fridge]\nmilk = \"1\"\n", "fridge", "milk");
+        assert!(!out.contains("[fridge]"), "{out}");
+        assert!(out.contains("rice = \"1\"\n\n# fridge notes\n"), "{out}");
+    }
+
+    #[test]
+    fn removing_an_item_written_as_a_subtable_keeps_the_comment_above_its_header() {
+        let out = removed(
+            "[fridge]\neggs = \"6\"\n\n# the good milk\n[fridge.milk]\nquantity = \"1\"\n\n[pantry]\nrice = \"1\"\n",
+            "fridge",
+            "milk",
+        );
+        assert!(!out.contains("[fridge.milk]"), "{out}");
+        assert!(out.find("# the good milk").unwrap() < out.find("[pantry]").unwrap(), "{out}");
+    }
+
+    #[test]
+    fn removing_an_emptied_inline_table_section_keeps_the_comment_above_it() {
+        let out = removed("# cold\nfridge = { milk = \"1\" }\n[pantry]\nrice = \"1\"\n", "fridge", "milk");
+        assert!(!out.contains("fridge"), "{out}");
+        assert!(out.find("# cold").unwrap() < out.find("[pantry]").unwrap(), "{out}");
+    }
+
+    #[test]
+    fn converting_an_array_section_keeps_the_comment_above_it() {
+        let out = edit(
+            "# cold stuff\nfridge = [\"milk\"]\n",
+            r#"{"op":"add","section":"fridge","name":"butter","quantity":"200%g"}"#,
+        )
+        .unwrap();
+        assert!(out.contains("# cold stuff\n[fridge]"), "{out}");
+    }
+
+    #[test]
+    fn an_array_section_with_comments_is_not_converted() {
+        let expected =
+            "section 'fridge' is a list with comments; move it to a [fridge] table by hand in config/pantry.conf";
+        for text in [
+            "fridge = [\n  \"milk\", # semi-skimmed\n  \"eggs\",\n]\n",
+            "fridge = [\n  # dairy\n  \"milk\",\n]\n",
+            "fridge = [\n  \"milk\",\n  # more later\n]\n",
+            "fridge = [\"milk\"] # note\n",
+        ] {
+            let err = edit(text, r#"{"op":"add","section":"fridge","name":"butter"}"#).unwrap_err();
+            assert_eq!(err, expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn items_of_a_converted_array_section_keep_having_no_quantity() {
+        let out = edit(
+            "fridge = [\"milk\"]\n",
+            r#"{"op":"add","section":"fridge","name":"butter","quantity":"200%g"}"#,
+        )
+        .unwrap();
+        let conf = cooklang::pantry::parse_lenient(&out).into_output().expect("parses");
+        let milk = conf.sections["fridge"].iter().find(|item| item.name() == "milk").unwrap();
+        assert_eq!(milk.quantity(), None, "{out}");
+
+        let out = edit(&out, r#"{"op":"update","section":"fridge","name":"milk","fields":{"quantity":"1%L"}}"#)
+            .unwrap();
+        assert!(out.contains("milk = \"1%L\""), "{out}");
     }
 }
