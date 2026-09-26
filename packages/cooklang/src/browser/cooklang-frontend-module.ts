@@ -49,6 +49,7 @@ import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './rep
 import { ReportContribution } from './report-contribution';
 import { ReportExportContribution } from './report-export-contribution';
 import { ReportConfigService } from './report-config-service';
+import { PluginReportService } from './plugin-report-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportTemplateFinder } from './report-template-finder';
 import { ReportWidgetPresenter } from './report-widget-presenter';
@@ -174,6 +175,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     // Report config + presenter (shared by the command and the AI render tool)
     bind(ReportConfigService).toSelf().inSingletonScope();
+    bind(PluginReportService).toSelf().inSingletonScope();
     bind(ReportTemplateFinder).toSelf().inSingletonScope();
     bind(ReportWidgetPresenter).toSelf().inSingletonScope();
     bind(ReportPresenter).toService(ReportWidgetPresenter);
