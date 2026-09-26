@@ -86,6 +86,13 @@ type PluginReportResult =
   `transport error` / `unavailable` → `network`; `server error` → `server`;
   anything else (syntax errors, unknown functions, `category not found`) →
   `template`, with the first line of the engine's message.
+- Known pre-existing gap (not introduced here): a template can pass a
+  crafted recipe reference to `get_ingredient_list`, and `cooklang-find`
+  joins it to the base path without a containment check, so templates can
+  read `.cook` files outside the workspace. Same exposure already exists via
+  the AI `renderTemplate` tool, and plugins can read any file through
+  `vscode.workspace.fs`, so `renderReport` adds no new capability. Fix
+  belongs upstream in `cooklang-find` (tracked separately).
 - Successful results are cached in memory keyed by
   `(uri, text, template, scale)`, 20 entries, so repeated badge refreshes
   for unchanged recipes cost nothing.
