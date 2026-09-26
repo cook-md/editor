@@ -146,7 +146,7 @@ export class ReportConfigService {
             nutritionApiUrl: this.preferences.get<string>('cooklang.nutrition.serviceUrl', DEFAULT_NUTRITION_SERVICE_URL),
             nutritionToken: '',
         };
-        if (recipeUri?.path.ext === '.menu') {
+        if (CooklangUri.isMenu(recipeUri)) {
             config.isMenu = true;
         }
         try {

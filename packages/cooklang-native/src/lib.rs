@@ -1339,16 +1339,129 @@ struct ReportConfig {
     is_menu: Option<bool>,
 }
 
+/// Process-wide nutrition client, keyed by (API url, auth token).
+///
+/// The client is built with `.cached()`, so it memoises category membership
+/// and per-ingredient nutrition lookups (plus reference-intake tables) for the
+/// lifetime of the process. Preview badges re-render on every edit, and the
+/// same ingredients recur across renders, so sharing the client turns repeat
+/// renders into cache hits instead of dozens of HTTP round trips. The cached
+/// client (and everything it memoised) is dropped when the url or token
+/// changes, e.g. on login/logout or a different API endpoint.
+#[cfg(feature = "nutrition")]
+type NutritionClientSlot =
+    std::sync::Mutex<Option<(String, String, Arc<cookmd_nutrition_client::Client>)>>;
+
+#[cfg(feature = "nutrition")]
+static NUTRITION_CLIENT: std::sync::OnceLock<NutritionClientSlot> = std::sync::OnceLock::new();
+
+/// Return the shared nutrition client for `url` + `token`, building (and
+/// replacing the previous one) when either differs from the cached pair.
+/// An empty `token` means no `Authorization` header.
+#[cfg(feature = "nutrition")]
+fn nutrition_client(url: &str, token: &str) -> Arc<cookmd_nutrition_client::Client> {
+    nutrition_client_in(NUTRITION_CLIENT.get_or_init(|| std::sync::Mutex::new(None)), url, token)
+}
+
+/// `nutrition_client` against an explicit slot, so tests can exercise the
+/// reuse/replace logic without racing other tests on the global slot.
+#[cfg(feature = "nutrition")]
+fn nutrition_client_in(
+    slot: &NutritionClientSlot,
+    url: &str,
+    token: &str,
+) -> Arc<cookmd_nutrition_client::Client> {
+    // A poisoned lock only means another render panicked mid-swap; the slot
+    // itself is still a valid Option, so keep using it.
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((cached_url, cached_token, client)) = guard.as_ref() {
+        if cached_url == url && cached_token == token {
+            return client.clone();
+        }
+    }
+    let mut client = cookmd_nutrition_client::Client::new(url).cached();
+    if !token.is_empty() {
+        client = client.with_auth_token(token);
+    }
+    let client = Arc::new(client);
+    *guard = Some((url.to_string(), token.to_string(), client.clone()));
+    client
+}
+
 /// Render a Jinja2 report template against a recipe via cooklang-reports
 /// (the same engine cookcli's `cook report` uses).
+///
+/// Synchronous: blocks the calling (JS main) thread, including any nutrition
+/// HTTP calls the template makes. Kept for backward compatibility; prefer
+/// `renderReportAsync`.
 ///
 /// Returns JSON: `{"output": "..."}` on success or `{"error": "..."}` on failure.
 #[napi]
 pub fn render_report(recipe: String, template: String, config_json: String) -> String {
+    render_report_impl(&recipe, &template, &config_json)
+}
+
+/// Libuv-threadpool task behind `renderReportAsync`. `reqwest::blocking`
+/// (used by the nutrition client) is fine here: this is a plain worker thread,
+/// not a tokio runtime thread.
+pub struct RenderReportTask {
+    recipe: String,
+    template: String,
+    config_json: String,
+}
+
+impl napi::Task for RenderReportTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> napi::Result<String> {
+        Ok(render_report_impl(&self.recipe, &self.template, &self.config_json))
+    }
+
+    fn resolve(&mut self, _env: napi::Env, output: String) -> napi::Result<String> {
+        Ok(output)
+    }
+}
+
+/// Async variant of `render_report`: renders on the libuv threadpool so
+/// template work and nutrition HTTP calls never block the Node event loop.
+/// Resolves to the same JSON as `renderReport`.
+#[napi(js_name = "renderReportAsync", ts_return_type = "Promise<string>")]
+pub fn render_report_async(
+    recipe: String,
+    template: String,
+    config_json: String,
+) -> napi::bindgen_prelude::AsyncTask<RenderReportTask> {
+    napi::bindgen_prelude::AsyncTask::new(RenderReportTask { recipe, template, config_json })
+}
+
+fn render_report_impl(recipe: &str, template: &str, config_json: &str) -> String {
+    catch_render(|| render_report_body(recipe, template, config_json))
+}
+
+/// Run a render, turning a panic (in the report engine, the nutrition client
+/// or a template function) into the `{"error": ...}` contract. napi does not
+/// catch panics in `Task::compute` or sync exports, so an uncaught one would
+/// abort the whole backend process.
+fn catch_render<F: FnOnce() -> String>(render: F) -> String {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(render)) {
+        Ok(json) => json,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            serde_json::json!({ "error": format!("internal error: {message}") }).to_string()
+        }
+    }
+}
+
+fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String {
     // A malformed config silently degrades to defaults (no base path, no
     // nutrition wiring); log it so a bad config surfaces in the addon's stderr
     // rather than as a confusing downstream "extension not registered" error.
-    let cfg: ReportConfig = serde_json::from_str(&config_json).unwrap_or_else(|e| {
+    let cfg: ReportConfig = serde_json::from_str(config_json).unwrap_or_else(|e| {
         eprintln!("[cooklang-native] invalid report config JSON, using defaults: {e}");
         ReportConfig::default()
     });
@@ -1371,11 +1484,8 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     #[cfg(feature = "nutrition")]
     let mut config = match cfg.nutrition_api_url {
         Some(url) => {
-            let mut client = cookmd_nutrition_client::Client::new(url);
-            if let Some(tok) = cfg.nutrition_token.filter(|t| !t.is_empty()) {
-                client = client.with_auth_token(tok);
-            }
-            let ext = cooklang_reports_nutrition::NutritionExtension::new(std::sync::Arc::new(client));
+            let client = nutrition_client(&url, cfg.nutrition_token.as_deref().unwrap_or(""));
+            let ext = cooklang_reports_nutrition::NutritionExtension::new(client);
             config.with_extension(ext)
         }
         None => config,
@@ -1390,7 +1500,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     if cfg.is_menu == Some(true) {
         let base = base_path.clone().unwrap_or_else(|| ".".to_string());
         let plan = match cooklang_reports_nutrition::plan::build_plan_from_source(
-            &recipe,
+            recipe,
             std::path::Path::new(&base),
             None,
         ) {
@@ -1407,7 +1517,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     }
     #[cfg(not(feature = "nutrition"))]
     let _ = &base_path;
-    match cooklang_reports::render_template_with_config(&recipe, &template, &config) {
+    match cooklang_reports::render_template_with_config(recipe, template, &config) {
         Ok(output) => serde_json::json!({ "output": output }).to_string(),
         Err(err) => serde_json::json!({ "error": err.format_with_source() }).to_string(),
     }
@@ -1474,6 +1584,34 @@ mod render_report_tests {
     }
 
     #[test]
+    fn async_task_compute_matches_sync_render() {
+        use napi::Task;
+        let recipe = "Mix @eggs{3} with @flour{125%g}.";
+        let template = "{% for i in ingredients %}{{ i.name }};{% endfor %}{{ scale }}";
+        let config = r#"{"scale": 2}"#;
+        let sync = super::render_report(recipe.into(), template.into(), config.into());
+        let mut task = super::RenderReportTask {
+            recipe: recipe.into(),
+            template: template.into(),
+            config_json: config.into(),
+        };
+        assert_eq!(task.compute().unwrap(), sync);
+    }
+
+    #[test]
+    fn a_render_panic_becomes_an_error_payload() {
+        let out = super::catch_render(|| -> String { panic!("boom") });
+        let v: serde_json::Value = serde_json::from_str(&out).expect("must return valid JSON");
+        let error = v["error"].as_str().expect("expected an error payload");
+        assert!(error.starts_with("internal error: "), "error was: {error}");
+        assert!(error.contains("boom"), "error was: {error}");
+        let formatted = super::catch_render(|| -> String { panic!("boom {}", 42) });
+        assert!(formatted.contains("boom 42"), "String payloads keep their message: {formatted}");
+        let opaque = super::catch_render(|| -> String { std::panic::panic_any(7u8) });
+        assert!(opaque.contains("unknown panic"), "got: {opaque}");
+    }
+
+    #[test]
     fn returns_json_for_unparsable_recipe() {
         let garbage = "@{unclosed [- broken >> nonsense";
         let result = super::render_report(garbage.into(), "{{ scale }}".into(), "{}".into());
@@ -1509,6 +1647,24 @@ mod nutrition_wiring_tests {
         let out = super::render_report(RECIPE.into(), NUTRITION_TEMPLATE.into(), cfg.into());
         assert!(out.contains("\"error\""), "expected an error payload, got: {out}");
         assert!(!out.contains("unknown"), "function should be registered: {out}");
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn nutrition_client_is_shared_per_url_and_token() {
+        use std::sync::Arc;
+        // A local slot: the global one is shared with other (parallel) tests.
+        let slot: super::NutritionClientSlot = std::sync::Mutex::new(None);
+        let url = "http://127.0.0.1:9";
+        let a = super::nutrition_client_in(&slot, url, "tok-a");
+        let a_again = super::nutrition_client_in(&slot, url, "tok-a");
+        assert!(Arc::ptr_eq(&a, &a_again), "same url+token must reuse the client");
+        let b = super::nutrition_client_in(&slot, url, "tok-b");
+        assert!(!Arc::ptr_eq(&a, &b), "a token change must build a new client");
+        let b_again = super::nutrition_client_in(&slot, url, "tok-b");
+        assert!(Arc::ptr_eq(&b, &b_again), "the replacement is cached in turn");
+        let other_url = super::nutrition_client_in(&slot, "http://127.0.0.1:10", "tok-b");
+        assert!(!Arc::ptr_eq(&b, &other_url), "a url change must build a new client");
     }
 }
 
@@ -2157,5 +2313,22 @@ mod recipe_images_tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["title"].is_null());
         assert_eq!(value["steps"].as_object().unwrap().len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod tojson_tests {
+    use super::*;
+
+    #[test]
+    fn report_templates_can_return_json() {
+        let out = render_report(
+            "Mix @flour{200%g}.".to_string(),
+            r#"{{ {"a": [1, 2], "s": "x<y"} | tojson }}"#.to_string(),
+            "{}".to_string(),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let json: serde_json::Value = serde_json::from_str(v["output"].as_str().unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({ "a": [1, 2], "s": "x<y" }));
     }
 }

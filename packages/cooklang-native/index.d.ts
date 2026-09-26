@@ -142,9 +142,19 @@ export declare function editPantry(text: string, editJson: string): string
  * Render a Jinja2 report template against a recipe via cooklang-reports
  * (the same engine cookcli's `cook report` uses).
  *
+ * Synchronous: blocks the calling (JS main) thread, including any nutrition
+ * HTTP calls the template makes. Kept for backward compatibility; prefer
+ * `renderReportAsync`.
+ *
  * Returns JSON: `{"output": "..."}` on success or `{"error": "..."}` on failure.
  */
 export declare function renderReport(recipe: string, template: string, configJson: string): string
+/**
+ * Async variant of `render_report`: renders on the libuv threadpool so
+ * template work and nutrition HTTP calls never block the Node event loop.
+ * Resolves to the same JSON as `renderReport`.
+ */
+export declare function renderReportAsync(recipe: string, template: string, configJson: string): Promise<string>
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void

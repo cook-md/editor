@@ -40,4 +40,10 @@ describe('CooklangLanguageServiceImpl report config conversion', () => {
         const result = JSON.parse(await impl.renderReport('', '', 'not json'));
         expect(result.error).to.be.a('string').that.is.not.empty;
     });
+
+    it('renders through the async native export', async () => {
+        const impl = new CooklangLanguageServiceImpl();
+        const result = JSON.parse(await impl.renderReport('Mix @eggs{2}.', '{% for i in ingredients %}{{ i.name }}{% endfor %}', '{}'));
+        expect(result.output).to.equal('eggs');
+    });
 });

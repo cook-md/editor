@@ -17,8 +17,10 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { ContextKeyService } from '@theia/core/lib/browser/context-key-service';
 import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
 import { CooklangUri } from '../common/cooklang-uri';
+import { PluginReportResult } from '../common/plugin-report-types';
 import {
     CheckEntry,
     ShoppingListFile,
@@ -35,6 +37,7 @@ import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
+import { PluginReportService } from './plugin-report-service';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
@@ -67,7 +70,25 @@ export namespace CooklangPluginApi {
         PARSE_PANTRY: 'cooklang.api.parsePantry',
         /** `{ text, edit: PantryEdit }` → new file text, comments and formatting preserved. */
         EDIT_PANTRY: 'cooklang.api.editPantry',
+        /** `{ name }` → boolean: whether the signed-in user's plan includes a feature, e.g. `nutrition_api`. False when signed out. */
+        HAS_FEATURE: 'cooklang.api.hasFeature',
+        /**
+         * `{ uri, template, scale? }` → `PluginReportResult`: renders a Jinja template (at most
+         * {@link MAX_TEMPLATE_LENGTH} characters) against a `.cook` or `.menu` URI of any scheme
+         * (unsaved edits included) with the Reports engine and configuration. Template functions
+         * include everything reports have (e.g. `aggregate_nutrition`, the `tojson` filter).
+         * Bad arguments throw `Invalid arguments: …`; render failures resolve to
+         * `{ ok: false, reason, message }`. Successful results are cached by recipe text,
+         * template and scale; the cache is dropped on login/logout and on any `cooklang.*`
+         * preference change. Templates call the nutrition service with the signed-in user's
+         * token, so any installed plugin can make authenticated nutrition-service calls on the
+         * user's behalf (counting against their quota) without ever seeing the token.
+         */
+        RENDER_REPORT: 'cooklang.api.renderReport',
     } as const;
+
+    /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
+    export const MAX_TEMPLATE_LENGTH = 64 * 1024;
 }
 
 /**
@@ -101,6 +122,12 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(FileService)
     protected readonly fileService: FileService;
 
+    @inject(SubscriptionFrontendService)
+    protected readonly subscriptions: SubscriptionFrontendService;
+
+    @inject(PluginReportService)
+    protected readonly pluginReports: PluginReportService;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -118,6 +145,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.OPEN_PREVIEW }, { execute: (args: unknown) => this.openPreview(args) });
         registry.registerCommand({ id: Commands.PARSE_PANTRY }, { execute: (args: unknown) => this.parsePantry(args) });
         registry.registerCommand({ id: Commands.EDIT_PANTRY }, { execute: (args: unknown) => this.editPantry(args) });
+        registry.registerCommand({ id: Commands.HAS_FEATURE }, { execute: (args: unknown) => this.hasFeature(args) });
+        registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -236,6 +265,34 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         const text = this.text(request.text, '`text`');
         const edit = this.pantryEdit(request.edit);
         return this.languageService.editPantry(text, JSON.stringify(edit));
+    }
+
+    protected async hasFeature(args: unknown): Promise<boolean> {
+        const name = this.string(this.object(args).name, '`name`');
+        try {
+            return await this.subscriptions.hasFeature(name);
+        } catch (e) {
+            console.debug('[cooklang] hasFeature failed, treating as absent:', e);
+            return false;
+        }
+    }
+
+    protected async renderReport(args: unknown): Promise<PluginReportResult> {
+        const request = this.object(args);
+        const raw = this.string(request.uri, '`uri`');
+        const uri = new URI(raw);
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
+            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
+        }
+        const template = this.text(request.template, '`template`');
+        if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
+            throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
+        }
+        const scale = request.scale === undefined ? 1 : request.scale;
+        if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+            throw this.invalid('`scale` must be a positive number.');
+        }
+        return this.pluginReports.render(uri, template, scale);
     }
 
     protected pantryEdit(value: unknown): PantryEdit {

@@ -36,6 +36,7 @@ class Fixture {
     runs: Run[] = [];
     rendered: unknown[] = [];
     errors: string[] = [];
+    results = new Map<string, unknown>();
     menuChanged = new Emitter<void>();
     commandsChanged = new Emitter<void>();
     root: { children: unknown[] } | undefined = { children: [] };
@@ -62,7 +63,15 @@ class Fixture {
         const service = new CooklangOutletService();
         /* eslint-disable @typescript-eslint/no-explicit-any */
         (service as any).menus = { getMenu: (path: MenuPath) => path[0] === PATH[0] ? this.root : undefined, onDidChange: this.menuChanged.event };
-        (service as any).commands = { onCommandsChanged: this.commandsChanged.event };
+        (service as any).commands = {
+            onCommandsChanged: this.commandsChanged.event,
+            executeCommand: async (id: string, ...args: unknown[]) => {
+                this.runs.push({ id, args });
+                const result = this.results.get(id);
+                if (result instanceof Error) { throw result; }
+                return result;
+            },
+        };
         (service as any).contextKeys = { match: () => true };
         (service as any).contextMenuRenderer = { render: (options: unknown) => { this.rendered.push(options); } };
         (service as any).messages = { error: (message: string) => { this.errors.push(message); } };
@@ -186,5 +195,69 @@ describe('CooklangOutletService', () => {
         await service.run(PATH, 'save', CONTEXT, element);
         expect(seen).to.deep.equal([element, element]);
         expect(fixture.runs.map(run => run.id)).to.deep.equal(['save']);
+    });
+});
+
+describe('CooklangOutletService.collectBadges', () => {
+    it('executes each visible command with the context and keeps valid badges in order', async () => {
+        const fixture = new Fixture();
+        fixture.root!.children = [fixture.command('b', '2'), fixture.command('a', '1'), fixture.command('hidden', '3', { visible: () => false })];
+        fixture.results.set('a', { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 'first' });
+        fixture.results.set('b', { kind: 'nutriscore', grade: 'C', tooltipMarkdown: 'second' });
+        const badges = await fixture.create().collectBadges(PATH, CONTEXT);
+        expect(badges.map(b => b.tooltipMarkdown)).to.deep.equal(['first', 'second']);
+        expect(fixture.runs).to.deep.equal([{ id: 'a', args: [CONTEXT] }, { id: 'b', args: [CONTEXT] }]);
+    });
+
+    it('drops undefined, malformed and throwing providers without showing errors', async () => {
+        const fixture = new Fixture();
+        fixture.root!.children = [
+            fixture.command('none', '1'), fixture.command('bad', '2'), fixture.command('boom', '3'), fixture.command('str', '4'),
+        ];
+        fixture.results.set('bad', { kind: 'nutriscore', grade: 'Z', tooltipMarkdown: '' });
+        fixture.results.set('boom', new Error('boom'));
+        fixture.results.set('str', 'not-a-badge');
+        expect(await fixture.create().collectBadges(PATH, CONTEXT)).to.deep.equal([]);
+        expect(fixture.errors).to.deep.equal([]);
+    });
+
+    it('times out a hung provider so the other badges are still returned', async () => {
+        const fixture = new Fixture();
+        fixture.root!.children = [fixture.command('hang', '1'), fixture.command('ok', '2')];
+        fixture.results.set('hang', new Promise(() => { /* never settles */ }));
+        fixture.results.set('ok', { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 'ok' });
+        const service = fixture.create();
+        (service as any).badgeTimeoutMs = 20; // eslint-disable-line @typescript-eslint/no-explicit-any
+        const badges = await service.collectBadges(PATH, CONTEXT);
+        expect(badges.map(b => b.tooltipMarkdown)).to.deep.equal(['ok']);
+    });
+
+    it('logs a failing provider once and logs a recovery once after it succeeds again', async () => {
+        const fixture = new Fixture();
+        fixture.root!.children = [fixture.command('flaky', '1')];
+        const service = fixture.create();
+        const warnings: unknown[] = [];
+        const infos: unknown[] = [];
+        const originalWarn = console.warn;
+        const originalInfo = console.info;
+        console.warn = (...args: unknown[]) => { warnings.push(args); };
+        console.info = (...args: unknown[]) => { infos.push(args); };
+        try {
+            fixture.results.set('flaky', new Error('boom'));
+            await service.collectBadges(PATH, CONTEXT);
+            await service.collectBadges(PATH, CONTEXT);
+            expect(warnings).to.have.length(1);
+
+            fixture.results.set('flaky', { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 'ok' });
+            await service.collectBadges(PATH, CONTEXT);
+            expect(infos).to.have.length(1);
+
+            fixture.results.set('flaky', new Error('boom again'));
+            await service.collectBadges(PATH, CONTEXT);
+            expect(warnings).to.have.length(2);
+        } finally {
+            console.warn = originalWarn;
+            console.info = originalInfo;
+        }
     });
 });

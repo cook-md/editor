@@ -20,6 +20,9 @@ import { ContextKeyService, ScopedValueStore } from '@theia/core/lib/browser/con
 import { EditorManager } from '@theia/editor/lib/browser';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { HoverService } from '@theia/core/lib/browser/hover-service';
+import { MarkdownStringImpl } from '@theia/core/lib/common/markdown-rendering/markdown-string';
+import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
@@ -38,7 +41,7 @@ import { CookingTimerService } from './cooking-timer-service';
 import { TimerBinding, TimerBindingProvider } from './timer-components';
 import { CooklangOutletService } from './cooklang-outlet-service';
 import { CooklangOutlets } from './cooklang-outlets';
-import { IngredientOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
+import { IngredientOutletInfo, PreviewBadge, PreviewOutletContext } from '../common/cooklang-outlet-context';
 
 import '../../src/browser/style/recipe-preview.css';
 
@@ -92,11 +95,27 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
 
+    @inject(HoverService)
+    protected readonly hoverService: HoverService;
+
+    @inject(SubscriptionFrontendService)
+    protected readonly subscriptions: SubscriptionFrontendService;
+
     protected uri: URI;
     protected recipe: Recipe | undefined;
     /** The `title` the native parser resolved from the recipe's metadata, if any. */
     protected recipeTitle: string | undefined;
     protected scale = 1;
+    protected badges: PreviewBadge[] = [];
+    protected badgeSequence = 0;
+    protected badgeTimer: ReturnType<typeof setTimeout> | undefined;
+    static readonly BADGE_DEBOUNCE_MS = 500;
+    /** Overridable in tests; production code always uses {@link BADGE_DEBOUNCE_MS}. */
+    protected badgeDebounceMs = RecipePreviewWidget.BADGE_DEBOUNCE_MS;
+    /** A badge refresh was requested while hidden; run it once the preview is shown again. */
+    protected badgesStale = false;
+    /** Whether this widget currently has a badge hover open, so {@link hideBadgeHover} never cancels another widget's. */
+    protected badgeHoverShown = false;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected parseSequence = 0;
@@ -134,7 +153,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 this.update();
             }
         }));
-        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
+        this.toDispose.push(this.outlets.onDidChange(() => {
+            this.update();
+            this.scheduleBadges();
+        }));
+        this.toDispose.push(this.subscriptions.onDidChangeSubscription(() => this.scheduleBadges()));
     }
 
     protected override onActivateRequest(msg: Message): void {
@@ -146,6 +169,32 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         super.onAfterShow(msg);
         // Ticks were ignored while hidden, so the countdown may be stale.
         this.update();
+        this.flushStaleBadges();
+    }
+
+    /**
+     * The first tab in an empty dock area, or the active tab of a restored
+     * layout, goes straight from never-attached to visible: Lumino sends
+     * `after-attach` but no `after-show` (there was no prior hide to show
+     * from), so a badge refresh deferred while `isVisible` was false would
+     * otherwise never flush without this.
+     */
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.flushStaleBadges();
+    }
+
+    protected override onBeforeHide(msg: Message): void {
+        super.onBeforeHide(msg);
+        this.hideBadgeHover();
+    }
+
+    /** Runs a badge refresh deferred by `scheduleBadges` while hidden, once the preview is visible again. */
+    protected flushStaleBadges(): void {
+        if (this.badgesStale && this.isVisible) {
+            this.badgesStale = false;
+            this.scheduleBadges();
+        }
     }
 
     /** Whether any live timer belongs to the recipe this preview shows. */
@@ -173,6 +222,14 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY, uri.scheme);
         this.id = createRecipePreviewWidgetId(uri);
         this.recipeTitle = undefined;
+        // A reused widget must not keep showing a previous recipe's grade, nor
+        // let a badge refresh for the old recipe land after this switch.
+        this.badges = [];
+        this.badgeSequence++;
+        if (this.badgeTimer !== undefined) {
+            clearTimeout(this.badgeTimer);
+            this.badgeTimer = undefined;
+        }
         // Text parsed for a previous URI must not name this recipe's images.
         this.content = undefined;
         this.updateTitleLabel();
@@ -293,11 +350,13 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             this.updateTitleLabel();
             this.refreshImages();
             this.update();
+            this.scheduleBadges();
         }).catch(e => {
             if (this.isDisposed || sequence !== this.parseSequence) {
                 return;
             }
             this.recipe = undefined;
+            this.badges = [];
             this.parseErrors = [`Parse request failed: ${e}`];
             this.update();
         });
@@ -451,6 +510,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected handleScaleChange = (scale: number): void => {
         this.scale = scale;
         this.update();
+        this.scheduleBadges();
     };
 
     /**
@@ -461,6 +521,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         if (Number.isFinite(scale) && scale > 0 && scale !== this.scale) {
             this.scale = scale;
             this.update();
+            this.scheduleBadges();
         }
     }
 
@@ -469,6 +530,76 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             return undefined;
         }
         return { version: CooklangOutlets.VERSION, ...this.outlets.describe(this.uri), scale: this.scale };
+    }
+
+    /**
+     * Badges call plugins (and the network), so they refresh after edits
+     * settle. A hidden preview (a background tab) defers the refresh until it
+     * is shown again (see `onAfterShow`), instead of calling plugins for
+     * something nobody can see.
+     */
+    protected scheduleBadges(): void {
+        if (!this.isVisible) {
+            this.badgesStale = true;
+            return;
+        }
+        if (this.badgeTimer !== undefined) {
+            clearTimeout(this.badgeTimer);
+        }
+        this.badgeTimer = setTimeout(() => {
+            this.badgeTimer = undefined;
+            this.refreshBadges().catch(e => console.warn('[cooklang] badge refresh failed:', e));
+        }, this.badgeDebounceMs);
+    }
+
+    protected async refreshBadges(): Promise<void> {
+        const sequence = ++this.badgeSequence;
+        const context = this.recipe ? this.previewContext() : undefined;
+        const badges = context ? await this.outlets.collectBadges(CooklangOutlets.RECIPE_PREVIEW_BADGE, context, this.node) : [];
+        if (this.isDisposed || sequence !== this.badgeSequence) {
+            return;
+        }
+        if (!PreviewBadge.equals(this.badges, badges)) {
+            this.badges = badges;
+            this.update();
+        }
+    }
+
+    protected handleShowBadgeDetails = (badge: PreviewBadge, target: HTMLElement, immediate: boolean): void => {
+        // `requestHover` first cancels any hover already open, which runs ITS
+        // `onHide` synchronously — moving the mouse from one badge straight to
+        // another would otherwise clear the flag this call is about to set.
+        // Setting it after, not before, keeps it true across the move.
+        this.hoverService.requestHover({
+            // Untrusted, no HTML: plugin text never runs commands or injects markup.
+            content: new MarkdownStringImpl(badge.tooltipMarkdown, { isTrusted: false, supportHtml: false }),
+            target,
+            position: 'bottom',
+            cssClasses: ['cooklang-preview-badge-hover'],
+            skipHoverDelay: immediate,
+            // HoverService can close the hover on its own (mouseout, mousedown
+            // elsewhere), without going through `handleHideBadgeDetails`.
+            onHide: () => { this.badgeHoverShown = false; },
+        });
+        this.badgeHoverShown = true;
+    };
+
+    protected handleHideBadgeDetails = (): void => {
+        this.badgeHoverShown = false;
+        this.hoverService.cancelHover();
+    };
+
+    /**
+     * Hides this widget's own badge hover, if any. `HoverService.cancelHover`
+     * is global — it hides whatever hover is currently open, regardless of
+     * which widget opened it — so this only calls it when `badgeHoverShown`
+     * confirms the open hover (if any) is this widget's.
+     */
+    protected hideBadgeHover(): void {
+        if (this.badgeHoverShown) {
+            this.hoverService.cancelHover();
+        }
+        this.badgeHoverShown = false;
     }
 
     protected handleRunToolbarItem = (id: string): void => {
@@ -544,6 +675,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                             onRunToolbarItem={this.handleRunToolbarItem}
                             onIngredientContextMenu={this.handleIngredientContextMenu}
                             onNavigateToRecipe={this.hasLocalSource() ? this.handleNavigateToRecipe : undefined}
+                            badges={this.badges}
+                            onShowBadgeDetails={this.handleShowBadgeDetails}
+                            onHideBadgeDetails={this.handleHideBadgeDetails}
                         />
                     </LinkOpenerProvider>
                 </TimerBindingProvider>
@@ -581,6 +715,11 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             clearTimeout(this.imageDebounceTimer);
             this.imageDebounceTimer = undefined;
         }
+        if (this.badgeTimer !== undefined) {
+            clearTimeout(this.badgeTimer);
+            this.badgeTimer = undefined;
+        }
+        this.hideBadgeHover();
         this.imageService.releaseAll();
         super.dispose();
     }

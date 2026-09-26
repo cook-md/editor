@@ -21,6 +21,7 @@ import { CommandContribution } from '@theia/core/lib/common/command';
 import { MenuContribution } from '@theia/core/lib/common/menu';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
+import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
 import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar-toolbar';
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
@@ -49,6 +50,7 @@ import { REPORT_WIDGET_ID, ReportWidgetOptions, createReportWidget } from './rep
 import { ReportContribution } from './report-contribution';
 import { ReportExportContribution } from './report-export-contribution';
 import { ReportConfigService } from './report-config-service';
+import { PluginReportService } from './plugin-report-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportTemplateFinder } from './report-template-finder';
 import { ReportWidgetPresenter } from './report-widget-presenter';
@@ -71,6 +73,7 @@ import { CooklangWorkspaceCommandContribution } from './cooklang-workspace-comma
 import { createCooklangFileNavigatorWidget } from './cooklang-navigator-widget';
 import { WorkspaceCommandContribution } from '@theia/workspace/lib/browser/workspace-commands';
 import { FileNavigatorWidget } from '@theia/navigator/lib/browser/navigator-widget';
+import { NutriScoreColorContribution } from './nutriscore-colors';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Shared by both preview open handlers: an empty file opens in the editor,
@@ -174,6 +177,7 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     // Report config + presenter (shared by the command and the AI render tool)
     bind(ReportConfigService).toSelf().inSingletonScope();
+    bind(PluginReportService).toSelf().inSingletonScope();
     bind(ReportTemplateFinder).toSelf().inSingletonScope();
     bind(ReportWidgetPresenter).toSelf().inSingletonScope();
     bind(ReportPresenter).toService(ReportWidgetPresenter);
@@ -227,4 +231,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     })).inSingletonScope();
 
     bindViewContribution(bind, TimersViewContribution);
+
+    // Nutri-Score grade colors for the recipe preview badge.
+    bind(NutriScoreColorContribution).toSelf().inSingletonScope();
+    bind(ColorContribution).toService(NutriScoreColorContribution);
 });

@@ -115,3 +115,53 @@ export interface ReportOutletContext {
     /** Rendered output, once rendering succeeded. */
     output?: string;
 }
+
+export type PreviewBadgeGrade = 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
+export type PreviewBadgeTone = 'neutral' | 'good' | 'warning' | 'bad';
+
+/**
+ * What a command contributed to the `cooklang/recipePreview/badge` outlet
+ * returns. The editor owns the visuals: `kind` picks a built-in rendering
+ * (`nutriscore`: the official-style A–E strip; `pill`: short text tinted by
+ * `tone`), and `tooltipMarkdown` is shown untrusted (no HTML, no `command:`
+ * links) on hover. Return `undefined` for no badge. New kinds are additive.
+ */
+export type PreviewBadge =
+    | { kind: 'nutriscore'; grade: PreviewBadgeGrade; tooltipMarkdown: string }
+    | { kind: 'pill'; text: string; tone: PreviewBadgeTone; tooltipMarkdown: string };
+
+export namespace PreviewBadge {
+    export const GRADES: readonly PreviewBadgeGrade[] = ['A', 'B', 'C', 'D', 'E', 'unknown'];
+    export const TONES: readonly PreviewBadgeTone[] = ['neutral', 'good', 'warning', 'bad'];
+    export const MAX_TOOLTIP_LENGTH = 4000;
+    export const MAX_TEXT_LENGTH = 24;
+
+    /** A validated copy of a plugin's return value, or `undefined` when it is not a badge. */
+    export function parse(value: unknown): PreviewBadge | undefined {
+        if (typeof value !== 'object' || value === undefined || value === null) { // eslint-disable-line no-null/no-null
+            return undefined;
+        }
+        const candidate = value as Record<string, unknown>;
+        if (typeof candidate.tooltipMarkdown !== 'string') {
+            return undefined;
+        }
+        const tooltipMarkdown = candidate.tooltipMarkdown.slice(0, MAX_TOOLTIP_LENGTH);
+        if (candidate.kind === 'nutriscore' && GRADES.includes(candidate.grade as PreviewBadgeGrade)) {
+            return { kind: 'nutriscore', grade: candidate.grade as PreviewBadgeGrade, tooltipMarkdown };
+        }
+        if (candidate.kind === 'pill' && TONES.includes(candidate.tone as PreviewBadgeTone) && typeof candidate.text === 'string') {
+            const text = candidate.text.trim();
+            // eslint-disable-next-line no-control-regex
+            if (text === '' || text.length > MAX_TEXT_LENGTH || /[\u0000-\u001f\u007f]/.test(text)) {
+                return undefined;
+            }
+            return { kind: 'pill', text, tone: candidate.tone as PreviewBadgeTone, tooltipMarkdown };
+        }
+        return undefined;
+    }
+
+    /** Parsed badges have a fixed key order, so their JSON compares by value. */
+    export function equals(a: readonly PreviewBadge[], b: readonly PreviewBadge[]): boolean {
+        return JSON.stringify(a) === JSON.stringify(b);
+    }
+}

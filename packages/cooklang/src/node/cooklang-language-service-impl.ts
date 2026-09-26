@@ -319,7 +319,9 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
     async renderReport(recipeContent: string, templateContent: string, configJson: string): Promise<string> {
         try {
             const native = require('@theia/cooklang-native');
-            return native.renderReport(recipeContent, templateContent, this.convertReportConfigPaths(configJson));
+            // Async: rendering (and any nutrition HTTP calls a template makes)
+            // runs on the libuv threadpool, keeping the backend event loop free.
+            return await native.renderReportAsync(recipeContent, templateContent, this.convertReportConfigPaths(configJson));
         } catch (error) {
             console.error('[cooklang] Failed to render report:', error);
             return JSON.stringify({ error: String(error) });

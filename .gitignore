@@ -45,3 +45,6 @@ license-check-summary.txt*
 /.theia/chatSessions
 /app/dist/
 .worktrees/
+
+# Local secrets (e.g. NUTRITION_TOKEN for probing the nutrition service)
+.env

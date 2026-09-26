@@ -39,6 +39,8 @@ import { linkify } from '../common/recipe-links';
 import { TimerBadge } from './timer-components';
 import { CooklangActionBar } from './cooklang-action-bar';
 import { OutletItem } from './cooklang-outlet-service';
+import { PreviewBadge } from '../common/cooklang-outlet-context';
+import { PreviewBadgeView } from './preview-badge';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -573,6 +575,9 @@ export interface RecipeViewProps {
     onRunToolbarItem: (id: string) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
     onIngredientContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
+    badges?: readonly PreviewBadge[];
+    onShowBadgeDetails?: (badge: PreviewBadge, target: HTMLElement, immediate: boolean) => void;
+    onHideBadgeDetails?: () => void;
 }
 
 export const RecipeView = ({
@@ -585,6 +590,9 @@ export const RecipeView = ({
     onRunToolbarItem,
     onNavigateToRecipe,
     onIngredientContextMenu,
+    badges,
+    onShowBadgeDetails,
+    onHideBadgeDetails,
 }: RecipeViewProps): React.ReactElement => {
     const meta = recipe.metadata.map;
 
@@ -625,6 +633,10 @@ export const RecipeView = ({
                             title='Scale factor'
                         />
                     </div>
+                    {onShowBadgeDetails && onHideBadgeDetails && badges?.map((badge, index) => (
+                        <PreviewBadgeView key={`${badge.kind}-${index}`} badge={badge}
+                            onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
+                    ))}
                     <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
                 </div>
             </div>

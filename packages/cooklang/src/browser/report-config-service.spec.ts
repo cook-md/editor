@@ -93,6 +93,8 @@ describe('ReportConfigService#buildConfigJson', () => {
         const { service } = createService(undefined);
         const menuConfig = JSON.parse(await service.buildConfigJson(1, new URI('file:///ws/Plans/Week.menu')));
         expect(menuConfig.isMenu).to.equal(true);
+        const upperMenuConfig = JSON.parse(await service.buildConfigJson(1, new URI('file:///ws/Plans/WEEK.MENU')));
+        expect(upperMenuConfig.isMenu).to.equal(true);
         const cookConfig = JSON.parse(await service.buildConfigJson(1, new URI('file:///ws/Borsch.cook')));
         expect(cookConfig.isMenu).to.equal(undefined);
         const noUriConfig = JSON.parse(await service.buildConfigJson(1));

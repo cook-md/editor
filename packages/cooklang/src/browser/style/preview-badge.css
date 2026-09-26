@@ -1,0 +1,130 @@
+/* The badge must not exceed the 26px toolbar height (the recipe preview's
+   scale control and action bar buttons), or the preview header — which
+   aligns its items on their baseline — shifts when a badge arrives. */
+.cooklang-nutriscore {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    height: 26px;
+    box-sizing: border-box;
+    padding: 1px 4px;
+    overflow: visible;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 8px;
+    background: var(--theia-editor-background);
+    cursor: default;
+    user-select: none;
+    /* Button reset: this is a native <button>, kept visually identical to the old <div>. */
+    appearance: none;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+}
+
+.cooklang-nutriscore:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.cooklang-nutriscore-title {
+    font-size: 6px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--theia-descriptionForeground);
+    text-align: center;
+    line-height: 7px;
+    /* The selected grade cell below overhangs the strip by 2px (see its
+       negative margin); this gap must stay at least that big or the
+       overhang hides the title. */
+    margin-bottom: 2px;
+}
+
+.cooklang-nutriscore-strip {
+    display: flex;
+    align-items: center;
+}
+
+.cooklang-nutriscore-cell {
+    width: 13px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    opacity: 0.55;
+}
+
+.cooklang-nutriscore-cell:first-child { border-radius: 6px 0 0 6px; }
+.cooklang-nutriscore-cell:last-child { border-radius: 0 6px 6px 0; }
+/* E ends the strip even when the unknown "?" cell follows it (and so takes
+   :last-child). The selected rule below is more specific and still wins. */
+.cooklang-nutriscore-cell.cooklang-nutriscore-e { border-radius: 0 6px 6px 0; }
+
+/* Letter color is picked per grade for WCAG contrast against its background,
+   which deviates from the official logo's all-white lettering (see
+   NutriScoreColorContribution). */
+.cooklang-nutriscore-a { background: var(--theia-cooklang-nutriscoreA); color: var(--theia-cooklang-nutriscoreForegroundLight); }
+.cooklang-nutriscore-b { background: var(--theia-cooklang-nutriscoreB); color: var(--theia-cooklang-nutriscoreForegroundDark); }
+.cooklang-nutriscore-c { background: var(--theia-cooklang-nutriscoreC); color: var(--theia-cooklang-nutriscoreForegroundDark); }
+.cooklang-nutriscore-d { background: var(--theia-cooklang-nutriscoreD); color: var(--theia-cooklang-nutriscoreForegroundDark); }
+.cooklang-nutriscore-e { background: var(--theia-cooklang-nutriscoreE); color: var(--theia-cooklang-nutriscoreForegroundDark); }
+
+.cooklang-nutriscore-strip .cooklang-nutriscore-cell.selected {
+    width: 18px;
+    height: 18px;
+    /* Overhangs visually without adding layout height, so the badge still
+       fits the 26px toolbar row; see the title's `margin-bottom` above. */
+    margin: -2px 0;
+    font-size: 12px;
+    opacity: 1;
+    border-radius: 7px;
+    box-shadow: 0 0 0 2px var(--theia-editor-background);
+    z-index: 1;
+}
+
+.cooklang-nutriscore.unknown .cooklang-nutriscore-cell {
+    background: var(--theia-disabledForeground);
+    color: var(--theia-editor-background);
+}
+
+.cooklang-nutriscore.unknown .cooklang-nutriscore-cell.selected {
+    background: var(--theia-descriptionForeground);
+}
+
+/* Same 26px cap as `.cooklang-nutriscore` above: a pill must not change the
+   header row's height either. */
+.cooklang-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1px solid var(--theia-badge-background);
+    border-radius: 10px;
+    color: var(--theia-foreground);
+    white-space: nowrap;
+    cursor: default;
+    /* Button reset: this is a native <button>, kept visually identical to the old <span>. */
+    appearance: none;
+    background: none;
+    margin: 0;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.cooklang-badge-pill:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.cooklang-badge-pill.good { border-color: var(--theia-charts-green); color: var(--theia-charts-green); }
+/* Yellow text is unreadable on light themes; only the border carries the tone. */
+.cooklang-badge-pill.warning { border-color: var(--theia-charts-yellow); color: var(--theia-foreground); }
+.cooklang-badge-pill.bad { border-color: var(--theia-charts-red); color: var(--theia-charts-red); }
+
+.theia-hover.cooklang-preview-badge-hover {
+    max-width: 360px;
+}

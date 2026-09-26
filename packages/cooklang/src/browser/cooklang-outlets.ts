@@ -33,6 +33,15 @@ export namespace CooklangOutlets {
     export const PREVIEW_SCHEME_CONTEXT_KEY = 'cooklangPreviewScheme';
     /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
     export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];
+    /**
+     * Badges in the recipe preview header. The editor executes each contributed
+     * command with a `PreviewOutletContext` and draws the `PreviewBadge` it
+     * returns (or nothing for `undefined`). A provider that does not answer
+     * within 10 s is treated as returning nothing. Providers run only for
+     * visible previews, and re-run when the recipe text, the scale, the
+     * user's subscription, or the contributed commands/menus change.
+     */
+    export const RECIPE_PREVIEW_BADGE: MenuPath = ['cooklang/recipePreview/badge'];
     /** Icon buttons in the menu preview header. Context: `PreviewOutletContext`. */
     export const MENU_PREVIEW_TOOLBAR: MenuPath = ['cooklang/menuPreview/toolbar'];
     /** Right-click on an ingredient in the recipe preview. Context: `IngredientOutletContext`. */
