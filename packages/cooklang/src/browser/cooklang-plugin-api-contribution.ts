@@ -70,17 +70,24 @@ export namespace CooklangPluginApi {
         PARSE_PANTRY: 'cooklang.api.parsePantry',
         /** `{ text, edit: PantryEdit }` → new file text, comments and formatting preserved. */
         EDIT_PANTRY: 'cooklang.api.editPantry',
-        /** `{ name }` → boolean: whether the signed-in user's plan includes a feature, e.g. `nutrition`. False when signed out. */
+        /** `{ name }` → boolean: whether the signed-in user's plan includes a feature, e.g. `nutrition_api`. False when signed out. */
         HAS_FEATURE: 'cooklang.api.hasFeature',
         /**
-         * `{ uri, template, scale? }` → `PluginReportResult`: renders a Jinja template (≤ 64 KB)
-         * against a `.cook` or `.menu` URI of any scheme (unsaved edits included) with the
-         * Reports engine and configuration. Template functions include everything reports
-         * have (e.g. `aggregate_nutrition`, the `tojson` filter).
+         * `{ uri, template, scale? }` → `PluginReportResult`: renders a Jinja template (at most
+         * {@link MAX_TEMPLATE_LENGTH} characters) against a `.cook` or `.menu` URI of any scheme
+         * (unsaved edits included) with the Reports engine and configuration. Template functions
+         * include everything reports have (e.g. `aggregate_nutrition`, the `tojson` filter).
+         * Bad arguments throw `Invalid arguments: …`; render failures resolve to
+         * `{ ok: false, reason, message }`. Successful results are cached by recipe text,
+         * template and scale; the cache is dropped on login/logout and on any `cooklang.*`
+         * preference change. Templates call the nutrition service with the signed-in user's
+         * token, so any installed plugin can make authenticated nutrition-service calls on the
+         * user's behalf (counting against their quota) without ever seeing the token.
          */
         RENDER_REPORT: 'cooklang.api.renderReport',
     } as const;
 
+    /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
     export const MAX_TEMPLATE_LENGTH = 64 * 1024;
 }
 

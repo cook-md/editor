@@ -50,6 +50,9 @@
 
 .cooklang-nutriscore-cell:first-child { border-radius: 6px 0 0 6px; }
 .cooklang-nutriscore-cell:last-child { border-radius: 0 6px 6px 0; }
+/* E ends the strip even when the unknown "?" cell follows it (and so takes
+   :last-child). The selected rule below is more specific and still wins. */
+.cooklang-nutriscore-cell.cooklang-nutriscore-e { border-radius: 0 6px 6px 0; }
 
 /* Letter color is picked per grade for WCAG contrast against its background,
    which deviates from the official logo's all-white lettering (see
@@ -105,7 +108,8 @@
 }
 
 .cooklang-badge-pill.good { border-color: var(--theia-charts-green); color: var(--theia-charts-green); }
-.cooklang-badge-pill.warning { border-color: var(--theia-charts-yellow); color: var(--theia-charts-yellow); }
+/* Yellow text is unreadable on light themes; only the border carries the tone. */
+.cooklang-badge-pill.warning { border-color: var(--theia-charts-yellow); color: var(--theia-foreground); }
 .cooklang-badge-pill.bad { border-color: var(--theia-charts-red); color: var(--theia-charts-red); }
 
 .theia-hover.cooklang-preview-badge-hover {

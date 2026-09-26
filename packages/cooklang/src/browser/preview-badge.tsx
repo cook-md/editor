@@ -55,7 +55,9 @@ export const PreviewBadgeView = ({ badge, onShowDetails, onHideDetails }: Previe
         <button
             type='button'
             className={`cooklang-nutriscore${unknown ? ' unknown' : ''}`}
-            aria-label={nls.localize('theia/cooklang/nutriscoreLabel', 'Nutri-Score {0}', badge.grade)}
+            aria-label={unknown
+                ? nls.localize('theia/cooklang/nutriscoreUnavailableLabel', 'Nutri-Score unavailable')
+                : nls.localize('theia/cooklang/nutriscoreLabel', 'Nutri-Score {0}', badge.grade)}
             onMouseEnter={handleMouseEnter}
             onFocus={handleFocus}
             onBlur={onHideDetails}

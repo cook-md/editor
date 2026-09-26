@@ -64,7 +64,7 @@ describe('PreviewBadgeView', () => {
             onShowDetails={() => undefined} onHideDetails={() => undefined} />));
         const badge = host.querySelector('button.cooklang-nutriscore')!;
         expect(badge.classList.contains('unknown')).to.equal(true);
-        expect(badge.getAttribute('aria-label')).to.equal('Nutri-Score unknown');
+        expect(badge.getAttribute('aria-label')).to.equal('Nutri-Score unavailable');
         expect(host.querySelector('.cooklang-nutriscore-cell.selected')!.textContent).to.equal('?');
     });
 

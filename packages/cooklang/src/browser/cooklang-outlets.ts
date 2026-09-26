@@ -36,8 +36,10 @@ export namespace CooklangOutlets {
     /**
      * Badges in the recipe preview header. The editor executes each contributed
      * command with a `PreviewOutletContext` and draws the `PreviewBadge` it
-     * returns (or nothing for `undefined`). Re-run when the recipe, scale or
-     * plan changes.
+     * returns (or nothing for `undefined`). A provider that does not answer
+     * within 10 s is treated as returning nothing. Providers run only for
+     * visible previews, and re-run when the recipe text, the scale, the
+     * user's subscription, or the contributed commands/menus change.
      */
     export const RECIPE_PREVIEW_BADGE: MenuPath = ['cooklang/recipePreview/badge'];
     /** Icon buttons in the menu preview header. Context: `PreviewOutletContext`. */

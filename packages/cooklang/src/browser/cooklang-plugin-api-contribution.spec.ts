@@ -50,7 +50,7 @@ class Fixture {
         lowStock: [],
     });
     editPantryError: Error | undefined = undefined;
-    features = new Set<string>(['nutrition']);
+    features = new Set<string>(['nutrition_api']);
     reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
 
     create(): CooklangPluginApiContribution {
@@ -363,7 +363,7 @@ describe('CooklangPluginApiContribution — hasFeature and renderReport', () => 
     it('reports plan features', async () => {
         const fixture = new Fixture();
         fixture.create();
-        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition' })).to.equal(true);
+        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition_api' })).to.equal(true);
         expect(await fixture.run(HAS_FEATURE, { name: 'sync' })).to.equal(false);
     });
 
@@ -372,7 +372,7 @@ describe('CooklangPluginApiContribution — hasFeature and renderReport', () => 
         const contribution = fixture.create();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (contribution as any).subscriptions = { hasFeature: async () => { throw new Error('offline'); } };
-        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition' })).to.equal(false);
+        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition_api' })).to.equal(false);
     });
 
     it('rejects a missing feature name', async () => {
