@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Show an official-style Nutri-Score strip (A–E) in the recipe preview header, computed from the cook.md nutrition API by an optional plugin, with a hover card explaining how trustworthy the score is, for users whose plan has the `nutrition` feature.
+**Goal:** Show an official-style Nutri-Score strip (A–E) in the recipe preview header, computed from the cook.md nutrition API by an optional plugin, with a hover card explaining how trustworthy the score is, for users whose plan has the `nutrition` feature — built on general editor pieces so later plugins (calories, cost, allergens…) need no editor changes.
 
-**Architecture:** The editor gains three generic pieces: `cooklang.api.hasFeature`, `cooklang.api.nutrition` (renders a fixed internal Jinja template through the existing report engine, so the login token never leaves the editor) and a data-driven badge outlet `cooklang/recipePreview/badge` (plugins return `{ kind, grade, tooltipMarkdown }`, the editor draws the strip and shows the markdown in Theia's `HoverService`). The new `cooklang.nutriscore` plugin in `~/Cooklang/plugins/nutriscore` owns the 2023 Nutri-Score algorithm and the trust summary.
+**Architecture:** The editor gains three generic pieces: `cooklang.api.hasFeature`, `cooklang.api.renderReport` (renders a plugin-supplied Jinja template against a recipe or menu with the Reports engine and configuration, so plugins get `aggregate_nutrition` & co. while the login token never leaves the editor; plus a native `to_json` template function), and a data-driven badge outlet `cooklang/recipePreview/badge` (plugins return a `PreviewBadge` — the `nutriscore` strip or a generic `pill` — and the editor draws it and shows its markdown in Theia's `HoverService`). The new `cooklang.nutriscore` plugin in `~/Cooklang/plugins/nutriscore` ships its nutrition template and owns the 2023 Nutri-Score algorithm and the trust summary.
 
 **Tech Stack:** Rust (NAPI-RS, minijinja 2), TypeScript 5.4, InversifyJS, React 18, Theia `HoverService`, VS Code extension API, mocha/chai.
 
@@ -30,18 +30,18 @@
 |---|---|
 | `cooklang-native/Cargo.toml` | add `minijinja = "2"` |
 | `cooklang-native/src/lib.rs` | `JsonExtension` (`to_json`), registered in `render_report`; test |
-| `cooklang/src/common/nutrition-types.ts` | create: service response types, `NutritionResult` |
-| `cooklang/src/common/cooklang-outlet-context.ts` | add `PreviewBadge` JSON type + namespace |
+| `cooklang/src/common/plugin-report-types.ts` | create: `PluginReportResult` |
+| `cooklang/src/common/cooklang-outlet-context.ts` | add `PreviewBadge` JSON type (`nutriscore` \| `pill`) + namespace |
 | `cooklang/src/common/cooklang-outlet-context.spec.ts` | tests for `PreviewBadge.parse/equals` |
-| `cooklang/src/browser/recipe-nutrition-service.ts` | create: template, error mapping, category retry, cache |
-| `cooklang/src/browser/recipe-nutrition-service.spec.ts` | create |
-| `cooklang/src/browser/cooklang-plugin-api-contribution.ts` | `HAS_FEATURE`, `NUTRITION` commands |
+| `cooklang/src/browser/plugin-report-service.ts` | create: render plugin templates with the report config, error mapping, cache |
+| `cooklang/src/browser/plugin-report-service.spec.ts` | create |
+| `cooklang/src/browser/cooklang-plugin-api-contribution.ts` | `HAS_FEATURE`, `RENDER_REPORT` commands |
 | `cooklang/src/browser/cooklang-plugin-api-contribution.spec.ts` | tests |
 | `cooklang/src/browser/cooklang-outlets.ts` | `RECIPE_PREVIEW_BADGE` |
 | `cooklang/src/browser/cooklang-outlet-service.ts` | `collectBadges` |
 | `cooklang/src/browser/cooklang-outlet-service.spec.ts` | tests |
 | `cooklang/src/browser/nutriscore-colors.ts` | create: `ColorContribution` |
-| `cooklang/src/browser/preview-badge.tsx` | create: `PreviewBadgeView` |
+| `cooklang/src/browser/preview-badge.tsx` | create: `PreviewBadgeView` (strip + pill) |
 | `cooklang/src/browser/preview-badge.spec.tsx` | create |
 | `cooklang/src/browser/style/preview-badge.css` | create |
 | `cooklang/src/browser/recipe-preview-components.tsx` | `RecipeView` renders badges |
@@ -54,6 +54,7 @@
 |---|---|
 | `package.json`, `tsconfig.json`, `LICENSE`, `README.md`, `scripts/deploy.js` | scaffold |
 | `src/cooklang-api.ts` (+ spec) | typed wrapper over `cooklang.api.*`, mirrored types |
+| `src/nutrition-template.ts` (+ spec) | the Jinja template sent to `renderReport`; output parsing |
 | `src/nutriscore.ts` (+ spec) | pure 2023 algorithm |
 | `src/nutrition-input.ts` (+ spec) | aggregate → per-100 g input |
 | `src/trust.ts` (+ spec) | confidence rollup, markdown |
@@ -83,7 +84,7 @@ curl -s -H "Authorization: Bearer $NUTRITION_TOKEN" -H 'content-type: applicatio
 
 Expected: HTTP 200 JSON `{"in_category": …}` for existing slugs, `category not found` error for others; the aggregate output shows the sodium key (expected `sodium_mg`). If the `/aggregate` body shape is rejected, copy the request shape from `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cookmd-nutrition-client-0.1.0/src/lib.rs` `pub fn aggregate`.
 
-- [ ] **Step 3: Record results.** Write the working slugs into the constant `FVL_CATEGORIES` used in Task 12 (default `['fruit', 'vegetable', 'legume']`) and the sodium key into `SODIUM_KEYS` in Task 11 (default `['sodium_mg']`). If none of the slugs exist, keep the default: the editor retries without categories and the hover says the fruit/veg share is unknown.
+- [ ] **Step 3: Record results.** Write the working slugs into the constant `FVL_CATEGORIES` used in Task 13 (default `['fruit', 'vegetable', 'legume']`) and the sodium key into `SODIUM_KEYS` in Task 11 (default `['sodium_mg']`). If none of the slugs exist, keep the default: the editor retries without categories and the hover says the fruit/veg share is unknown.
 
 ---
 
@@ -182,93 +183,51 @@ git commit -m "feat(native): to_json template function for internal report templ
 
 ---
 
-## Task 3: Shared types — nutrition result and preview badge
+## Task 3: Shared types — plugin report result and preview badge
 
 **Files:**
-- Create: `packages/cooklang/src/common/nutrition-types.ts`
+- Create: `packages/cooklang/src/common/plugin-report-types.ts`
 - Modify: `packages/cooklang/src/common/cooklang-outlet-context.ts`
 - Test: `packages/cooklang/src/common/cooklang-outlet-context.spec.ts`
 
-- [ ] **Step 1: Create `nutrition-types.ts`** (header + body):
+- [ ] **Step 1: Create `plugin-report-types.ts`** (header + body):
 
 ```ts
-/*
- * Result of `cooklang.api.nutrition`. `aggregate` is the cook.md nutrition
- * service's `/aggregate` response verbatim (snake_case keys), so plugins see
- * exactly what the service returned. Plain JSON: it crosses the plugin host.
+/**
+ * Result of `cooklang.api.renderReport`: a plugin-supplied template rendered
+ * by the Reports engine. Plain JSON: it crosses the plugin host.
+ * `template` covers syntax errors, unknown functions and errors raised by
+ * template functions that are not auth, plan, network or server problems.
  */
+export type PluginReportFailureReason = 'unauthenticated' | 'forbidden' | 'network' | 'server' | 'template';
 
-export interface NutritionMacros {
-    kcal: number;
-    protein_g: number;
-    fat_g: number;
-    carb_g: number;
-    fiber_g: number;
-    sugar_g: number;
-    sat_fat_g: number;
-}
-
-export interface NutritionItem {
-    ingredient: string;
-    preparation: string;
-    amount: { value: number; unit: string; mass_g: number };
-    macros: NutritionMacros;
-    micros: Record<string, number>;
-    /** Data source, e.g. `usda`. */
-    source: string;
-    /** `confirmed` | `partial` | `estimated`. */
-    confidence: string;
-    warnings: unknown[];
-}
-
-export interface NutritionFailure {
-    index: number;
-    ingredient: string;
-    error: { code: string; message: string; suggestions?: string[] };
-}
-
-export interface NutritionTotals {
-    mass_g: number;
-    macros: NutritionMacros;
-    micros: Record<string, number>;
-    confidence: string;
-    confidence_weighted: string;
-    is_partial: boolean;
-    included_count: number;
-    failed_count: number;
-}
-
-export interface NutritionAggregate {
-    items: NutritionItem[];
-    failures: NutritionFailure[];
-    totals: NutritionTotals;
-}
-
-export type NutritionFailureReason = 'unauthenticated' | 'forbidden' | 'network' | 'server' | 'parse';
-
-export type NutritionResult =
-    | {
-        ok: true;
-        aggregate: NutritionAggregate;
-        /** Grams of matched ingredients in any requested category; absent when categories were not requested or not supported. */
-        categoryMassG?: number;
-    }
-    | { ok: false; reason: NutritionFailureReason; message: string };
+export type PluginReportResult =
+    | { ok: true; output: string }
+    | { ok: false; reason: PluginReportFailureReason; message: string };
 ```
 
-- [ ] **Step 2: Write failing tests** — append to `cooklang-outlet-context.spec.ts` (keep its existing imports; add `PreviewBadge` to the import from `./cooklang-outlet-context`):
+- [ ] **Step 2: Write failing tests** — append to `cooklang-outlet-context.spec.ts` (add `PreviewBadge` to its import from `./cooklang-outlet-context`):
 
 ```ts
 describe('PreviewBadge', () => {
-    it('accepts a well-formed badge', () => {
+    it('accepts a Nutri-Score badge', () => {
         expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'B', tooltipMarkdown: '**B**' }))
             .to.deep.equal({ kind: 'nutriscore', grade: 'B', tooltipMarkdown: '**B**' });
     });
 
-    it('rejects unknown kinds, grades and non-string tooltips', () => {
+    it('accepts a pill badge and trims its text', () => {
+        expect(PreviewBadge.parse({ kind: 'pill', text: ' 540 kcal ', tone: 'neutral', tooltipMarkdown: 'per serving' }))
+            .to.deep.equal({ kind: 'pill', text: '540 kcal', tone: 'neutral', tooltipMarkdown: 'per serving' });
+    });
+
+    it('rejects unknown kinds, grades, tones and bad text', () => {
         expect(PreviewBadge.parse({ kind: 'other', grade: 'B', tooltipMarkdown: '' })).to.equal(undefined);
         expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'F', tooltipMarkdown: '' })).to.equal(undefined);
         expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'A', tooltipMarkdown: 3 })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'x', tone: 'loud', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: '   ', tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'x'.repeat(PreviewBadge.MAX_TEXT_LENGTH + 1), tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'a\nb', tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
         expect(PreviewBadge.parse(undefined)).to.equal(undefined);
     });
 
@@ -278,8 +237,9 @@ describe('PreviewBadge', () => {
     });
 
     it('compares badge lists by value', () => {
-        const a = { kind: 'nutriscore' as const, grade: 'A' as const, tooltipMarkdown: 't' };
-        expect(PreviewBadge.equals([a], [{ ...a }])).to.equal(true);
+        const a: PreviewBadge = { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 't' };
+        const pill: PreviewBadge = { kind: 'pill', text: 'x', tone: 'bad', tooltipMarkdown: '' };
+        expect(PreviewBadge.equals([a, pill], [{ ...a }, { ...pill }])).to.equal(true);
         expect(PreviewBadge.equals([a], [{ ...a, grade: 'B' }])).to.equal(false);
         expect(PreviewBadge.equals([a], [])).to.equal(false);
     });
@@ -295,22 +255,24 @@ Expected: FAIL `Module has no exported member 'PreviewBadge'`.
 
 ```ts
 export type PreviewBadgeGrade = 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
+export type PreviewBadgeTone = 'neutral' | 'good' | 'warning' | 'bad';
 
 /**
  * What a command contributed to the `cooklang/recipePreview/badge` outlet
- * returns. The editor owns the visuals: `kind` picks a built-in rendering,
- * and `tooltipMarkdown` is shown untrusted (no HTML, no `command:` links) on
- * hover. Return `undefined` for no badge.
+ * returns. The editor owns the visuals: `kind` picks a built-in rendering
+ * (`nutriscore`: the official-style A–E strip; `pill`: short text tinted by
+ * `tone`), and `tooltipMarkdown` is shown untrusted (no HTML, no `command:`
+ * links) on hover. Return `undefined` for no badge. New kinds are additive.
  */
-export interface PreviewBadge {
-    kind: 'nutriscore';
-    grade: PreviewBadgeGrade;
-    tooltipMarkdown: string;
-}
+export type PreviewBadge =
+    | { kind: 'nutriscore'; grade: PreviewBadgeGrade; tooltipMarkdown: string }
+    | { kind: 'pill'; text: string; tone: PreviewBadgeTone; tooltipMarkdown: string };
 
 export namespace PreviewBadge {
     export const GRADES: readonly PreviewBadgeGrade[] = ['A', 'B', 'C', 'D', 'E', 'unknown'];
+    export const TONES: readonly PreviewBadgeTone[] = ['neutral', 'good', 'warning', 'bad'];
     export const MAX_TOOLTIP_LENGTH = 4000;
+    export const MAX_TEXT_LENGTH = 24;
 
     /** A validated copy of a plugin's return value, or `undefined` when it is not a badge. */
     export function parse(value: unknown): PreviewBadge | undefined {
@@ -318,21 +280,27 @@ export namespace PreviewBadge {
             return undefined;
         }
         const candidate = value as Record<string, unknown>;
-        if (candidate.kind !== 'nutriscore'
-            || !GRADES.includes(candidate.grade as PreviewBadgeGrade)
-            || typeof candidate.tooltipMarkdown !== 'string') {
+        if (typeof candidate.tooltipMarkdown !== 'string') {
             return undefined;
         }
-        return {
-            kind: 'nutriscore',
-            grade: candidate.grade as PreviewBadgeGrade,
-            tooltipMarkdown: candidate.tooltipMarkdown.slice(0, MAX_TOOLTIP_LENGTH),
-        };
+        const tooltipMarkdown = candidate.tooltipMarkdown.slice(0, MAX_TOOLTIP_LENGTH);
+        if (candidate.kind === 'nutriscore' && GRADES.includes(candidate.grade as PreviewBadgeGrade)) {
+            return { kind: 'nutriscore', grade: candidate.grade as PreviewBadgeGrade, tooltipMarkdown };
+        }
+        if (candidate.kind === 'pill' && TONES.includes(candidate.tone as PreviewBadgeTone) && typeof candidate.text === 'string') {
+            const text = candidate.text.trim();
+            // eslint-disable-next-line no-control-regex
+            if (text === '' || text.length > MAX_TEXT_LENGTH || /[\u0000-\u001f\u007f]/.test(text)) {
+                return undefined;
+            }
+            return { kind: 'pill', text, tone: candidate.tone as PreviewBadgeTone, tooltipMarkdown };
+        }
+        return undefined;
     }
 
+    /** Parsed badges have a fixed key order, so their JSON compares by value. */
     export function equals(a: readonly PreviewBadge[], b: readonly PreviewBadge[]): boolean {
-        return a.length === b.length && a.every((badge, index) =>
-            badge.kind === b[index].kind && badge.grade === b[index].grade && badge.tooltipMarkdown === b[index].tooltipMarkdown);
+        return JSON.stringify(a) === JSON.stringify(b);
     }
 }
 ```
@@ -340,49 +308,42 @@ export namespace PreviewBadge {
 - [ ] **Step 5: Compile and run tests**
 
 Run: `npx lerna run compile --scope @theia/cooklang && cd packages/cooklang && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH npx theiaext test`
-Expected: PASS, including the four new `PreviewBadge` tests.
+Expected: PASS, including the five new `PreviewBadge` tests.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/cooklang/src/common/nutrition-types.ts packages/cooklang/src/common/cooklang-outlet-context.ts packages/cooklang/src/common/cooklang-outlet-context.spec.ts
-git commit -m "feat(cooklang): PreviewBadge and nutrition result types for plugins"
+git add packages/cooklang/src/common/plugin-report-types.ts packages/cooklang/src/common/cooklang-outlet-context.ts packages/cooklang/src/common/cooklang-outlet-context.spec.ts
+git commit -m "feat(cooklang): PreviewBadge and plugin report result types"
 ```
 
 ---
 
-## Task 4: `RecipeNutritionService`
+## Task 4: `PluginReportService`
 
-Reads the recipe text, renders the internal template, maps errors, retries without categories, caches.
+Renders a plugin-supplied template against a recipe or menu with the Reports configuration, maps errors, caches.
 
 **Files:**
-- Create: `packages/cooklang/src/browser/recipe-nutrition-service.ts`
-- Test: `packages/cooklang/src/browser/recipe-nutrition-service.spec.ts`
+- Create: `packages/cooklang/src/browser/plugin-report-service.ts`
+- Test: `packages/cooklang/src/browser/plugin-report-service.spec.ts`
 - Modify: `packages/cooklang/src/browser/cooklang-frontend-module.ts` (bind)
 
-- [ ] **Step 1: Write the failing test** `recipe-nutrition-service.spec.ts` (header, then the JSDOM preamble from Conventions, then):
+- [ ] **Step 1: Write the failing test** `plugin-report-service.spec.ts` (header, then the JSDOM preamble from Conventions, then):
 
 ```ts
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
-import { RecipeNutritionService } from './recipe-nutrition-service';
-
-const AGGREGATE = {
-    items: [
-        { ingredient: 'apple', preparation: '', amount: { value: 2, unit: '', mass_g: 300 }, macros: {}, micros: {}, source: 'usda', confidence: 'confirmed', warnings: [] },
-        { ingredient: 'flour', preparation: '', amount: { value: 200, unit: 'g', mass_g: 200 }, macros: {}, micros: {}, source: 'usda', confidence: 'confirmed', warnings: [] },
-    ],
-    failures: [],
-    totals: { mass_g: 500 },
-};
+import { PluginReportService } from './plugin-report-service';
 
 class Fixture {
     renders: Array<{ content: string; template: string; config: string }> = [];
+    configs: Array<{ scale: number; uri: string }> = [];
     responses: string[] = [];
     text = 'Mix @apple{2} and @flour{200%g}.';
+    model = true;
 
-    create(): RecipeNutritionService {
-        const service = new RecipeNutritionService();
+    create(): PluginReportService {
+        const service = new PluginReportService();
         /* eslint-disable @typescript-eslint/no-explicit-any */
         (service as any).languageService = {
             renderReport: async (content: string, template: string, config: string) => {
@@ -390,43 +351,37 @@ class Fixture {
                 return this.responses.shift() ?? JSON.stringify({ error: 'no response queued' });
             },
         };
-        (service as any).reportConfigService = { buildConfigJson: async (scale: number) => JSON.stringify({ scale }) };
-        (service as any).monacoWorkspace = { getTextDocument: () => ({ getText: () => this.text }) };
-        (service as any).fileService = { read: async () => ({ value: this.text }) };
+        (service as any).reportConfigService = {
+            buildConfigJson: async (scale: number, uri: URI) => {
+                this.configs.push({ scale, uri: uri.toString() });
+                return JSON.stringify({ scale });
+            },
+        };
+        (service as any).monacoWorkspace = { getTextDocument: () => this.model ? { getText: () => this.text } : undefined };
+        (service as any).fileService = { read: async () => ({ value: `disk: ${this.text}` }) };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         return service;
     }
 }
 
 const URI_A = new URI('file:///ws/a.cook');
-const output = (value: unknown): string => JSON.stringify({ output: JSON.stringify(value) });
+const TEMPLATE = '{{ to_json(ingredients | length) }}';
 
-describe('RecipeNutritionService', () => {
-    it('returns the aggregate and sums the mass of category ingredients', async () => {
+describe('PluginReportService', () => {
+    it('renders the template against the open editor text with the report config', async () => {
         const fixture = new Fixture();
-        fixture.responses.push(output({ aggregate: AGGREGATE, categoryIngredients: ['apple'] }));
-        const result = await fixture.create().compute(URI_A, 2, ['fruit']);
-        expect(result).to.deep.equal({ ok: true, aggregate: AGGREGATE, categoryMassG: 300 });
-        expect(fixture.renders[0].content).to.equal(fixture.text);
-        expect(fixture.renders[0].config).to.equal(JSON.stringify({ scale: 2 }));
-        expect(fixture.renders[0].template).to.contain('{%- set categories = ["fruit"] -%}');
+        fixture.responses.push(JSON.stringify({ output: '2' }));
+        expect(await fixture.create().render(URI_A, TEMPLATE, 2)).to.deep.equal({ ok: true, output: '2' });
+        expect(fixture.renders).to.deep.equal([{ content: fixture.text, template: TEMPLATE, config: JSON.stringify({ scale: 2 }) }]);
+        expect(fixture.configs).to.deep.equal([{ scale: 2, uri: 'file:///ws/a.cook' }]);
     });
 
-    it('omits categoryMassG when no categories were requested', async () => {
+    it('reads the file when no editor has it open', async () => {
         const fixture = new Fixture();
-        fixture.responses.push(output({ aggregate: AGGREGATE, categoryIngredients: [] }));
-        const result = await fixture.create().compute(URI_A, 1, []);
-        expect(result).to.deep.equal({ ok: true, aggregate: AGGREGATE });
-    });
-
-    it('retries without categories when the service does not know a slug', async () => {
-        const fixture = new Fixture();
-        fixture.responses.push(JSON.stringify({ error: 'Error: category not found: legume' }));
-        fixture.responses.push(output({ aggregate: AGGREGATE, categoryIngredients: [] }));
-        const result = await fixture.create().compute(URI_A, 1, ['legume']);
-        expect(result).to.deep.equal({ ok: true, aggregate: AGGREGATE });
-        expect(fixture.renders).to.have.length(2);
-        expect(fixture.renders[1].template).to.contain('{%- set categories = [] -%}');
+        fixture.model = false;
+        fixture.responses.push(JSON.stringify({ output: '' }));
+        await fixture.create().render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders[0].content).to.equal(`disk: ${fixture.text}`);
     });
 
     for (const [message, reason] of [
@@ -435,40 +390,45 @@ describe('RecipeNutritionService', () => {
         ['Error: transport error: dns failure', 'network'],
         ['Error: nutrition service unavailable: 503', 'network'],
         ['Error: server error: status 500', 'server'],
-        ['Error: unknown function', 'parse'],
+        ['Error: category not found: legume\n\n--- base ---', 'template'],
+        ['Error: unknown function', 'template'],
     ] as const) {
-        it(`maps "${message}" to ${reason}`, async () => {
+        it(`maps "${message.split('\n')[0]}" to ${reason}`, async () => {
             const fixture = new Fixture();
             fixture.responses.push(JSON.stringify({ error: message }));
-            const result = await fixture.create().compute(URI_A, 1, []);
-            expect(result).to.deep.equal({ ok: false, reason, message: message.replace(/^Error: /, '').split('\n')[0] });
+            expect(await fixture.create().render(URI_A, TEMPLATE, 1))
+                .to.deep.equal({ ok: false, reason, message: message.replace(/^Error: /, '').split('\n')[0] });
         });
     }
 
-    it('serves repeated requests for the same text and scale from the cache, but not failures', async () => {
+    it('reports an unreadable engine response as a template failure', async () => {
+        const fixture = new Fixture();
+        fixture.responses.push('not json');
+        expect(await fixture.create().render(URI_A, TEMPLATE, 1))
+            .to.deep.equal({ ok: false, reason: 'template', message: 'Unexpected response from the report engine.' });
+    });
+
+    it('caches successes by uri, text, template and scale, but not failures', async () => {
         const fixture = new Fixture();
         const service = fixture.create();
         fixture.responses.push(JSON.stringify({ error: 'Error: server error: status 500' }));
-        fixture.responses.push(output({ aggregate: AGGREGATE, categoryIngredients: [] }));
-        await service.compute(URI_A, 1, []);
-        await service.compute(URI_A, 1, []);
-        await service.compute(URI_A, 1, []);
+        fixture.responses.push(JSON.stringify({ output: 'a' }));
+        await service.render(URI_A, TEMPLATE, 1);
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(await service.render(URI_A, TEMPLATE, 1)).to.deep.equal({ ok: true, output: 'a' });
         expect(fixture.renders).to.have.length(2);
-        fixture.text = 'Changed @apple{1}.';
-        fixture.responses.push(output({ aggregate: AGGREGATE, categoryIngredients: [] }));
-        await service.compute(URI_A, 1, []);
-        expect(fixture.renders).to.have.length(3);
-    });
-
-    it('rejects category slugs that could break the template', async () => {
-        const fixture = new Fixture();
-        let error: unknown;
-        try {
-            await fixture.create().compute(URI_A, 1, ['fruit"] %}{{ x']);
-        } catch (e) {
-            error = e;
+        for (const change of [
+            (): Promise<unknown> => service.render(URI_A, TEMPLATE, 2),
+            (): Promise<unknown> => service.render(URI_A, '{{ 1 }}', 1),
+            (): Promise<unknown> => service.render(new URI('file:///ws/b.cook'), TEMPLATE, 1),
+        ]) {
+            fixture.responses.push(JSON.stringify({ output: 'b' }));
+            await change();
         }
-        expect(String(error)).to.contain('Invalid arguments');
+        fixture.text = 'Changed @apple{1}.';
+        fixture.responses.push(JSON.stringify({ output: 'c' }));
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders).to.have.length(6);
     });
 });
 ```
@@ -476,9 +436,9 @@ describe('RecipeNutritionService', () => {
 - [ ] **Step 2: Run, expect failure** (module missing)
 
 Run: `npx lerna run compile --scope @theia/cooklang`
-Expected: FAIL `Cannot find module './recipe-nutrition-service'`.
+Expected: FAIL `Cannot find module './plugin-report-service'`.
 
-- [ ] **Step 3: Implement** `recipe-nutrition-service.ts`:
+- [ ] **Step 3: Implement** `plugin-report-service.ts`:
 
 ```ts
 import { injectable, inject } from '@theia/core/shared/inversify';
@@ -486,19 +446,20 @@ import URI from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { CooklangLanguageService } from '../common/cooklang-language-service';
-import { NutritionAggregate, NutritionFailureReason, NutritionResult } from '../common/nutrition-types';
+import { PluginReportFailureReason, PluginReportResult } from '../common/plugin-report-types';
 import { ReportConfigService } from './report-config-service';
 
 /**
- * Nutrition for one recipe, computed by the cook.md nutrition service through
- * the report engine (`aggregate_nutrition`, `is_in_category`), so the login
- * token and service URL stay in the editor. Backs `cooklang.api.nutrition`.
+ * Renders a plugin's Jinja template against a recipe or menu with the same
+ * configuration as the Reports feature (login token, nutrition service,
+ * pantry, aisle, datastore, scale), so plugins can build on report functions
+ * such as `aggregate_nutrition` without ever seeing the token. Backs
+ * `cooklang.api.renderReport`.
  */
 @injectable()
-export class RecipeNutritionService {
+export class PluginReportService {
 
     static readonly CACHE_SIZE = 20;
-    static readonly SLUG = /^[a-z0-9-]{1,40}$/;
 
     @inject(CooklangLanguageService)
     protected readonly languageService: CooklangLanguageService;
@@ -512,28 +473,22 @@ export class RecipeNutritionService {
     @inject(FileService)
     protected readonly fileService: FileService;
 
-    /** Successful results only, most recent last. */
-    protected readonly cache = new Map<string, NutritionResult>();
+    /** Successful results only, least recently used first. */
+    protected readonly cache = new Map<string, PluginReportResult>();
 
-    async compute(uri: URI, scale: number, categories: readonly string[]): Promise<NutritionResult> {
-        if (!categories.every(slug => RecipeNutritionService.SLUG.test(slug))) {
-            throw new Error('Invalid arguments: `categories` must be lowercase slugs (a-z, 0-9, -).');
-        }
+    async render(uri: URI, template: string, scale: number): Promise<PluginReportResult> {
         const text = await this.readText(uri);
-        const key = JSON.stringify([text, scale, categories]);
+        const key = JSON.stringify([uri.toString(), text, template, scale]);
         const cached = this.cache.get(key);
         if (cached) {
             this.cache.delete(key);
             this.cache.set(key, cached);
             return cached;
         }
-        let result = await this.render(uri, text, scale, categories);
-        if (!result.ok && categories.length > 0 && /category not found/i.test(result.message)) {
-            result = await this.render(uri, text, scale, []);
-        }
+        const result = await this.renderUncached(uri, text, template, scale);
         if (result.ok) {
             this.cache.set(key, result);
-            if (this.cache.size > RecipeNutritionService.CACHE_SIZE) {
+            if (this.cache.size > PluginReportService.CACHE_SIZE) {
                 this.cache.delete(this.cache.keys().next().value!);
             }
         }
@@ -546,35 +501,26 @@ export class RecipeNutritionService {
         return model ? model.getText() : (await this.fileService.read(uri)).value;
     }
 
-    protected async render(uri: URI, text: string, scale: number, categories: readonly string[]): Promise<NutritionResult> {
+    protected async renderUncached(uri: URI, text: string, template: string, scale: number): Promise<PluginReportResult> {
         const config = await this.reportConfigService.buildConfigJson(scale, uri);
-        const raw = await this.languageService.renderReport(text, this.template(categories), config);
-        let parsed: { output?: string; error?: string };
+        const raw = await this.languageService.renderReport(text, template, config);
+        let parsed: { output?: unknown; error?: unknown };
         try {
             parsed = JSON.parse(raw);
         } catch {
-            return { ok: false, reason: 'parse', message: 'Unexpected response from the report engine.' };
+            return { ok: false, reason: 'template', message: 'Unexpected response from the report engine.' };
         }
         if (typeof parsed.error === 'string') {
             const message = parsed.error.replace(/^Error: /, '').split('\n')[0];
             return { ok: false, reason: this.reason(message), message };
         }
-        try {
-            const data = JSON.parse(parsed.output ?? '') as { aggregate: NutritionAggregate; categoryIngredients: string[] };
-            const result: Extract<NutritionResult, { ok: true }> = { ok: true, aggregate: data.aggregate };
-            if (categories.length > 0) {
-                const members = new Set(data.categoryIngredients);
-                result.categoryMassG = data.aggregate.items
-                    .filter(item => members.has(item.ingredient))
-                    .reduce((sum, item) => sum + (item.amount?.mass_g ?? 0), 0);
-            }
-            return result;
-        } catch {
-            return { ok: false, reason: 'parse', message: 'Unexpected nutrition data.' };
+        if (typeof parsed.output !== 'string') {
+            return { ok: false, reason: 'template', message: 'Unexpected response from the report engine.' };
         }
+        return { ok: true, output: parsed.output };
     }
 
-    protected reason(message: string): NutritionFailureReason {
+    protected reason(message: string): PluginReportFailureReason {
         if (/authentication required|unauthori[sz]ed/i.test(message)) {
             return 'unauthenticated';
         }
@@ -587,64 +533,34 @@ export class RecipeNutritionService {
         if (/server error/i.test(message)) {
             return 'server';
         }
-        return 'parse';
-    }
-
-    /** `categories` are validated slugs, so embedding them as a JSON list is safe. */
-    protected template(categories: readonly string[]): string {
-        return [
-            `{%- set categories = ${JSON.stringify(categories)} -%}`,
-            '{%- set agg = aggregate_nutrition(ingredients) -%}',
-            '{%- set found = namespace(names=[]) -%}',
-            '{%- for item in agg["items"] -%}',
-            '{%- set hit = namespace(value=false) -%}',
-            '{%- for slug in categories -%}',
-            '{%- if not hit.value and is_in_category(item.ingredient, slug) -%}{%- set hit.value = true -%}{%- endif -%}',
-            '{%- endfor -%}',
-            '{%- if hit.value -%}{%- set found.names = found.names + [item.ingredient] -%}{%- endif -%}',
-            '{%- endfor -%}',
-            '{{ to_json({"aggregate": agg, "categoryIngredients": found.names}) }}',
-        ].join('\n');
+        return 'template';
     }
 }
 ```
 
-Note for the retry test: the slug check runs before rendering; the retry passes `[]`, whose template line is `{%- set categories = [] -%}` as asserted.
-
 - [ ] **Step 4: Bind** in `cooklang-frontend-module.ts` next to `bind(ReportConfigService)…` (line ~176):
 
 ```ts
-    bind(RecipeNutritionService).toSelf().inSingletonScope();
+    bind(PluginReportService).toSelf().inSingletonScope();
 ```
 
-and add `import { RecipeNutritionService } from './recipe-nutrition-service';`.
+and add `import { PluginReportService } from './plugin-report-service';`.
 
 - [ ] **Step 5: Compile and test**
 
 Run: `npx lerna run compile --scope @theia/cooklang && cd packages/cooklang && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH npx theiaext test`
-Expected: all `RecipeNutritionService` tests PASS.
+Expected: all `PluginReportService` tests PASS.
 
-- [ ] **Step 6: Verify the template against the real engine** (no token → expect the auth error, which proves `aggregate_nutrition` ran; with a token from Task 1 → expect JSON):
-
-```bash
-cd packages/cooklang-native && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "
-const n=require('./index.js');
-const t=['{%- set categories = [\"fruit\"] -%}','{%- set agg = aggregate_nutrition(ingredients) -%}','{%- set found = namespace(names=[]) -%}','{%- for item in agg[\"items\"] -%}','{%- set hit = namespace(value=false) -%}','{%- for slug in categories -%}','{%- if not hit.value and is_in_category(item.ingredient, slug) -%}{%- set hit.value = true -%}{%- endif -%}','{%- endfor -%}','{%- if hit.value -%}{%- set found.names = found.names + [item.ingredient] -%}{%- endif -%}','{%- endfor -%}','{{ to_json({\"aggregate\": agg, \"categoryIngredients\": found.names}) }}'].join('\n');
-console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', t, JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,400));"
-```
-
-Expected without token: `{"error":"Error: authentication required: …`. With token: `{"output":"{\"aggregate\":{\"items\":[…` and `categoryIngredients` containing `apple`. If minijinja rejects `namespace` or the `and` short-circuit, fix the template in the service and the spec's expected strings together.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add packages/cooklang/src/browser/recipe-nutrition-service.ts packages/cooklang/src/browser/recipe-nutrition-service.spec.ts packages/cooklang/src/browser/cooklang-frontend-module.ts
-git commit -m "feat(cooklang): RecipeNutritionService — nutrition via the report engine"
+git add packages/cooklang/src/browser/plugin-report-service.ts packages/cooklang/src/browser/plugin-report-service.spec.ts packages/cooklang/src/browser/cooklang-frontend-module.ts
+git commit -m "feat(cooklang): PluginReportService — render plugin templates with the report config"
 ```
 
 ---
 
-## Task 5: `cooklang.api.hasFeature` and `cooklang.api.nutrition`
+## Task 5: `cooklang.api.hasFeature` and `cooklang.api.renderReport`
 
 **Files:**
 - Modify: `packages/cooklang/src/browser/cooklang-plugin-api-contribution.ts`
@@ -654,15 +570,15 @@ git commit -m "feat(cooklang): RecipeNutritionService — nutrition via the repo
 
 ```ts
     features = new Set<string>(['nutrition']);
-    nutritionCalls: Array<{ uri: string; scale: number; categories: readonly string[] }> = [];
+    reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
 ```
 
 ```ts
         (contribution as any).subscriptions = { hasFeature: async (name: string) => this.features.has(name) };
-        (contribution as any).nutrition = {
-            compute: async (uri: URI, scale: number, categories: readonly string[]) => {
-                this.nutritionCalls.push({ uri: uri.toString(), scale, categories });
-                return { ok: true, aggregate: { items: [], failures: [], totals: {} } };
+        (contribution as any).pluginReports = {
+            render: async (uri: URI, template: string, scale: number) => {
+                this.reportCalls.push({ uri: uri.toString(), template, scale });
+                return { ok: true, output: 'rendered' };
             },
         };
 ```
@@ -670,8 +586,8 @@ git commit -m "feat(cooklang): RecipeNutritionService — nutrition via the repo
 Then add a `describe` block at the end of the file, using the fixture's existing `run(id, args)` and `error(id, args)` helpers:
 
 ```ts
-describe('CooklangPluginApiContribution — nutrition', () => {
-    const { HAS_FEATURE, NUTRITION } = CooklangPluginApi.Commands;
+describe('CooklangPluginApiContribution — hasFeature and renderReport', () => {
+    const { HAS_FEATURE, RENDER_REPORT } = CooklangPluginApi.Commands;
 
     it('reports plan features', async () => {
         const fixture = new Fixture();
@@ -680,38 +596,45 @@ describe('CooklangPluginApiContribution — nutrition', () => {
         expect(await fixture.run(HAS_FEATURE, { name: 'sync' })).to.equal(false);
     });
 
+    it('treats a failing subscription lookup as no feature', async () => {
+        const fixture = new Fixture();
+        const contribution = fixture.create();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (contribution as any).subscriptions = { hasFeature: async () => { throw new Error('offline'); } };
+        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition' })).to.equal(false);
+    });
+
     it('rejects a missing feature name', async () => {
         const fixture = new Fixture();
         fixture.create();
         expect(await fixture.error(HAS_FEATURE, {})).to.match(/^Invalid arguments/);
     });
 
-    it('computes nutrition for a .cook URI of any scheme with defaults', async () => {
+    it('renders a template for a recipe or menu URI of any scheme, scale 1 by default', async () => {
         const fixture = new Fixture();
         fixture.create();
-        const result = await fixture.run(NUTRITION, { uri: 'cooklang-hub:/x/Soup.cook' });
-        expect(result).to.deep.equal({ ok: true, aggregate: { items: [], failures: [], totals: {} } });
-        expect(fixture.nutritionCalls).to.deep.equal([{ uri: 'cooklang-hub:/x/Soup.cook', scale: 1, categories: [] }]);
+        expect(await fixture.run(RENDER_REPORT, { uri: 'cooklang-hub:/x/Soup.cook', template: '{{ 1 }}' }))
+            .to.deep.equal({ ok: true, output: 'rendered' });
+        await fixture.run(RENDER_REPORT, { uri: 'file:///ws/week.menu', template: '{{ 2 }}', scale: 3 });
+        expect(fixture.reportCalls).to.deep.equal([
+            { uri: 'cooklang-hub:/x/Soup.cook', template: '{{ 1 }}', scale: 1 },
+            { uri: 'file:///ws/week.menu', template: '{{ 2 }}', scale: 3 },
+        ]);
     });
 
-    it('passes scale and categories through', async () => {
-        const fixture = new Fixture();
-        fixture.create();
-        await fixture.run(NUTRITION, { uri: 'file:///ws/a.cook', scale: 2, categories: ['fruit'] });
-        expect(fixture.nutritionCalls[0]).to.deep.equal({ uri: 'file:///ws/a.cook', scale: 2, categories: ['fruit'] });
-    });
-
-    it('rejects non-recipe URIs, bad scales and bad categories', async () => {
+    it('rejects bad URIs, scales and templates', async () => {
         const fixture = new Fixture();
         fixture.create();
         for (const args of [
-            { uri: 'file:///ws/a.menu' },
-            { uri: 'a.cook' },
-            { uri: 'file:///ws/a.cook', scale: 0 },
-            { uri: 'file:///ws/a.cook', categories: 'fruit' },
+            { uri: 'file:///ws/notes.md', template: '{{ 1 }}' },
+            { uri: 'a.cook', template: '{{ 1 }}' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', scale: 0 },
+            { uri: 'file:///ws/a.cook', template: '' },
+            { uri: 'file:///ws/a.cook', template: 'x'.repeat(64 * 1024 + 1) },
         ]) {
-            expect(await fixture.error(NUTRITION, args)).to.match(/^Invalid arguments/);
+            expect(await fixture.error(RENDER_REPORT, args)).to.match(/^Invalid arguments/);
         }
+        expect(fixture.reportCalls).to.deep.equal([]);
     });
 });
 ```
@@ -729,8 +652,8 @@ Imports:
 
 ```ts
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
-import { NutritionResult } from '../common/nutrition-types';
-import { RecipeNutritionService } from './recipe-nutrition-service';
+import { PluginReportResult } from '../common/plugin-report-types';
+import { PluginReportService } from './plugin-report-service';
 ```
 
 Add to `Commands`:
@@ -739,11 +662,18 @@ Add to `Commands`:
         /** `{ name }` → boolean: whether the signed-in user's plan includes a feature, e.g. `nutrition`. False when signed out. */
         HAS_FEATURE: 'cooklang.api.hasFeature',
         /**
-         * `{ uri, scale?, categories? }` → `NutritionResult`: nutrition for a `.cook` URI of any
-         * scheme (unsaved edits included) from the cook.md nutrition service. `categories` are
-         * category slugs whose matched ingredient mass is summed into `categoryMassG`.
+         * `{ uri, template, scale? }` → `PluginReportResult`: renders a Jinja template (≤ 64 KB)
+         * against a `.cook` or `.menu` URI of any scheme (unsaved edits included) with the
+         * Reports engine and configuration. Template functions include everything reports
+         * have (e.g. `aggregate_nutrition`) plus `to_json(value)`.
          */
-        NUTRITION: 'cooklang.api.nutrition',
+        RENDER_REPORT: 'cooklang.api.renderReport',
+```
+
+Add a constant inside the `CooklangPluginApi` namespace:
+
+```ts
+    export const MAX_TEMPLATE_LENGTH = 64 * 1024;
 ```
 
 Injections:
@@ -752,15 +682,15 @@ Injections:
     @inject(SubscriptionFrontendService)
     protected readonly subscriptions: SubscriptionFrontendService;
 
-    @inject(RecipeNutritionService)
-    protected readonly nutrition: RecipeNutritionService;
+    @inject(PluginReportService)
+    protected readonly pluginReports: PluginReportService;
 ```
 
 Registration in `registerCommands`:
 
 ```ts
         registry.registerCommand({ id: Commands.HAS_FEATURE }, { execute: (args: unknown) => this.hasFeature(args) });
-        registry.registerCommand({ id: Commands.NUTRITION }, { execute: (args: unknown) => this.computeNutrition(args) });
+        registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
 ```
 
 Methods (after `editPantry`):
@@ -776,22 +706,22 @@ Methods (after `editPantry`):
         }
     }
 
-    protected async computeNutrition(args: unknown): Promise<NutritionResult> {
+    protected async renderReport(args: unknown): Promise<PluginReportResult> {
         const request = this.object(args);
         const raw = this.string(request.uri, '`uri`');
         const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !CooklangUri.isRecipe(uri)) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe.');
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
+            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
+        }
+        const template = this.text(request.template, '`template`');
+        if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
+            throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
         }
         const scale = request.scale === undefined ? 1 : request.scale;
         if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
             throw this.invalid('`scale` must be a positive number.');
         }
-        const categories = request.categories === undefined ? [] : request.categories;
-        if (!Array.isArray(categories) || !categories.every(slug => typeof slug === 'string')) {
-            throw this.invalid('`categories` must be an array of strings.');
-        }
-        return this.nutrition.compute(uri, scale, categories);
+        return this.pluginReports.render(uri, template, scale);
     }
 ```
 
@@ -799,11 +729,21 @@ Methods (after `editPantry`):
 
 Run: same as Step 2. Expected: PASS (whole package).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Verify against the real engine.** With the dev app built later this is covered end to end (Task 14); here, a quick native check that report functions and `to_json` combine (no token → auth error proves `aggregate_nutrition` ran; with `NUTRITION_TOKEN` set → JSON):
+
+```bash
+cd packages/cooklang-native && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "
+const n=require('./index.js');
+console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', '{{ to_json(aggregate_nutrition(ingredients)) }}', JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,300));"
+```
+
+Expected without token: `{"error":"Error: authentication required: …`. With token: `{"output":"{\"items\":[…`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add packages/cooklang/src/browser/cooklang-plugin-api-contribution.ts packages/cooklang/src/browser/cooklang-plugin-api-contribution.spec.ts
-git commit -m "feat(cooklang): cooklang.api.hasFeature and cooklang.api.nutrition"
+git commit -m "feat(cooklang): cooklang.api.hasFeature and cooklang.api.renderReport"
 ```
 
 ---
@@ -904,7 +844,7 @@ git commit -m "feat(cooklang): recipe preview badge outlet"
 
 ---
 
-## Task 7: Nutri-Score strip component, colors and CSS
+## Task 7: Badge component (Nutri-Score strip and pill), colors and CSS
 
 **Files:**
 - Create: `packages/cooklang/src/browser/nutriscore-colors.ts`
@@ -970,6 +910,22 @@ describe('PreviewBadgeView', () => {
         act(() => { element.blur(); });
         expect(events).to.deep.equal(['show:A:cooklang-nutriscore:false', 'show:A:cooklang-nutriscore:true', 'hide']);
     });
+
+    it('renders a pill with its text, tone and the same hover behaviour', () => {
+        const events: string[] = [];
+        act(() => root.render(<PreviewBadgeView badge={{ kind: 'pill', text: '540 kcal', tone: 'warning', tooltipMarkdown: 'x' }}
+            onShowDetails={(shown, _target, immediate) => events.push(`show:${shown.kind}:${immediate}`)}
+            onHideDetails={() => events.push('hide')} />));
+        const pill = host.querySelector('.cooklang-badge-pill') as HTMLElement;
+        expect(pill.textContent).to.equal('540 kcal');
+        expect(pill.classList.contains('warning')).to.equal(true);
+        expect(pill.getAttribute('tabindex')).to.equal('0');
+        expect(host.querySelector('.cooklang-nutriscore')).to.equal(null); // eslint-disable-line no-null/no-null
+        act(() => { pill.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); });
+        act(() => { pill.focus(); });
+        act(() => { pill.blur(); });
+        expect(events).to.deep.equal(['show:pill:false', 'show:pill:true', 'hide']);
+    });
 });
 ```
 
@@ -996,17 +952,26 @@ export interface PreviewBadgeViewProps {
 }
 
 /**
- * The official-style Nutri-Score strip: five letter cells, the recipe's grade
- * enlarged. Details live only in the hover card (see `onShowDetails`).
+ * A plugin badge in the recipe preview header: the official-style Nutri-Score
+ * strip (five letter cells, the grade enlarged) or a short text pill. Details
+ * live only in the hover card (see `onShowDetails`).
  */
 export const PreviewBadgeView = ({ badge, onShowDetails, onHideDetails }: PreviewBadgeViewProps): React.ReactElement => {
-    const unknown = badge.grade === 'unknown';
-    const handleMouseEnter = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseEnter = React.useCallback((event: React.MouseEvent<HTMLElement>) => {
         onShowDetails(badge, event.currentTarget, false);
     }, [badge, onShowDetails]);
-    const handleFocus = React.useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    const handleFocus = React.useCallback((event: React.FocusEvent<HTMLElement>) => {
         onShowDetails(badge, event.currentTarget, true);
     }, [badge, onShowDetails]);
+    if (badge.kind === 'pill') {
+        return (
+            <span className={`cooklang-badge-pill ${badge.tone}`} tabIndex={0}
+                onMouseEnter={handleMouseEnter} onFocus={handleFocus} onBlur={onHideDetails}>
+                {badge.text}
+            </span>
+        );
+    }
+    const unknown = badge.grade === 'unknown';
     return (
         <div
             className={`cooklang-nutriscore${unknown ? ' unknown' : ''}`}
@@ -1144,7 +1109,30 @@ export class NutriScoreColorContribution implements ColorContribution {
     background: var(--theia-descriptionForeground);
 }
 
-.theia-hover.cooklang-nutriscore-hover {
+.cooklang-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border: 1px solid var(--theia-badge-background);
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--theia-foreground);
+    white-space: nowrap;
+    cursor: default;
+}
+
+.cooklang-badge-pill:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.cooklang-badge-pill.good { border-color: var(--theia-charts-green); color: var(--theia-charts-green); }
+.cooklang-badge-pill.warning { border-color: var(--theia-charts-yellow); color: var(--theia-charts-yellow); }
+.cooklang-badge-pill.bad { border-color: var(--theia-charts-red); color: var(--theia-charts-red); }
+
+.theia-hover.cooklang-preview-badge-hover {
     max-width: 360px;
 }
 ```
@@ -1167,7 +1155,7 @@ import { NutriScoreColorContribution } from './nutriscore-colors';
 
 ```bash
 git add packages/cooklang/src/browser/preview-badge.tsx packages/cooklang/src/browser/preview-badge.spec.tsx packages/cooklang/src/browser/style/preview-badge.css packages/cooklang/src/browser/nutriscore-colors.ts packages/cooklang/src/browser/cooklang-frontend-module.ts
-git commit -m "feat(cooklang): Nutri-Score strip component and colors"
+git commit -m "feat(cooklang): preview badge component — Nutri-Score strip and pill"
 ```
 
 ---
@@ -1272,7 +1260,7 @@ Methods (in the Rendering section):
             content: new MarkdownStringImpl(badge.tooltipMarkdown, { isTrusted: false, supportHtml: false }),
             target,
             position: 'bottom',
-            cssClasses: ['cooklang-nutriscore-hover'],
+            cssClasses: ['cooklang-preview-badge-hover'],
             skipHoverDelay: immediate,
         });
     };
@@ -1578,9 +1566,9 @@ git commit -m "feat(nutriscore): 2023 Nutri-Score algorithm for general foods"
 
 ---
 
-## Task 11: Cooklang API wrapper and per-100 g input
+## Task 11: Cooklang API wrapper, nutrition template and per-100 g input
 
-**Files:** Create `nutriscore/src/cooklang-api.ts`, `nutriscore/src/cooklang-api.spec.ts`, `nutriscore/src/nutrition-input.ts`, `nutriscore/src/nutrition-input.spec.ts`
+**Files:** Create in `nutriscore/src/`: `cooklang-api.ts` (+ spec), `nutrition-template.ts` (+ spec), `nutrition-input.ts` (+ spec)
 
 - [ ] **Step 1: Failing tests** `cooklang-api.spec.ts`:
 
@@ -1598,19 +1586,66 @@ function recorder(result: unknown, commands: string[] = []): { api: CooklangApi;
 }
 
 describe('CooklangApi', () => {
-    it('calls the nutrition commands with one JSON argument', async () => {
+    it('calls hasFeature and renderReport with one JSON argument', async () => {
         const { api, calls } = recorder(true);
         await api.hasFeature('nutrition');
-        await api.nutrition({ uri: 'file:///a.cook', scale: 2, categories: ['fruit'] });
+        await api.renderReport({ uri: 'file:///a.cook', template: '{{ 1 }}', scale: 2 });
         assert.deepStrictEqual(calls, [
             { command: 'cooklang.api.hasFeature', args: [{ name: 'nutrition' }] },
-            { command: 'cooklang.api.nutrition', args: [{ uri: 'file:///a.cook', scale: 2, categories: ['fruit'] }] },
+            { command: 'cooklang.api.renderReport', args: [{ uri: 'file:///a.cook', template: '{{ 1 }}', scale: 2 }] },
         ]);
     });
 
     it('reports support only when both commands exist', async () => {
-        assert.strictEqual(await recorder(undefined, ['cooklang.api.hasFeature', 'cooklang.api.nutrition']).api.supportsNutrition(), true);
-        assert.strictEqual(await recorder(undefined, ['cooklang.api.nutrition']).api.supportsNutrition(), false);
+        assert.strictEqual(await recorder(undefined, ['cooklang.api.hasFeature', 'cooklang.api.renderReport']).api.supportsReports(), true);
+        assert.strictEqual(await recorder(undefined, ['cooklang.api.renderReport']).api.supportsReports(), false);
+    });
+});
+```
+
+`nutrition-template.ts` spec — `nutrition-template.spec.ts`:
+
+```ts
+import * as assert from 'assert';
+import { nutritionTemplate, parseNutritionOutput } from './nutrition-template';
+
+const aggregate = {
+    items: [
+        { ingredient: 'apple', preparation: '', amount: { value: 2, unit: '', mass_g: 300 }, macros: {}, micros: {}, source: 'usda', confidence: 'confirmed', warnings: [] },
+        { ingredient: 'flour', preparation: '', amount: { value: 200, unit: 'g', mass_g: 200 }, macros: {}, micros: {}, source: 'usda', confidence: 'confirmed', warnings: [] },
+    ],
+    failures: [],
+    totals: { mass_g: 500 },
+};
+
+describe('nutritionTemplate', () => {
+    it('embeds the category slugs and returns JSON through to_json', () => {
+        const template = nutritionTemplate(['fruit', 'vegetable']);
+        assert.ok(template.startsWith('{%- set categories = ["fruit","vegetable"] -%}'));
+        assert.ok(template.includes('aggregate_nutrition(ingredients)'));
+        assert.ok(template.trimEnd().endsWith('{{ to_json({"aggregate": agg, "categoryIngredients": found.names}) }}'));
+    });
+
+    it('rejects slugs that could break the template', () => {
+        assert.throws(() => nutritionTemplate(['fruit"] %}{{ x']), /slug/);
+    });
+});
+
+describe('parseNutritionOutput', () => {
+    it('sums the mass of category ingredients', () => {
+        const data = parseNutritionOutput(JSON.stringify({ aggregate, categoryIngredients: ['apple'] }), true);
+        assert.strictEqual(data?.categoryMassG, 300);
+        assert.strictEqual(data?.aggregate.totals.mass_g, 500);
+    });
+
+    it('leaves categoryMassG undefined when no categories were requested', () => {
+        const data = parseNutritionOutput(JSON.stringify({ aggregate, categoryIngredients: [] }), false);
+        assert.strictEqual(data?.categoryMassG, undefined);
+    });
+
+    it('returns undefined for output that is not the template result', () => {
+        assert.strictEqual(parseNutritionOutput('not json', true), undefined);
+        assert.strictEqual(parseNutritionOutput(JSON.stringify({ aggregate: {} }), true), undefined);
     });
 });
 ```
@@ -1620,7 +1655,7 @@ describe('CooklangApi', () => {
 ```ts
 import * as assert from 'assert';
 import { toPer100g } from './nutrition-input';
-import { NutritionAggregate } from './cooklang-api';
+import { NutritionAggregate } from './nutrition-template';
 
 const aggregate = (mass: number, micros: Record<string, number> = { sodium_mg: 400 }): NutritionAggregate => ({
     items: [],
@@ -1661,18 +1696,74 @@ describe('toPer100g', () => {
 });
 ```
 
-- [ ] **Step 2: Run, expect failure.**
+- [ ] **Step 2: Run, expect failure.** `npm test` → cannot find modules.
 
 - [ ] **Step 3: Implement `cooklang-api.ts`:**
 
 ```ts
 // Typed wrapper over Cook Editor's `cooklang.api.*` commands (API version 1).
-// Types mirror the editor's `packages/cooklang/src/common/nutrition-types.ts`
+// Types mirror the editor's `packages/cooklang/src/common/plugin-report-types.ts`
 // and `cooklang-outlet-context.ts`. Free of the `vscode` import so it can be
 // unit-tested; extension.ts passes `vscode.commands.executeCommand`.
 
 export const SUPPORTED_API_VERSION = 1;
-export const NUTRITION_COMMANDS = ['cooklang.api.hasFeature', 'cooklang.api.nutrition'] as const;
+export const REPORT_COMMANDS = ['cooklang.api.hasFeature', 'cooklang.api.renderReport'] as const;
+
+export type PluginReportResult =
+    | { ok: true; output: string }
+    | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'network' | 'server' | 'template'; message: string };
+
+export interface PreviewOutletContext {
+    version: number;
+    uri: string;
+    path: string;
+    scale: number;
+}
+
+/** The subset of the editor's `PreviewBadge` this plugin returns. */
+export interface NutriScoreBadge {
+    kind: 'nutriscore';
+    grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
+    tooltipMarkdown: string;
+}
+
+export type ExecuteCommand = (command: string, ...args: unknown[]) => Promise<unknown>;
+export type ListCommands = () => Promise<readonly string[]>;
+
+export class CooklangApi {
+
+    constructor(protected readonly execute: ExecuteCommand, protected readonly listCommands: ListCommands) { }
+
+    version(): Promise<number> {
+        return this.call('cooklang.api.version');
+    }
+
+    async supportsReports(): Promise<boolean> {
+        const commands = new Set(await this.listCommands());
+        return REPORT_COMMANDS.every(command => commands.has(command));
+    }
+
+    hasFeature(name: string): Promise<boolean> {
+        return this.call('cooklang.api.hasFeature', { name });
+    }
+
+    renderReport(args: { uri: string; template: string; scale: number }): Promise<PluginReportResult> {
+        return this.call('cooklang.api.renderReport', args);
+    }
+
+    protected async call<T>(command: string, ...args: unknown[]): Promise<T> {
+        return await this.execute(command, ...args) as T;
+    }
+}
+```
+
+- [ ] **Step 4: Implement `nutrition-template.ts`:**
+
+```ts
+// The Jinja template this plugin asks the editor's Reports engine to render.
+// It uses the engine's nutrition functions (`aggregate_nutrition`,
+// `is_in_category`) and hands the data back with `to_json`. Types mirror the
+// cook.md nutrition service's `/aggregate` response (snake_case, verbatim).
 
 export interface NutritionMacros {
     kcal: number;
@@ -1716,57 +1807,60 @@ export interface NutritionAggregate {
     };
 }
 
-export type NutritionResult =
-    | { ok: true; aggregate: NutritionAggregate; categoryMassG?: number }
-    | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'network' | 'server' | 'parse'; message: string };
-
-export interface PreviewOutletContext {
-    version: number;
-    uri: string;
-    path: string;
-    scale: number;
+export interface NutritionData {
+    aggregate: NutritionAggregate;
+    /** Grams of matched ingredients in any requested category; undefined when none were requested. */
+    categoryMassG?: number;
 }
 
-export interface PreviewBadge {
-    kind: 'nutriscore';
-    grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
-    tooltipMarkdown: string;
+const SLUG = /^[a-z0-9-]{1,40}$/;
+
+/** `categories` are embedded as a JSON list, so they must be plain slugs. */
+export function nutritionTemplate(categories: readonly string[]): string {
+    if (!categories.every(slug => SLUG.test(slug))) {
+        throw new Error('Category slug must be lowercase letters, digits or dashes.');
+    }
+    return [
+        `{%- set categories = ${JSON.stringify(categories)} -%}`,
+        '{%- set agg = aggregate_nutrition(ingredients) -%}',
+        '{%- set found = namespace(names=[]) -%}',
+        '{%- for item in agg["items"] -%}',
+        '{%- set hit = namespace(value=false) -%}',
+        '{%- for slug in categories -%}',
+        '{%- if not hit.value and is_in_category(item.ingredient, slug) -%}{%- set hit.value = true -%}{%- endif -%}',
+        '{%- endfor -%}',
+        '{%- if hit.value -%}{%- set found.names = found.names + [item.ingredient] -%}{%- endif -%}',
+        '{%- endfor -%}',
+        '{{ to_json({"aggregate": agg, "categoryIngredients": found.names}) }}',
+    ].join('\n');
 }
 
-export type ExecuteCommand = (command: string, ...args: unknown[]) => Promise<unknown>;
-export type ListCommands = () => Promise<readonly string[]>;
-
-export class CooklangApi {
-
-    constructor(protected readonly execute: ExecuteCommand, protected readonly listCommands: ListCommands) { }
-
-    version(): Promise<number> {
-        return this.call('cooklang.api.version');
+export function parseNutritionOutput(output: string, categoriesRequested: boolean): NutritionData | undefined {
+    let data: { aggregate?: NutritionAggregate; categoryIngredients?: unknown };
+    try {
+        data = JSON.parse(output);
+    } catch {
+        return undefined;
     }
-
-    async supportsNutrition(): Promise<boolean> {
-        const commands = new Set(await this.listCommands());
-        return NUTRITION_COMMANDS.every(command => commands.has(command));
+    const aggregate = data.aggregate;
+    if (!aggregate || !Array.isArray(aggregate.items) || !Array.isArray(aggregate.failures) || typeof aggregate.totals !== 'object') {
+        return undefined;
     }
-
-    hasFeature(name: string): Promise<boolean> {
-        return this.call('cooklang.api.hasFeature', { name });
+    if (!categoriesRequested) {
+        return { aggregate };
     }
-
-    nutrition(args: { uri: string; scale: number; categories: readonly string[] }): Promise<NutritionResult> {
-        return this.call('cooklang.api.nutrition', args);
-    }
-
-    protected async call<T>(command: string, ...args: unknown[]): Promise<T> {
-        return await this.execute(command, ...args) as T;
-    }
+    const members = new Set(Array.isArray(data.categoryIngredients) ? data.categoryIngredients : []);
+    const categoryMassG = aggregate.items
+        .filter(item => members.has(item.ingredient))
+        .reduce((sum, item) => sum + (item.amount?.mass_g ?? 0), 0);
+    return { aggregate, categoryMassG };
 }
 ```
 
-`nutrition-input.ts` (use the key found in Task 1 in `SODIUM_KEYS`):
+- [ ] **Step 5: Implement `nutrition-input.ts`** (use the key found in Task 1 in `SODIUM_KEYS`):
 
 ```ts
-import { NutritionAggregate } from './cooklang-api';
+import { NutritionAggregate } from './nutrition-template';
 import { Per100g } from './nutriscore';
 
 /** Micro keys the service uses for sodium in mg, most likely first. */
@@ -1799,13 +1893,24 @@ export function toPer100g(aggregate: NutritionAggregate, categoryMassG: number |
 }
 ```
 
-- [ ] **Step 4: Run tests, expect pass.**
+- [ ] **Step 6: Run tests, expect pass.**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Verify the template against the real engine** (no token → the auth error proves `aggregate_nutrition` ran; with `NUTRITION_TOKEN` → JSON with `categoryIngredients` containing `apple`):
 
 ```bash
-git add nutriscore/src/cooklang-api.ts nutriscore/src/cooklang-api.spec.ts nutriscore/src/nutrition-input.ts nutriscore/src/nutrition-input.spec.ts
-git commit -m "feat(nutriscore): Cooklang API wrapper and per-100 g input"
+cd ~/Cooklang/plugins/nutriscore && npm run compile && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "
+const n=require('/Users/alexeydubovskoy/Cooklang/editor/packages/cooklang-native/index.js');
+const t=require('./out/nutrition-template.js').nutritionTemplate(['fruit']);
+console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', t, JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,400));"
+```
+
+If minijinja rejects `namespace` or the `and` short-circuit, fix `nutritionTemplate` and its test together.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add nutriscore/src/cooklang-api.ts nutriscore/src/cooklang-api.spec.ts nutriscore/src/nutrition-template.ts nutriscore/src/nutrition-template.spec.ts nutriscore/src/nutrition-input.ts nutriscore/src/nutrition-input.spec.ts
+git commit -m "feat(nutriscore): API wrapper, nutrition template and per-100 g input"
 ```
 
 ---
@@ -1819,7 +1924,7 @@ git commit -m "feat(nutriscore): Cooklang API wrapper and per-100 g input"
 ```ts
 import * as assert from 'assert';
 import { escapeMarkdown, summarizeTrust, tooltipMarkdown } from './trust';
-import { NutritionAggregate, NutritionItem } from './cooklang-api';
+import { NutritionAggregate, NutritionItem } from './nutrition-template';
 
 const item = (ingredient: string, mass: number, confidence: string, source = 'usda'): NutritionItem => ({
     ingredient, preparation: '', amount: { value: 1, unit: 'g', mass_g: mass },
@@ -1915,7 +2020,7 @@ describe('escapeMarkdown', () => {
 - [ ] **Step 3: Implement** `trust.ts`:
 
 ```ts
-import { NutritionAggregate } from './cooklang-api';
+import { NutritionAggregate } from './nutrition-template';
 import { NutriScoreResult } from './nutriscore';
 
 export type ConfidenceLevel = 'High' | 'Medium' | 'Low';
@@ -2020,7 +2125,8 @@ git commit -m "feat(nutriscore): trust summary and hover text"
 
 ```ts
 import * as assert from 'assert';
-import { CooklangApi, NutritionAggregate, NutritionResult } from './cooklang-api';
+import { CooklangApi, PluginReportResult } from './cooklang-api';
+import { NutritionAggregate, nutritionTemplate } from './nutrition-template';
 import { FVL_CATEGORIES, NutriScoreBadgeProvider } from './provider';
 
 const CONTEXT = { version: 1, uri: 'file:///ws/a.cook', path: 'a.cook', scale: 2 };
@@ -2039,54 +2145,74 @@ const aggregate: NutritionAggregate = {
     },
 };
 
-function provider(options: { feature?: boolean; result?: NutritionResult }): { provider: NutriScoreBadgeProvider; calls: string[]; logs: string[] } {
-    const calls: string[] = [];
+const rendered = (agg: NutritionAggregate, categoryIngredients: string[]): PluginReportResult =>
+    ({ ok: true, output: JSON.stringify({ aggregate: agg, categoryIngredients }) });
+
+function provider(options: { feature?: boolean; results?: PluginReportResult[] }): {
+    provider: NutriScoreBadgeProvider; calls: Array<{ command: string; arg: unknown }>; logs: string[];
+} {
+    const calls: Array<{ command: string; arg: unknown }> = [];
     const logs: string[] = [];
+    const results = options.results ?? [rendered(aggregate, ['apple'])];
     const api = new CooklangApi(async (command, ...args) => {
-        calls.push(`${command} ${JSON.stringify(args[0])}`);
+        calls.push({ command, arg: args[0] });
         if (command === 'cooklang.api.hasFeature') {
             return options.feature ?? true;
         }
-        return options.result ?? { ok: true, aggregate, categoryMassG: 300 };
+        return results.shift();
     }, async () => []);
     return { provider: new NutriScoreBadgeProvider(api, message => logs.push(message)), calls, logs };
 }
 
 describe('NutriScoreBadgeProvider', () => {
-    it('returns a graded badge with the trust summary', async () => {
+    it('renders the nutrition template and returns a graded badge', async () => {
         const { provider: p, calls } = provider({});
         const badge = await p.provide(CONTEXT);
         // per 100 g: 218 kJ (0), sugars 10.3 (3), sat fat 0.03 (0), salt 0.0025 (0) => N 3;
         // fibre 2.4 (0), fvl 100 % (5), protein 0.3 (0) => P 5; score -2 => A.
-        assert.strictEqual(badge?.kind, 'nutriscore');
         assert.strictEqual(badge?.grade, 'A');
         assert.ok(badge?.tooltipMarkdown.startsWith('**Nutri-Score A** · -2 points'));
         assert.deepStrictEqual(calls, [
-            'cooklang.api.hasFeature {"name":"nutrition"}',
-            `cooklang.api.nutrition ${JSON.stringify({ uri: CONTEXT.uri, scale: 2, categories: FVL_CATEGORIES })}`,
+            { command: 'cooklang.api.hasFeature', arg: { name: 'nutrition' } },
+            { command: 'cooklang.api.renderReport', arg: { uri: CONTEXT.uri, template: nutritionTemplate(FVL_CATEGORIES), scale: 2 } },
         ]);
     });
 
-    it('shows no badge without the nutrition feature, and does not call the service', async () => {
+    it('retries without categories when the service does not know a slug', async () => {
+        const { provider: p, calls } = provider({ results: [
+            { ok: false, reason: 'template', message: 'category not found: legume' },
+            rendered(aggregate, []),
+        ] });
+        const badge = await p.provide(CONTEXT);
+        assert.strictEqual(calls.length, 3);
+        assert.deepStrictEqual(calls[2].arg, { uri: CONTEXT.uri, template: nutritionTemplate([]), scale: 2 });
+        assert.ok(badge?.tooltipMarkdown.includes('Fruit/veg/legumes: unknown (counted as 0 %)'));
+    });
+
+    it('shows no badge without the nutrition feature, and does not render', async () => {
         const { provider: p, calls } = provider({ feature: false });
         assert.strictEqual(await p.provide(CONTEXT), undefined);
         assert.strictEqual(calls.length, 1);
     });
 
-    it('shows no badge on service errors and logs each reason once', async () => {
-        const { provider: p, logs } = provider({ result: { ok: false, reason: 'network', message: 'offline' } });
+    it('shows no badge on failures and logs each reason once', async () => {
+        const failure: PluginReportResult = { ok: false, reason: 'network', message: 'offline' };
+        const { provider: p, logs } = provider({ results: [failure, failure] });
         assert.strictEqual(await p.provide(CONTEXT), undefined);
         assert.strictEqual(await p.provide(CONTEXT), undefined);
         assert.deepStrictEqual(logs, ['Nutri-Score unavailable (network): offline']);
     });
 
+    it('shows no badge when the output is not nutrition data', async () => {
+        const { provider: p, logs } = provider({ results: [{ ok: true, output: 'nope' }] });
+        assert.strictEqual(await p.provide(CONTEXT), undefined);
+        assert.deepStrictEqual(logs, ['Nutri-Score unavailable (output): unexpected template output']);
+    });
+
     it('returns an unknown grade when too few ingredients matched', async () => {
-        const failing: NutritionResult = { ok: true, aggregate: { ...aggregate, failures: [
-            { index: 1, ingredient: 'x', error: { code: 'ingredient_not_found', message: '' } },
-        ] } };
-        const { provider: p } = provider({ result: failing });
-        const badge = await p.provide(CONTEXT);
-        assert.strictEqual(badge?.grade, 'unknown');
+        const failing = { ...aggregate, failures: [{ index: 1, ingredient: 'x', error: { code: 'ingredient_not_found', message: '' } }] };
+        const { provider: p } = provider({ results: [rendered(failing, ['apple'])] });
+        assert.strictEqual((await p.provide(CONTEXT))?.grade, 'unknown');
     });
 
     it('ignores anything that is not a preview context', async () => {
@@ -2104,8 +2230,9 @@ describe('NutriScoreBadgeProvider', () => {
 - [ ] **Step 3: Implement** `provider.ts` (use Task 1's verified slugs in `FVL_CATEGORIES`):
 
 ```ts
-import { CooklangApi, PreviewBadge, PreviewOutletContext } from './cooklang-api';
+import { CooklangApi, NutriScoreBadge, PluginReportResult, PreviewOutletContext } from './cooklang-api';
 import { toPer100g } from './nutrition-input';
+import { nutritionTemplate, parseNutritionOutput } from './nutrition-template';
 import { nutriScore } from './nutriscore';
 import { summarizeTrust, tooltipMarkdown } from './trust';
 
@@ -2125,30 +2252,48 @@ export class NutriScoreBadgeProvider {
 
     constructor(protected readonly api: CooklangApi, protected readonly log: (message: string) => void) { }
 
-    async provide(context: unknown): Promise<PreviewBadge | undefined> {
+    async provide(context: unknown): Promise<NutriScoreBadge | undefined> {
         if (!isPreviewContext(context)) {
             return undefined;
         }
         if (!await this.api.hasFeature('nutrition')) {
             return undefined;
         }
-        const result = await this.api.nutrition({ uri: context.uri, scale: context.scale, categories: FVL_CATEGORIES });
+        let categories: readonly string[] = FVL_CATEGORIES;
+        let result = await this.render(context, categories);
+        if (!result.ok && result.reason === 'template' && /category not found/i.test(result.message)) {
+            categories = [];
+            result = await this.render(context, categories);
+        }
         if (!result.ok) {
-            if (!this.logged.has(result.reason)) {
-                this.logged.add(result.reason);
-                this.log(`Nutri-Score unavailable (${result.reason}): ${result.message}`);
-            }
+            this.logOnce(result.reason, result.message);
             return undefined;
         }
-        const summary = summarizeTrust(result.aggregate);
-        const per100g = toPer100g(result.aggregate, result.categoryMassG);
-        const fvlPercent = result.categoryMassG === undefined ? undefined : per100g?.fvlPercent;
+        const data = parseNutritionOutput(result.output, categories.length > 0);
+        if (!data) {
+            this.logOnce('output', 'unexpected template output');
+            return undefined;
+        }
+        const summary = summarizeTrust(data.aggregate);
+        const per100g = toPer100g(data.aggregate, data.categoryMassG);
+        const fvlPercent = data.categoryMassG === undefined ? undefined : per100g?.fvlPercent;
         const score = per100g && summary.reliable ? nutriScore(per100g) : undefined;
         return {
             kind: 'nutriscore',
             grade: score ? score.grade : 'unknown',
             tooltipMarkdown: tooltipMarkdown(score, summary, fvlPercent),
         };
+    }
+
+    protected render(context: PreviewOutletContext, categories: readonly string[]): Promise<PluginReportResult> {
+        return this.api.renderReport({ uri: context.uri, template: nutritionTemplate(categories), scale: context.scale });
+    }
+
+    protected logOnce(reason: string, message: string): void {
+        if (!this.logged.has(reason)) {
+            this.logged.add(reason);
+            this.log(`Nutri-Score unavailable (${reason}): ${message}`);
+        }
     }
 }
 ```
@@ -2169,12 +2314,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     let supported = false;
     try {
-        supported = await api.version() === SUPPORTED_API_VERSION && await api.supportsNutrition();
+        supported = await api.version() === SUPPORTED_API_VERSION && await api.supportsReports();
     } catch {
         supported = false;
     }
     if (!supported) {
-        output.appendLine('Nutri-Score needs a newer Cook Editor (cooklang.api.nutrition is missing).');
+        output.appendLine('Nutri-Score needs a newer Cook Editor (cooklang.api.renderReport is missing).');
     }
     const provider = new NutriScoreBadgeProvider(api, message => output.appendLine(message));
     context.subscriptions.push(vscode.commands.registerCommand('cooklang.nutriscore.provideBadge',
@@ -2232,7 +2377,7 @@ Expected: all green.
 - [ ] **Step 2: Plugins README** — add a row to the table in `~/Cooklang/plugins/README.md`:
 
 ```markdown
-| [`nutriscore`](./nutriscore) | Nutri-Score badge on recipe previews with a hover card on how reliable it is. Needs a Basic or Pro plan. Install it from the Extensions view. Shows the preview badge outlet and `cooklang.api.nutrition`. |
+| [`nutriscore`](./nutriscore) | Nutri-Score badge on recipe previews with a hover card on how reliable it is. Needs a Basic or Pro plan. Install it from the Extensions view. Shows the preview badge outlet and rendering a report template with `cooklang.api.renderReport`. |
 ```
 
 Commit: `git add README.md && git commit -m "docs: list the nutriscore plugin"`

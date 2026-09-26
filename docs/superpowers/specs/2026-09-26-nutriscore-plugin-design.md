@@ -13,6 +13,11 @@ data sources, unmatched/estimated ingredients and the estimated
 fruit/vegetable/legume share. Available only to users whose plan includes the
 nutrition API (Basic and Pro).
 
+The editor side is deliberately general: plugins render their own report
+templates (`cooklang.api.renderReport`) and return badges (Nutri-Score strip
+or a generic pill), so later plugins — calories, cost, allergens — need no
+editor changes.
+
 ## Non-goals
 
 - Menus. A Nutri-Score for a whole menu is not meaningful and per-recipe
@@ -28,8 +33,9 @@ nutrition API (Basic and Pro).
 Three pieces. 2 depends on 1; 3 is independent but needed for anyone to see
 the badge.
 
-1. Editor: `cooklang.api.hasFeature`, `cooklang.api.nutrition`, badge outlet
-   (`cooklang/recipePreview/badge` + rendering).
+1. Editor: native `to_json`, `cooklang.api.hasFeature`,
+   `cooklang.api.renderReport`, badge outlet (`cooklang/recipePreview/badge`
+   + rendering of `nutriscore` and `pill` badges).
 2. `cooklang.nutriscore` plugin in `../plugins/nutriscore`; publish 0.1.0 to
    plugins.cook.md.
 3. cook.md backend: add `nutrition` to `features[]` of `/api/subscription` for
@@ -48,40 +54,41 @@ out or when the subscription fetch failed.
 No change event is exposed to plugins: on login, logout or plan change the
 editor re-invokes all badge providers (1.3), which re-check the feature.
 
-### 1.2 `cooklang.api.nutrition(args): Promise<NutritionResult>`
+### 1.2 `cooklang.api.renderReport(args): Promise<PluginReportResult>`
+
+A general way for plugins to use the Reports engine. The editor knows nothing
+about nutrition: the plugin ships its own Jinja template, and the editor
+renders it against a recipe or menu exactly as it renders a report.
 
 ```ts
-interface NutritionArgs { uri: string; scale?: number; categories?: string[] }
-interface NutritionResult {
-    ok: true;
-    aggregate: AggregateResponse;          // verbatim from nutrition service
-    categoryMassG?: number;               // grams of ingredients in any requested category
-} | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'network' | 'parse' | 'server'; message: string }
+interface RenderReportArgs { uri: string; template: string; scale?: number }
+type PluginReportResult =
+    | { ok: true; output: string }
+    | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'network' | 'server' | 'template'; message: string };
 ```
 
-- Reads the recipe text (open editor model first, else `FileService`), and
-  renders a fixed internal Jinja template through the existing
-  `languageService.renderReport` with `ReportConfigService.buildConfigJson`
-  (same token, `cooklang.nutrition.serviceUrl` and scale as reports). The
-  template calls `aggregate_nutrition(ingredients)` and, per matched item and
-  requested slug, `is_in_category(item.ingredient, slug)`, and prints
-  `to_json({ aggregate, categoryIngredients })`. `categoryMassG` is summed in
-  TS from `aggregate.items[].amount.mass_g`.
+- `uri`: absolute URI of a `.cook` or `.menu` file, any scheme. The text is
+  the open editor model if there is one (unsaved edits count), else the file.
+- `template`: Jinja source, at most 64 KB. It has every function a report
+  template has (`aggregate_nutrition`, `is_in_category`, `db`, pantry,
+  aisle, …) plus `to_json(value)` for returning structured data.
+- Rendering goes through the existing `languageService.renderReport` with
+  `ReportConfigService.buildConfigJson(scale, uri)`: same login token,
+  `cooklang.nutrition.serviceUrl`, pantry, aisle, datastore and menu
+  expansion as the Reports feature. The token never crosses into the plugin
+  host.
 - Native change is only a generic `to_json(value)` template function
   (a `ConfigExtension` always registered in `render_report`), because the
-  report engine has no `tojson` filter.
-- The token never crosses into the plugin host.
+  report engine has no `tojson` filter. Also available to user report
+  templates.
 - Error mapping from the render error text: `authentication required` →
-  `unauthenticated`, subscription-required message / 402 / 403 → `forbidden`,
-  `transport error` / `unavailable` → `network`, `server error` → `server`,
-  anything else → `parse`. `category not found` → retry once without
-  categories (share unknown).
-- Results cached in memory keyed by `(text, scale, categories)`, 20 entries.
-
-The plugin asks for `categories: ['fruit', 'vegetable', 'legume']`. If the
-service has no such slug, the check fails for that slug only; the result
-omits it and the plugin treats the share as unknown (0, disclosed).
-**Verify slug names against nutrition.cook.md during implementation.**
+  `unauthenticated`; subscription-required / 402 / 403 → `forbidden`;
+  `transport error` / `unavailable` → `network`; `server error` → `server`;
+  anything else (syntax errors, unknown functions, `category not found`) →
+  `template`, with the first line of the engine's message.
+- Successful results are cached in memory keyed by
+  `(uri, text, template, scale)`, 20 entries, so repeated badge refreshes
+  for unchanged recipes cost nothing.
 
 ### 1.3 Badge outlet
 
@@ -98,15 +105,15 @@ The editor executes each visible command with the `PreviewOutletContext` and
 expects a `PreviewBadge` (or `undefined`) back:
 
 ```ts
-interface PreviewBadge {
-    kind: 'nutriscore';
-    grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
-    tooltipMarkdown: string;
-}
+type PreviewBadge =
+    | { kind: 'nutriscore'; grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown'; tooltipMarkdown: string }
+    | { kind: 'pill'; text: string; tone: 'neutral' | 'good' | 'warning' | 'bad'; tooltipMarkdown: string };
 ```
 
-- `kind` is a closed set; v1 has only `nutriscore`. The editor owns the
-  visuals so they match the theme and cannot be abused to inject UI.
+- `kind` is a closed set, extended additively. The editor owns the visuals
+  so they match the theme and cannot be abused to inject UI. `pill`: short
+  text (≤ 24 chars, no control characters) with a border and text tinted by
+  `tone` (`charts.green/yellow/red`, neutral uses `badge.background`).
 - Rendering (`recipe-preview-components.tsx`): right side of the preview
   header. Official-style Nutri-Score strip: five letter cells A–E in the
   standard palette, the selected cell enlarged with a rounded outline;
@@ -127,13 +134,13 @@ interface PreviewBadge {
 
 ### 1.4 Tests (editor)
 
-- `cooklang-plugin-api-contribution.spec.ts`: `hasFeature`, `nutrition`
+- `cooklang-plugin-api-contribution.spec.ts`: `hasFeature`, `renderReport`
   argument validation and delegation.
-- `recipe-nutrition-service.spec.ts`: error mapping, category retry,
-  category mass summation, cache.
+- `plugin-report-service.spec.ts`: editor text vs file, error mapping,
+  cache.
 - `cooklang-outlet-service.spec.ts`: badge collection drops invalid,
   `undefined` and throwing providers.
-- `preview-badge.spec.tsx`: strip rendering and hover.
+- `preview-badge.spec.tsx`: strip and pill rendering, hover.
 - Native: `to_json` renders JSON.
 
 ---
@@ -151,10 +158,14 @@ introduces 1.1–1.3; otherwise does nothing and logs once.
 
 `provideBadge(ctx)`:
 1. `hasFeature('nutrition')` false → `undefined`.
-2. `cooklang.api.nutrition({ uri, scale, categories })`; `ok: false` →
-   `undefined` (network/server errors logged once per session).
-3. Compute score (2.2) and tooltip (2.3); return. (Caching lives in the
-   editor's nutrition command.)
+2. `cooklang.api.renderReport({ uri, scale, template })` with the plugin's
+   nutrition template (`aggregate_nutrition`, `is_in_category` for the
+   fruit/vegetable/legume slugs, `to_json`). If it fails with `template` /
+   `category not found`, render again without categories (share unknown).
+   Other failures → `undefined`, each reason logged once per session.
+3. Parse the output (aggregate + category ingredients → `categoryMassG`),
+   compute score (2.2) and tooltip (2.3); return. (Caching lives in the
+   editor's `renderReport`.)
 
 ### 2.2 Scoring (`nutriscore.ts`, pure)
 
