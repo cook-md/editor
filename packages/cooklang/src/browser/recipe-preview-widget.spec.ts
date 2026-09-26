@@ -175,7 +175,12 @@ class PreviewHarness {
             timerService: { onDidChangeTimers: never, list: () => [] },
             outlets,
             hoverService: {
-                requestHover: (request: { onHide?: () => void }) => { this.lastHoverOnHide = request.onHide; },
+                // The real `requestHover` cancels whatever hover is already open first,
+                // which runs its `onHide` synchronously, before rendering the new one.
+                requestHover: (request: { onHide?: () => void }) => {
+                    this.lastHoverOnHide?.();
+                    this.lastHoverOnHide = request.onHide;
+                },
                 cancelHover: () => { this.hoverCancelCount++; },
             },
             subscriptions: { onDidChangeSubscription: never },
@@ -587,5 +592,23 @@ describe('RecipePreviewWidget badge hover', () => {
         harness.widget.dispose();
 
         expect(harness.hoverCancelCount).to.equal(0);
+    });
+
+    it('keeps hover ownership across a move straight from one badge to another', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        await harness.open(LOCAL);
+
+        // `requestHover` cancels the previous hover (running its `onHide`)
+        // before the new one renders; `badgeHoverShown` must survive that.
+        const first: PreviewBadge = { kind: 'pill', text: 'a', tone: 'neutral', tooltipMarkdown: '' };
+        const second: PreviewBadge = { kind: 'pill', text: 'b', tone: 'neutral', tooltipMarkdown: '' };
+        internals.handleShowBadgeDetails(first, harness.widget.node, true);
+        internals.handleShowBadgeDetails(second, harness.widget.node, true);
+        expect(internals.badgeHoverShown).to.equal(true);
+
+        harness.widget.dispose();
+
+        expect(harness.hoverCancelCount).to.equal(1);
     });
 });

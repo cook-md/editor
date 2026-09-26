@@ -566,7 +566,10 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     protected handleShowBadgeDetails = (badge: PreviewBadge, target: HTMLElement, immediate: boolean): void => {
-        this.badgeHoverShown = true;
+        // `requestHover` first cancels any hover already open, which runs ITS
+        // `onHide` synchronously — moving the mouse from one badge straight to
+        // another would otherwise clear the flag this call is about to set.
+        // Setting it after, not before, keeps it true across the move.
         this.hoverService.requestHover({
             // Untrusted, no HTML: plugin text never runs commands or injects markup.
             content: new MarkdownStringImpl(badge.tooltipMarkdown, { isTrusted: false, supportHtml: false }),
@@ -578,6 +581,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             // elsewhere), without going through `handleHideBadgeDetails`.
             onHide: () => { this.badgeHoverShown = false; },
         });
+        this.badgeHoverShown = true;
     };
 
     protected handleHideBadgeDetails = (): void => {
