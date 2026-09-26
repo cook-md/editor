@@ -38,8 +38,9 @@ the badge.
    + rendering of `nutriscore` and `pill` badges).
 2. `cooklang.nutriscore` plugin in `../plugins/nutriscore`; publish 0.1.0 to
    plugins.cook.md.
-3. cook.md backend: add `nutrition` to `features[]` of `/api/subscription` for
-   Basic and Pro plans.
+3. cook.md backend: nothing to do — `/api/subscription` already returns the
+   `nutrition_api` feature for Cook Basic and Pro (cook.md web ≥ 0.23.40), and
+   the nutrition service enforces the same feature (cook-md/db cda5007).
 
 ---
 
@@ -164,7 +165,7 @@ mocha). No webview.
 introduces 1.1–1.3; otherwise does nothing and logs once.
 
 `provideBadge(ctx)`:
-1. `hasFeature('nutrition')` false → `undefined`.
+1. `hasFeature('nutrition_api')` false → `undefined`.
 2. `cooklang.api.renderReport({ uri, scale, template })` with the plugin's
    nutrition template (`aggregate_nutrition`, `is_in_category` for the
    fruit/vegetable/legume slugs, `| tojson`). If it fails with `template` /
@@ -227,7 +228,11 @@ to the editor's `theiaPlugins`.
 
 ## 3. Backend
 
-`/api/subscription` returns `nutrition` in `features[]` for Basic and Pro
-plans. Until then, `hasFeature('nutrition')` is false and no badge shows.
-The nutrition service itself should enforce the same entitlement (403
-otherwise), which the plugin already handles.
+Already in place: `/api/subscription` returns `nutrition_api` in
+`features[]` for Cook Basic and Pro (not grandfathered free-sync accounts),
+and the nutrition service rejects tokens without it (403
+`subscription_required`).
+
+Open data-quality issue affecting scores: cook-md/db#54 (plain names match
+dried/powdered records; missing sugars reported as 0 with `confirmed`
+confidence).

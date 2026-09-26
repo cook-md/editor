@@ -1557,10 +1557,10 @@ function recorder(result: unknown, commands: string[] = []): { api: CooklangApi;
 describe('CooklangApi', () => {
     it('calls hasFeature and renderReport with one JSON argument', async () => {
         const { api, calls } = recorder(true);
-        await api.hasFeature('nutrition');
+        await api.hasFeature('nutrition_api');
         await api.renderReport({ uri: 'file:///a.cook', template: '{{ 1 }}', scale: 2 });
         assert.deepStrictEqual(calls, [
-            { command: 'cooklang.api.hasFeature', args: [{ name: 'nutrition' }] },
+            { command: 'cooklang.api.hasFeature', args: [{ name: 'nutrition_api' }] },
             { command: 'cooklang.api.renderReport', args: [{ uri: 'file:///a.cook', template: '{{ 1 }}', scale: 2 }] },
         ]);
     });
@@ -2150,7 +2150,7 @@ describe('NutriScoreBadgeProvider', () => {
         assert.strictEqual(badge?.grade, 'A');
         assert.ok(badge?.tooltipMarkdown.startsWith('**Nutri-Score A** · -2 points'));
         assert.deepStrictEqual(calls, [
-            { command: 'cooklang.api.hasFeature', arg: { name: 'nutrition' } },
+            { command: 'cooklang.api.hasFeature', arg: { name: 'nutrition_api' } },
             { command: 'cooklang.api.renderReport', arg: { uri: CONTEXT.uri, template: nutritionTemplate(FVL_CATEGORIES), scale: 2 } },
         ]);
     });
@@ -2233,7 +2233,9 @@ export class NutriScoreBadgeProvider {
         if (!isPreviewContext(context)) {
             return undefined;
         }
-        if (!await this.api.hasFeature('nutrition')) {
+        // cook.md plan feature granting nutrition data (Cook Basic and Pro), the same
+        // one the nutrition service itself enforces.
+        if (!await this.api.hasFeature('nutrition_api')) {
             return undefined;
         }
         let categories: readonly string[] = FVL_CATEGORIES;
@@ -2334,7 +2336,7 @@ Slice @apples{3} and toss with @lemon juice{1%tbsp} and @oats{80%g}.
 
 - [ ] **Step 4: Check each case** (use the `run` skill / CDP workflow from `plugins-repo-meal-journal` memory if driving the app automatically):
   1. Signed out → no badge.
-  2. Signed in, plan without `nutrition` in `features[]` → no badge. (Until the backend change ships, this is every account; to test the rest, temporarily return `true` from `hasFeature` in `cooklang-plugin-api-contribution.ts`, and **revert before committing**.)
+  2. Signed in, plan without `nutrition_api` in `features[]` (e.g. a grandfathered free-sync account) → no badge. Use a Basic or Pro account for the remaining cases.
   3. With the feature → strip appears after ~0.5 s; hover shows the card after the hover delay; Tab-focus shows it immediately; the card contains no clickable command links.
   4. Change scale → badge refreshes (grade typically unchanged, per-100 g).
   5. Type an unknown ingredient `@unobtainium{50%g}` → hover lists it under "Not matched"; add enough unknowns (>30 %) → greyed strip with `?`.
@@ -2359,6 +2361,6 @@ Expected: all green.
 
 Commit: `git add README.md && git commit -m "docs: list the nutriscore plugin"`
 
-- [ ] **Step 3: Open PRs** (editor first; plugin PR notes it needs the editor release). Ask the user before pushing. PR bodies mention the backend dependency: `/api/subscription` must include `nutrition` in `features[]` for Basic and Pro.
+- [ ] **Step 3: Open PRs** (editor first; plugin PR notes it needs the editor release). Ask the user before pushing. PR bodies note that nutrition data needs the `nutrition_api` plan feature (Cook Basic/Pro; already live on cook.md and enforced by the nutrition service).
 
 - [ ] **Step 4: Publishing** `cooklang.nutriscore` 0.1.0 (`npm run package` then `OVSX_PAT=… npm run publish:marketplace`) is the user's call after the editor release; do not publish without being asked.
