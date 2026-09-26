@@ -384,6 +384,14 @@ fn insert(doc: &mut DocumentMut, target: SectionTarget, name: &str, attributes: 
         None => {
             let mut table = Table::new();
             table.set_implicit(false);
+            // Text after the last item (e.g. a comment-only starter file) is the
+            // document's trailing, rendered after every table; keep it above the
+            // new header so it stays where it was in the file.
+            let trailing = doc.trailing().as_str().unwrap_or("").to_string();
+            if !trailing.is_empty() {
+                table.decor_mut().set_prefix(trailing);
+                doc.set_trailing("");
+            }
             doc.insert(section, Item::Table(table));
         }
         Some(item) if !item.is_table_like() => return Err(not_a_table(section, item)),
@@ -740,6 +748,17 @@ mod tests {
         assert!(out.contains("[freezer]"), "{out}");
         assert!(out.contains("peas = \"500%g\""), "{out}");
         assert!(out.contains("milk = \"1%L\""), "{out}");
+    }
+
+    #[test]
+    fn add_of_a_new_section_keeps_trailing_comments_above_it() {
+        let header = "# Pantry for Cook Editor.\n# Each [section] lists items.\n";
+        let out = edit(header, r#"{"op":"add","section":"fridge","name":"milk","quantity":"1%L"}"#).unwrap();
+        assert_eq!(out, format!("{header}[fridge]\nmilk = \"1%L\"\n"));
+
+        let text = "[fridge]\nmilk = \"1%L\"\n# end of fridge\n";
+        let out = edit(text, r#"{"op":"add","section":"freezer","name":"peas"}"#).unwrap();
+        assert_eq!(out, format!("{text}[freezer]\npeas = \"\"\n"));
     }
 
     #[test]
