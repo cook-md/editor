@@ -1436,6 +1436,28 @@ pub fn render_report_async(
 }
 
 fn render_report_impl(recipe: &str, template: &str, config_json: &str) -> String {
+    catch_render(|| render_report_body(recipe, template, config_json))
+}
+
+/// Run a render, turning a panic (in the report engine, the nutrition client
+/// or a template function) into the `{"error": ...}` contract. napi does not
+/// catch panics in `Task::compute` or sync exports, so an uncaught one would
+/// abort the whole backend process.
+fn catch_render<F: FnOnce() -> String>(render: F) -> String {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(render)) {
+        Ok(json) => json,
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            serde_json::json!({ "error": format!("internal error: {message}") }).to_string()
+        }
+    }
+}
+
+fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String {
     // A malformed config silently degrades to defaults (no base path, no
     // nutrition wiring); log it so a bad config surfaces in the addon's stderr
     // rather than as a confusing downstream "extension not registered" error.
@@ -1574,6 +1596,19 @@ mod render_report_tests {
             config_json: config.into(),
         };
         assert_eq!(task.compute().unwrap(), sync);
+    }
+
+    #[test]
+    fn a_render_panic_becomes_an_error_payload() {
+        let out = super::catch_render(|| -> String { panic!("boom") });
+        let v: serde_json::Value = serde_json::from_str(&out).expect("must return valid JSON");
+        let error = v["error"].as_str().expect("expected an error payload");
+        assert!(error.starts_with("internal error: "), "error was: {error}");
+        assert!(error.contains("boom"), "error was: {error}");
+        let formatted = super::catch_render(|| -> String { panic!("boom {}", 42) });
+        assert!(formatted.contains("boom 42"), "String payloads keep their message: {formatted}");
+        let opaque = super::catch_render(|| -> String { std::panic::panic_any(7u8) });
+        assert!(opaque.contains("unknown panic"), "got: {opaque}");
     }
 
     #[test]
