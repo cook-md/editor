@@ -95,7 +95,10 @@ Additive; `cooklang.api.version` stays `1`.
 | `cooklang.api.parsePantry` | `{ text: string }` | `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow, isOutOfStock, expireDate, boughtDate }] }] }` |
 | `cooklang.api.editPantry` | `{ text: string, edit: PantryEdit }` | `string` (new file text) |
 
-Pure text in / text out, like `parseShoppingList` / `writeShoppingList`. The
+Pure text in / text out, like `parseShoppingList` / `writeShoppingList`.
+Unlike the native JSON, `cooklang.api.parsePantry` omits absent attributes
+and dates instead of sending `null`, and drops `lowStock`. Unknown keys in an
+edit and whitespace-only attribute values are rejected. The
 plugin owns file I/O. Invalid argument shapes reject with
 `Invalid arguments: …`; native errors propagate with their message.
 
@@ -167,7 +170,7 @@ shown in the banner and the view reloads.
 - **Sections:** collapsible, header shows name and item count (filtered /
   total). Sections with no matching items are hidden while a search or filter
   is active.
-- **Item row:** status dot (ok / low / out / expired-or-expiring, worst wins),
+- **Item row:** status dot, worst status wins in the order expired > out > low > expiring > ok,
   name, quantity (`500%g` displayed as `500 g`), expiry badge ("in 3 days",
   "today", "expired 2 days ago") when `expireDate` is set.
 - **Edit:** clicking a row expands an inline form: quantity, low, bought,

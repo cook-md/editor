@@ -210,7 +210,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     protected async parsePantry(args: unknown): Promise<PantryContents> {
         const text = this.text(this.object(args).text, '`text`');
         const wire = JSON.parse(await this.languageService.parsePantry(text)) as { sections?: unknown };
-        if (!Array.isArray(wire?.sections)) {
+        if (!Array.isArray(wire?.sections) || !wire.sections.every(section => Array.isArray(section?.items))) {
             throw new Error('parsePantry: unexpected result from the native parser');
         }
         const sections = wire.sections as Array<{ name: string; items: Record<string, unknown>[] }>;
