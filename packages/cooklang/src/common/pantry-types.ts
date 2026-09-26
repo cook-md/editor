@@ -54,6 +54,11 @@ export interface PantryAttributes {
     low?: string;
 }
 
+/** The four attribute keys of {@link PantryAttributes}, as a single source of truth. */
+export namespace PantryAttributes {
+    export const KEYS = ['quantity', 'bought', 'expire', 'low'] as const;
+}
+
 /** Argument `edit` of `cooklang.api.editPantry`. */
 export type PantryEdit =
     | ({ op: 'add'; section: string; name: string } & PantryAttributes)

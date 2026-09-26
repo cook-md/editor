@@ -39,6 +39,17 @@ class Fixture {
     opened: string[] = [];
     hasProvider: (scheme: string) => boolean = () => true;
     pantryEdits: Array<{ text: string; json: string }> = [];
+    parsePantryJson: string = JSON.stringify({
+        sections: [{
+            name: 'fridge',
+            items: [{
+                name: 'milk', quantity: '1%L', bought: null, expire: '10.05.2026', low: null, // eslint-disable-line no-null/no-null
+                isLow: false, isOutOfStock: false, expireDate: '2026-05-10', boughtDate: null, // eslint-disable-line no-null/no-null
+            }],
+        }],
+        lowStock: [],
+    });
+    editPantryError: Error | undefined = undefined;
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -64,19 +75,11 @@ class Fixture {
             parseChecked: async () => JSON.stringify([{ Checked: 'flour' }, { Unchecked: 'milk' }]),
             writeCheckEntry: async (json: string) => `${json}\n`,
             compactChecked: async (_entries: string, names: string[]) => JSON.stringify(names.map(name => ({ Checked: name }))),
-            /* eslint-disable no-null/no-null */
-            parsePantry: async () => JSON.stringify({
-                sections: [{
-                    name: 'fridge',
-                    items: [{
-                        name: 'milk', quantity: '1%L', bought: null, expire: '10.05.2026', low: null,
-                        isLow: false, isOutOfStock: false, expireDate: '2026-05-10', boughtDate: null,
-                    }],
-                }],
-                lowStock: [],
-            }),
-            /* eslint-enable no-null/no-null */
+            parsePantry: async () => this.parsePantryJson,
             editPantry: async (text: string, json: string) => {
+                if (this.editPantryError) {
+                    throw this.editPantryError;
+                }
                 this.pantryEdits.push({ text, json });
                 return 'edited';
             },
@@ -257,11 +260,19 @@ describe('CooklangPluginApiContribution', () => {
         expect(await fixture.error(CooklangPluginApi.Commands.PARSE_PANTRY, {})).to.match(/^Invalid arguments/);
     });
 
+    it('rejects a native parsePantry result that is not the expected shape', async () => {
+        const fixture = new Fixture();
+        fixture.parsePantryJson = '{}';
+        fixture.create();
+        expect(await fixture.error(CooklangPluginApi.Commands.PARSE_PANTRY, { text: '[fridge]' }))
+            .to.equal('parsePantry: unexpected result from the native parser');
+    });
+
     it('edits the pantry with a validated, normalised edit', async () => {
         const fixture = new Fixture();
         fixture.create();
         const id = CooklangPluginApi.Commands.EDIT_PANTRY;
-        expect(await fixture.run(id, { text: 'T', edit: { op: 'add', section: ' fridge ', name: 'milk', quantity: '1%L', extra: 1 } }))
+        expect(await fixture.run(id, { text: 'T', edit: { op: 'add', section: ' fridge ', name: 'milk', quantity: '1%L' } }))
             .to.equal('edited');
         await fixture.run(id, { text: 'T', edit: { op: 'update', section: 'fridge', name: 'milk', fields: { expire: '' } } });
         await fixture.run(id, { text: 'T', edit: { op: 'remove', section: 'fridge', name: 'milk' } });
@@ -280,9 +291,59 @@ describe('CooklangPluginApiContribution', () => {
         expect(await fixture.error(id, { text: 'T', edit: { op: 'remove', section: 'a' } })).to.match(/^Invalid arguments: `edit.name`/);
         expect(await fixture.error(id, { text: 'T', edit: { op: 'add', section: 'a', name: 'b', quantity: 3 } }))
             .to.match(/^Invalid arguments: `edit`.quantity must be a string/);
-        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b' } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b' } }))
+            .to.equal('Invalid arguments: `edit.fields` must be a JSON object.');
         expect(await fixture.error(id, { text: 'T', edit: { op: 'add', section: 'a', name: 'b\nc' } })).to.match(/control characters/);
         expect(await fixture.error(id, { edit: { op: 'remove', section: 'a', name: 'b' } })).to.match(/^Invalid arguments: `text`/);
         expect(fixture.pantryEdits).to.deep.equal([]);
+    });
+
+    it('rejects unknown keys on a pantry edit instead of silently dropping them', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.EDIT_PANTRY;
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'add', section: 'a', name: 'b', quantity: '1%L', extra: 1 } }))
+            .to.equal('Invalid arguments: `edit` has unknown keys: extra.');
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'add', section: 'a', name: 'b', fields: { quantity: '1%L' } } }))
+            .to.equal('Invalid arguments: `edit` has unknown keys: fields.');
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b', quantity: '1%L', fields: {} } }))
+            .to.equal('Invalid arguments: `edit` has unknown keys: quantity.');
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b', fields: { expiry: '2026-01-01' } } }))
+            .to.equal('Invalid arguments: `edit.fields` has unknown keys: expiry.');
+        expect(fixture.pantryEdits).to.deep.equal([]);
+    });
+
+    it('rejects a whitespace-only attribute value, but keeps an empty string as "clear"', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.EDIT_PANTRY;
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b', fields: { quantity: '   ' } } }))
+            .to.equal('Invalid arguments: `edit.fields`.quantity must not be only whitespace.');
+        await fixture.run(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b', fields: { quantity: '' } } });
+        expect(fixture.pantryEdits).to.deep.equal([
+            { text: 'T', json: '{"op":"update","section":"a","name":"b","fields":{"quantity":""}}' },
+        ]);
+    });
+
+    it('rejects an edit that is not a JSON object, a non-string field value and a whitespace-only section', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.EDIT_PANTRY;
+        expect(await fixture.error(id, { text: 'T', edit: null })).to.equal('Invalid arguments: `edit` must be a JSON object.'); // eslint-disable-line no-null/no-null
+        expect(await fixture.error(id, { text: 'T', edit: [] })).to.equal('Invalid arguments: `edit` must be a JSON object.');
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'update', section: 'a', name: 'b', fields: { quantity: 5 } } }))
+            .to.equal('Invalid arguments: `edit.fields`.quantity must be a string.');
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'add', section: '   ', name: 'b' } }))
+            .to.match(/^Invalid arguments: `edit\.section`/);
+        expect(fixture.pantryEdits).to.deep.equal([]);
+    });
+
+    it('propagates a native editPantry rejection unchanged', async () => {
+        const fixture = new Fixture();
+        fixture.editPantryError = new Error("editPantry: item 'x' not found in section 'y'");
+        fixture.create();
+        const id = CooklangPluginApi.Commands.EDIT_PANTRY;
+        expect(await fixture.error(id, { text: 'T', edit: { op: 'remove', section: 'y', name: 'x' } }))
+            .to.equal("editPantry: item 'x' not found in section 'y'");
     });
 });

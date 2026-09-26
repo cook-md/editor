@@ -209,9 +209,13 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
 
     protected async parsePantry(args: unknown): Promise<PantryContents> {
         const text = this.text(this.object(args).text, '`text`');
-        const wire = JSON.parse(await this.languageService.parsePantry(text)) as { sections: Array<{ name: string; items: Record<string, unknown>[] }> };
+        const wire = JSON.parse(await this.languageService.parsePantry(text)) as { sections?: unknown };
+        if (!Array.isArray(wire?.sections)) {
+            throw new Error('parsePantry: unexpected result from the native parser');
+        }
+        const sections = wire.sections as Array<{ name: string; items: Record<string, unknown>[] }>;
         return {
-            sections: wire.sections.map(section => ({ name: section.name, items: section.items.map(item => this.pantryItem(item)) })),
+            sections: sections.map(section => ({ name: section.name, items: section.items.map(item => this.pantryItem(item)) })),
         };
     }
 
@@ -235,7 +239,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     }
 
     protected pantryEdit(value: unknown): PantryEdit {
-        const edit = this.object(value);
+        const edit = this.object(value, '`edit`');
         const op = edit.op;
         if (op !== 'add' && op !== 'update' && op !== 'remove') {
             throw this.invalid('`edit.op` must be "add", "update" or "remove".');
@@ -243,16 +247,25 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         const section = this.string(edit.section, '`edit.section`');
         const name = this.string(edit.name, '`edit.name`');
         switch (op) {
-            case 'add': return { op, section, name, ...this.pantryAttributes(edit, '`edit`') };
-            case 'update': return { op, section, name, fields: this.pantryAttributes(this.object(edit.fields), '`edit.fields`') };
-            case 'remove': return { op, section, name };
+            case 'add':
+                this.onlyKeys(edit, ['op', 'section', 'name', ...PantryAttributes.KEYS], '`edit`');
+                return { op, section, name, ...this.pantryAttributes(edit, '`edit`') };
+            case 'update': {
+                this.onlyKeys(edit, ['op', 'section', 'name', 'fields'], '`edit`');
+                const fields = this.object(edit.fields, '`edit.fields`');
+                this.onlyKeys(fields, PantryAttributes.KEYS, '`edit.fields`');
+                return { op, section, name, fields: this.pantryAttributes(fields, '`edit.fields`') };
+            }
+            case 'remove':
+                this.onlyKeys(edit, ['op', 'section', 'name'], '`edit`');
+                return { op, section, name };
         }
     }
 
     /** Picks the four known attributes; an empty string is kept (it clears on update). */
     protected pantryAttributes(source: Record<string, unknown>, name: string): PantryAttributes {
         const attributes: PantryAttributes = {};
-        for (const key of ['quantity', 'bought', 'expire', 'low'] as const) {
+        for (const key of PantryAttributes.KEYS) {
             const value = source[key];
             if (value === undefined) {
                 continue;
@@ -260,10 +273,21 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             if (typeof value !== 'string') {
                 throw this.invalid(`${name}.${key} must be a string.`);
             }
+            if (value !== '' && value.trim() === '') {
+                throw this.invalid(`${name}.${key} must not be only whitespace.`);
+            }
             this.noControlCharacters(value, `${name}.${key}`);
             attributes[key] = value.trim();
         }
         return attributes;
+    }
+
+    /** Rejects any key in `source` that is not in `allowed`, instead of silently dropping it. */
+    protected onlyKeys(source: Record<string, unknown>, allowed: readonly string[], name: string): void {
+        const unknown = Object.keys(source).filter(key => !allowed.includes(key));
+        if (unknown.length > 0) {
+            throw this.invalid(`${name} has unknown keys: ${unknown.join(', ')}.`);
+        }
     }
 
     // --- argument helpers ---
@@ -301,9 +325,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         return path.replace(/\\/g, '/');
     }
 
-    protected object(value: unknown): Record<string, unknown> {
+    protected object(value: unknown, name?: string): Record<string, unknown> {
         if (typeof value !== 'object' || value === undefined || value === null || Array.isArray(value)) { // eslint-disable-line no-null/no-null
-            throw this.invalid('expected a JSON object.');
+            throw this.invalid(name ? `${name} must be a JSON object.` : 'expected a JSON object.');
         }
         return value as Record<string, unknown>;
     }
