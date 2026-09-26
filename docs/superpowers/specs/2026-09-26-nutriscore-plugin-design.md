@@ -70,7 +70,7 @@ type PluginReportResult =
 
 - `uri`: absolute URI of a `.cook` or `.menu` file, any scheme. The text is
   the open editor model if there is one (unsaved edits count), else the file.
-- `template`: Jinja source, at most 64 KB. It has every function a report
+- `template`: Jinja source, at most 64 K characters. It has every function a report
   template has (`aggregate_nutrition`, `is_in_category`, `db`, pantry,
   aisle, …) including the `tojson` filter for returning structured data.
 - Rendering goes through the existing `languageService.renderReport` with
@@ -78,6 +78,21 @@ type PluginReportResult =
   `cooklang.nutrition.serviceUrl`, pantry, aisle, datastore and menu
   expansion as the Reports feature. The token never crosses into the plugin
   host.
+- Quota: templates call the nutrition service with the signed-in user's
+  token, so any installed plugin can make authenticated nutrition-service
+  calls on the user's behalf (counting against their quota) without ever
+  seeing the token.
+- Rendering runs off the backend's main thread: the backend calls the
+  addon's `renderReportAsync`, which renders on the libuv threadpool (the
+  nutrition client uses `reqwest::blocking`, fine on a plain worker thread),
+  so badge refreshes never stall the Node event loop. The sync
+  `renderReport` export stays for compatibility. The addon keeps one
+  process-wide nutrition client, built with `.cached()` and keyed by
+  (service URL, token): category membership and per-ingredient lookups are
+  memoised for the process lifetime and dropped when the URL or token
+  changes. Measured on a 16-ingredient recipe with the Nutri-Score
+  template: the first render takes ~2 s (the event loop keeps ticking
+  throughout), a repeat render ~0.1 s.
 - No nutrition-specific native code. The only library change is upstream:
   cooklang-reports 0.5.2 enables minijinja's built-in `tojson` filter (it
   escapes `<`, `>`, `&`, `'`, so it is safe in HTML reports too), available

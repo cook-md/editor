@@ -58,8 +58,10 @@
 | `src/nutriscore.ts` (+ spec) | pure 2023 algorithm |
 | `src/nutrition-input.ts` (+ spec) | aggregate → per-100 g input |
 | `src/trust.ts` (+ spec) | confidence rollup, markdown |
+| `src/support-check.ts` (+ spec) | caches whether the editor supports the report commands (`true` forever, `false` re-checked after a delay) |
 | `src/provider.ts` (+ spec) | `provideBadge` flow |
 | `src/extension.ts` | wiring |
+| `.vscodeignore` | keeps sources, specs, maps and scaffolding out of the packaged plugin |
 
 ---
 
