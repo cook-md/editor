@@ -37,7 +37,7 @@ Two PRs, one per repo. 2 depends on 1.
 
 ### 1.1 Native addon (`packages/cooklang-native`)
 
-**New dependency:** `toml_edit` (same major as cookcli-core, 0.25).
+**New dependency:** `toml_edit` 0.22 (already in the lock file via `cooklang`; the editing code is ported from cookcli-core).
 
 **`editPantry(text: string, editJson: string): string`** (`#[napi(js_name = "editPantry")]`)
 
@@ -156,8 +156,8 @@ Contributes:
 
 Because every edit re-reads the file and addresses items by section + name, an
 external change between render and edit is merged naturally. If the target
-item has vanished, the native error is shown as "Item no longer exists" and
-the view reloads.
+item has vanished, the native error ("item 'x' not found in section 'y'") is
+shown in the banner and the view reloads.
 
 ### 2.4 UI
 
@@ -175,14 +175,17 @@ the view reloads.
   back as ISO), *Save* / *Cancel* / *Delete*. Enter saves, Escape cancels.
   Only changed fields are sent; a field emptied by the user is sent as `""`
   (clears it). Quantity inputs accept `500 g` and are written as `500%g`.
-- **Add form:** section combo (existing sections; free text creates a new
-  one), name, quantity, low, bought, expire.
+- **Add form:** section combo (existing sections, or fridge/pantry/freezer
+  when there are none; free text creates a new one), name, quantity, low,
+  bought, expire. Items in `general` (above the first header) can only hold a
+  quantity; the editor rejects other attributes there with a clear message.
 - **Delete:** confirmation via `vscode.window.showWarningMessage(..., { modal: true })`
   from the extension side — never a webview `confirm()`.
 - **Empty / error states:**
   - No workspace: "Open a folder to use the pantry."
   - No `pantry.conf`: explanation + *Create pantry* button, which writes a
-    starter file with empty `[fridge]`, `[pantry]`, `[freezer]` sections.
+    comment-only starter file explaining the format (the parser drops empty
+    sections, so there is no point writing them).
   - Parse error: the message + *Open file* button.
 - **Errors from edits** show in a dismissible banner in the view.
 
@@ -201,8 +204,9 @@ the view reloads.
 1. Publish `cooklang.pantry` 0.1.0 to plugins.cook.md.
 2. Editor: add `"cooklang.pantry": "https://plugins.cook.md/api/cooklang/pantry/0.1.0/file/cooklang.pantry-0.1.0.vsix"`
    to `theiaPlugins` in the root `package.json`.
-3. Plugin `README.md`; add pantry to `../plugins/README.md` and the editor's
-   help plugins section.
+3. Plugin `README.md`; add pantry to `../plugins/README.md`. The user guide
+   page (cook.md/help/plugins/pantry) lives in the cook.md site repo and is
+   out of scope for these plans.
 
 The plugin requires an editor with the new API commands. `cooklang-api.ts`
 detects their absence and the view shows "This version of Cook Editor does not
