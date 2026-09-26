@@ -70,7 +70,17 @@ interface BadgeInternals {
     outlets: { collectBadges: (menuPath: MenuPath, context: object, element?: HTMLElement) => Promise<PreviewBadge[]> };
     badgeDebounceMs: number;
     badges: PreviewBadge[];
+    badgesStale: boolean;
+    badgeHoverShown: boolean;
+    badgeTimer: ReturnType<typeof setTimeout> | undefined;
+    badgeSequence: number;
     refreshBadges(): Promise<void>;
+    scheduleBadges(): void;
+    handleShowBadgeDetails(badge: PreviewBadge, target: HTMLElement, immediate: boolean): void;
+    handleHideBadgeDetails(): void;
+    hideBadgeHover(): void;
+    onAfterShow(msg: unknown): void;
+    onBeforeHide(msg: unknown): void;
 }
 
 /** Poll until `condition` holds; the preview parses asynchronously and exposes no promise. */
@@ -91,6 +101,7 @@ class PreviewHarness {
     readonly imageReads: string[] = [];
     readonly itemElements: Array<HTMLElement | undefined> = [];
     readonly runElements: Array<HTMLElement | undefined> = [];
+    hoverCancelCount = 0;
     /** What `recipeImagesFromContent` reports as the title image. */
     contentImage: string | undefined = REMOTE_IMAGE;
     /** What `recipeImages` reports as the title image of a local recipe. */
@@ -117,6 +128,13 @@ class PreviewHarness {
             collectBadges: async () => [],
         });
         const widget = new RecipePreviewWidget();
+        // `isVisible` is a getter-only accessor on Lumino's `Widget`, derived from
+        // DOM attachment (`isAttached`) — which a widget built by `new` here never
+        // has. `scheduleBadges` now branches on `isVisible`, so it is shadowed with
+        // a writable own property defaulting to visible (matching every other test
+        // in this file, which assumes badge/parse/image refreshes run eagerly);
+        // `setVisible` below flips it for the tests that care about hidden previews.
+        Object.defineProperty(widget, 'isVisible', { value: true, writable: true, configurable: true });
         Object.assign(widget, {
             service: {
                 parse: async () => JSON.stringify({ recipe: RECIPE, title: 'Pancakes', errors: [], warnings: [] }),
@@ -153,7 +171,7 @@ class PreviewHarness {
             },
             timerService: { onDidChangeTimers: never, list: () => [] },
             outlets,
-            hoverService: { requestHover: () => undefined, cancelHover: () => undefined },
+            hoverService: { requestHover: () => undefined, cancelHover: () => { this.hoverCancelCount++; } },
             subscriptions: { onDidChangeSubscription: never },
             contextKeyService: {
                 createScoped: (target: HTMLElement) => {
@@ -186,6 +204,11 @@ class PreviewHarness {
     registerProvider(scheme: string): void {
         this.providers.add(scheme);
         this.registrations.fire({ added: true, scheme });
+    }
+
+    /** Flip the `isVisible` override installed in the constructor (see the comment there). */
+    setVisible(visible: boolean): void {
+        (this.widget as unknown as { isVisible: boolean }).isVisible = visible;
     }
 
     markup(): string {
@@ -388,9 +411,78 @@ describe('RecipePreviewWidget badges', () => {
         expect(internals.badges).to.deep.equal([badge]);
     });
 
+    it('coalesces several scheduleBadges calls in one window into a single collectBadges call', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        internals.badgeDebounceMs = 1;
+        await harness.open(LOCAL);
+
+        let calls = 0;
+        internals.outlets.collectBadges = async () => {
+            calls++;
+            return [];
+        };
+        internals.scheduleBadges();
+        internals.scheduleBadges();
+        internals.scheduleBadges();
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(calls).to.equal(1);
+    });
+
+    it('drops a badge refresh in flight when setUri switches to another recipe', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        internals.badgeDebounceMs = 1;
+        await harness.open(LOCAL);
+
+        let resolveOld!: (badges: PreviewBadge[]) => void;
+        internals.outlets.collectBadges = async () => new Promise<PreviewBadge[]>(resolve => { resolveOld = resolve; });
+
+        // A refresh is in flight for the current recipe when the preview switches to
+        // another URI. That URI has no registered file system provider, so the
+        // switch itself parses nothing and schedules no badge refresh of its own —
+        // isolating this test to the sequence guard in `refreshBadges`/`setUri`.
+        const inFlight = internals.refreshBadges();
+        harness.widget.setUri(new URI('other-scheme:/nope.cook'));
+        resolveOld([{ kind: 'pill', text: 'old', tone: 'neutral', tooltipMarkdown: '' }]);
+        await inFlight;
+
+        expect(internals.badges).to.deep.equal([]);
+    });
+
+    it('defers a badge refresh while hidden and runs it once the preview is shown again', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        internals.badgeDebounceMs = 1;
+        harness.setVisible(false);
+        await harness.open(LOCAL);
+
+        const calls: object[] = [];
+        internals.outlets.collectBadges = async (_menuPath, context) => {
+            calls.push(context);
+            return [];
+        };
+        // Hidden: the parse that just completed called `scheduleBadges`, but it
+        // must not have started a timer or ever reached the outlet.
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(calls).to.have.lengthOf(0);
+        expect(internals.badgesStale).to.equal(true);
+
+        harness.setVisible(true);
+        internals.onAfterShow(undefined);
+        await until(() => calls.length > 0);
+
+        expect(calls).to.have.lengthOf(1);
+        expect(internals.badgesStale).to.equal(false);
+    });
+
     it('drops a stale badge refresh that resolves after a newer one', async () => {
         const harness = new PreviewHarness();
         const internals = harness.widget as unknown as BadgeInternals;
+        // Debounced so the automatic refresh the parse triggers does not leave a
+        // pending timer running past the end of this test.
+        internals.badgeDebounceMs = 1;
         await harness.open(LOCAL);
 
         const stale: PreviewBadge = { kind: 'pill', text: 'stale', tone: 'neutral', tooltipMarkdown: '' };
@@ -416,5 +508,32 @@ describe('RecipePreviewWidget badges', () => {
         resolveStale([stale]);
         await firstRefresh;
         expect(internals.badges).to.deep.equal([fresh]);
+    });
+});
+
+describe('RecipePreviewWidget badge hover', () => {
+
+    it('cancels its own badge hover on dispose', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        await harness.open(LOCAL);
+
+        const badge: PreviewBadge = { kind: 'pill', text: 'x', tone: 'neutral', tooltipMarkdown: '' };
+        internals.handleShowBadgeDetails(badge, harness.widget.node, true);
+        expect(internals.badgeHoverShown).to.equal(true);
+
+        harness.widget.dispose();
+
+        expect(harness.hoverCancelCount).to.equal(1);
+        expect(internals.badgeHoverShown).to.equal(false);
+    });
+
+    it('never calls the global cancelHover on dispose when it never opened a hover', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(LOCAL);
+
+        harness.widget.dispose();
+
+        expect(harness.hoverCancelCount).to.equal(0);
     });
 });

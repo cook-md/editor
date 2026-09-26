@@ -45,7 +45,7 @@ export class NutriScoreColorContribution implements ColorContribution {
         colors.register({
             id: 'cooklang.nutriscoreForegroundLight',
             defaults: { dark: '#FFFFFF', light: '#FFFFFF', hcDark: '#FFFFFF', hcLight: '#FFFFFF' },
-            description: 'Letter color on the Nutri-Score strip for grades with a dark background (A, E).',
+            description: 'Letter color on the Nutri-Score strip for grades with a dark background (A).',
         });
         colors.register({
             id: 'cooklang.nutriscoreForegroundDark',
