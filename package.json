@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@theia/monorepo",
-  "version": "0.1.0-alpha.47",
+  "version": "0.1.0-alpha.48",
   "engines": {
     "node": ">=22"
   },
