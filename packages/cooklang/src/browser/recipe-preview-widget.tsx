@@ -169,15 +169,32 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
         super.onAfterShow(msg);
         // Ticks were ignored while hidden, so the countdown may be stale.
         this.update();
-        if (this.badgesStale) {
-            this.badgesStale = false;
-            this.scheduleBadges();
-        }
+        this.flushStaleBadges();
+    }
+
+    /**
+     * The first tab in an empty dock area, or the active tab of a restored
+     * layout, goes straight from never-attached to visible: Lumino sends
+     * `after-attach` but no `after-show` (there was no prior hide to show
+     * from), so a badge refresh deferred while `isVisible` was false would
+     * otherwise never flush without this.
+     */
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.flushStaleBadges();
     }
 
     protected override onBeforeHide(msg: Message): void {
         super.onBeforeHide(msg);
         this.hideBadgeHover();
+    }
+
+    /** Runs a badge refresh deferred by `scheduleBadges` while hidden, once the preview is visible again. */
+    protected flushStaleBadges(): void {
+        if (this.badgesStale && this.isVisible) {
+            this.badgesStale = false;
+            this.scheduleBadges();
+        }
     }
 
     /** Whether any live timer belongs to the recipe this preview shows. */
@@ -557,6 +574,9 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             position: 'bottom',
             cssClasses: ['cooklang-preview-badge-hover'],
             skipHoverDelay: immediate,
+            // HoverService can close the hover on its own (mouseout, mousedown
+            // elsewhere), without going through `handleHideBadgeDetails`.
+            onHide: () => { this.badgeHoverShown = false; },
         });
     };
 

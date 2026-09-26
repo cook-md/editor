@@ -80,6 +80,7 @@ interface BadgeInternals {
     handleHideBadgeDetails(): void;
     hideBadgeHover(): void;
     onAfterShow(msg: unknown): void;
+    onAfterAttach(msg: unknown): void;
     onBeforeHide(msg: unknown): void;
 }
 
@@ -102,6 +103,8 @@ class PreviewHarness {
     readonly itemElements: Array<HTMLElement | undefined> = [];
     readonly runElements: Array<HTMLElement | undefined> = [];
     hoverCancelCount = 0;
+    /** The `onHide` callback of the most recent `requestHover` call, if it provided one. */
+    lastHoverOnHide: (() => void) | undefined;
     /** What `recipeImagesFromContent` reports as the title image. */
     contentImage: string | undefined = REMOTE_IMAGE;
     /** What `recipeImages` reports as the title image of a local recipe. */
@@ -171,7 +174,10 @@ class PreviewHarness {
             },
             timerService: { onDidChangeTimers: never, list: () => [] },
             outlets,
-            hoverService: { requestHover: () => undefined, cancelHover: () => { this.hoverCancelCount++; } },
+            hoverService: {
+                requestHover: (request: { onHide?: () => void }) => { this.lastHoverOnHide = request.onHide; },
+                cancelHover: () => { this.hoverCancelCount++; },
+            },
             subscriptions: { onDidChangeSubscription: never },
             contextKeyService: {
                 createScoped: (target: HTMLElement) => {
@@ -477,6 +483,32 @@ describe('RecipePreviewWidget badges', () => {
         expect(internals.badgesStale).to.equal(false);
     });
 
+    it('flushes a deferred badge refresh on attach, not just on show', async () => {
+        // A widget that never went hidden-then-shown — e.g. the first tab in an
+        // empty dock area, or the active tab of a restored layout — gets
+        // `after-attach` but no `after-show`. `scheduleBadges` deferred while
+        // `isVisible` was false must still flush from `onAfterAttach`.
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        internals.badgeDebounceMs = 1;
+        harness.setVisible(false);
+        await harness.open(LOCAL);
+        expect(internals.badgesStale).to.equal(true);
+
+        const calls: object[] = [];
+        internals.outlets.collectBadges = async (_menuPath, context) => {
+            calls.push(context);
+            return [];
+        };
+
+        harness.setVisible(true);
+        internals.onAfterAttach(undefined);
+        await until(() => calls.length > 0);
+
+        expect(calls).to.have.lengthOf(1);
+        expect(internals.badgesStale).to.equal(false);
+    });
+
     it('drops a stale badge refresh that resolves after a newer one', async () => {
         const harness = new PreviewHarness();
         const internals = harness.widget as unknown as BadgeInternals;
@@ -531,6 +563,26 @@ describe('RecipePreviewWidget badge hover', () => {
     it('never calls the global cancelHover on dispose when it never opened a hover', async () => {
         const harness = new PreviewHarness();
         await harness.open(LOCAL);
+
+        harness.widget.dispose();
+
+        expect(harness.hoverCancelCount).to.equal(0);
+    });
+
+    it('tracks HoverService closing the hover on its own, so dispose does not cancel again', async () => {
+        const harness = new PreviewHarness();
+        const internals = harness.widget as unknown as BadgeInternals;
+        await harness.open(LOCAL);
+
+        const badge: PreviewBadge = { kind: 'pill', text: 'x', tone: 'neutral', tooltipMarkdown: '' };
+        internals.handleShowBadgeDetails(badge, harness.widget.node, true);
+        expect(internals.badgeHoverShown).to.equal(true);
+
+        // HoverService can hide the hover itself (mouseout, a click elsewhere)
+        // without either `handleHideBadgeDetails` or dispose ever running.
+        expect(harness.lastHoverOnHide, 'requestHover was not given an onHide callback').to.not.be.undefined;
+        harness.lastHoverOnHide!();
+        expect(internals.badgeHoverShown).to.equal(false);
 
         harness.widget.dispose();
 
