@@ -117,7 +117,8 @@ export declare function searchRecipesFiltered(baseDir: string, query: string, fi
 /**
  * Parse a `config/pantry.conf` (TOML) and return its sections and items.
  *
- * Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }],
+ * Returns JSON: `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow,
+ *                  isOutOfStock, expireDate, boughtDate }] }],
  *                  lowStock: [{ name, section, quantity, low }] }`.
  */
 export declare function parsePantry(text: string): string
@@ -128,6 +129,15 @@ export declare function parsePantry(text: string): string
  * Returns JSON: `[{ name, inStock, section, quantity, isLow }]` in input order.
  */
 export declare function checkPantry(text: string, names: Array<string>): string
+/**
+ * Apply one edit to a `config/pantry.conf` text and return the new text,
+ * preserving comments and formatting (see `pantry_file`).
+ *
+ * `edit_json`: `{ op: "add", section, name, quantity?, bought?, expire?, low? }`
+ * | `{ op: "update", section, name, fields: { quantity?, bought?, expire?, low? } }`
+ * (an empty string clears that attribute) | `{ op: "remove", section, name }`.
+ */
+export declare function editPantry(text: string, editJson: string): string
 /**
  * Render a Jinja2 report template against a recipe via cooklang-reports
  * (the same engine cookcli's `cook report` uses).

@@ -84,7 +84,9 @@ export class GetPantryTool extends PantryToolBase implements ToolProvider {
             name: GetPantryTool.ID,
             displayName: 'Get Pantry',
             description: `Read the user's pantry inventory from ${PANTRY_CONF_PATH} (the file CookCLI's \`cook pantry\` reads). `
-                + 'Returns { path, sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }], lowStock: [{ name, section, quantity, low }] } '
+                + 'Returns { path, sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow, isOutOfStock, expireDate, boughtDate }] }], '
+                + 'lowStock: [{ name, section, quantity, low }] } '
+                + '(isOutOfStock: quantity is 0; expireDate/boughtDate: the dates as YYYY-MM-DD, null when absent or unparseable) '
                 + '— or { pantry: null, message } when the workspace has no pantry file (that is a valid answer, not an error). '
                 + 'Use checkPantry to test specific ingredients instead of scanning this list.',
             parameters: {

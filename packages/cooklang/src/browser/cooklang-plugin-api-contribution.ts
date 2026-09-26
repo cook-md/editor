@@ -30,6 +30,7 @@ import {
     toWireCheckedLog,
     toWireShoppingList,
 } from '../common/shopping-list-types';
+import { PantryAttributes, PantryContents, PantryEdit, PantryItemInfo } from '../common/pantry-types';
 import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
@@ -62,6 +63,10 @@ export namespace CooklangPluginApi {
         COMPACT_SHOPPING_CHECKED: 'cooklang.api.compactShoppingChecked',
         /** `{ uri }`: open the recipe preview for a `.cook` URI of any scheme (e.g. `cooklang-hub:`). */
         OPEN_PREVIEW: 'cooklang.api.openPreview',
+        /** `{ text }` → `PantryContents`: parse a `config/pantry.conf` text. */
+        PARSE_PANTRY: 'cooklang.api.parsePantry',
+        /** `{ text, edit: PantryEdit }` → new file text, comments and formatting preserved. */
+        EDIT_PANTRY: 'cooklang.api.editPantry',
     } as const;
 }
 
@@ -111,6 +116,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.WRITE_SHOPPING_CHECKED }, { execute: (args: unknown) => this.writeShoppingChecked(args) });
         registry.registerCommand({ id: Commands.COMPACT_SHOPPING_CHECKED }, { execute: (args: unknown) => this.compactShoppingChecked(args) });
         registry.registerCommand({ id: Commands.OPEN_PREVIEW }, { execute: (args: unknown) => this.openPreview(args) });
+        registry.registerCommand({ id: Commands.PARSE_PANTRY }, { execute: (args: unknown) => this.parsePantry(args) });
+        registry.registerCommand({ id: Commands.EDIT_PANTRY }, { execute: (args: unknown) => this.editPantry(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -200,6 +207,89 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         await this.recipePreview.open(uri);
     }
 
+    protected async parsePantry(args: unknown): Promise<PantryContents> {
+        const text = this.text(this.object(args).text, '`text`');
+        const wire = JSON.parse(await this.languageService.parsePantry(text)) as { sections?: unknown };
+        if (!Array.isArray(wire?.sections) || !wire.sections.every(section => Array.isArray(section?.items))) {
+            throw new Error('parsePantry: unexpected result from the native parser');
+        }
+        const sections = wire.sections as Array<{ name: string; items: Record<string, unknown>[] }>;
+        return {
+            sections: sections.map(section => ({ name: section.name, items: section.items.map(item => this.pantryItem(item)) })),
+        };
+    }
+
+    /** Native JSON uses null for absent attributes; the plugin shape omits them. */
+    protected pantryItem(wire: Record<string, unknown>): PantryItemInfo {
+        const item: PantryItemInfo = { name: String(wire.name), isLow: wire.isLow === true, isOutOfStock: wire.isOutOfStock === true };
+        for (const key of ['quantity', 'bought', 'expire', 'low', 'expireDate', 'boughtDate'] as const) {
+            const value = wire[key];
+            if (typeof value === 'string') {
+                item[key] = value;
+            }
+        }
+        return item;
+    }
+
+    protected async editPantry(args: unknown): Promise<string> {
+        const request = this.object(args);
+        const text = this.text(request.text, '`text`');
+        const edit = this.pantryEdit(request.edit);
+        return this.languageService.editPantry(text, JSON.stringify(edit));
+    }
+
+    protected pantryEdit(value: unknown): PantryEdit {
+        const edit = this.object(value, '`edit`');
+        const op = edit.op;
+        if (op !== 'add' && op !== 'update' && op !== 'remove') {
+            throw this.invalid('`edit.op` must be "add", "update" or "remove".');
+        }
+        const section = this.string(edit.section, '`edit.section`');
+        const name = this.string(edit.name, '`edit.name`');
+        switch (op) {
+            case 'add':
+                this.onlyKeys(edit, ['op', 'section', 'name', ...PantryAttributes.KEYS], '`edit`');
+                return { op, section, name, ...this.pantryAttributes(edit, '`edit`') };
+            case 'update': {
+                this.onlyKeys(edit, ['op', 'section', 'name', 'fields'], '`edit`');
+                const fields = this.object(edit.fields, '`edit.fields`');
+                this.onlyKeys(fields, PantryAttributes.KEYS, '`edit.fields`');
+                return { op, section, name, fields: this.pantryAttributes(fields, '`edit.fields`') };
+            }
+            case 'remove':
+                this.onlyKeys(edit, ['op', 'section', 'name'], '`edit`');
+                return { op, section, name };
+        }
+    }
+
+    /** Picks the four known attributes; an empty string is kept (it clears on update). */
+    protected pantryAttributes(source: Record<string, unknown>, name: string): PantryAttributes {
+        const attributes: PantryAttributes = {};
+        for (const key of PantryAttributes.KEYS) {
+            const value = source[key];
+            if (value === undefined) {
+                continue;
+            }
+            if (typeof value !== 'string') {
+                throw this.invalid(`${name}.${key} must be a string.`);
+            }
+            if (value !== '' && value.trim() === '') {
+                throw this.invalid(`${name}.${key} must not be only whitespace.`);
+            }
+            this.noControlCharacters(value, `${name}.${key}`);
+            attributes[key] = value.trim();
+        }
+        return attributes;
+    }
+
+    /** Rejects any key in `source` that is not in `allowed`, instead of silently dropping it. */
+    protected onlyKeys(source: Record<string, unknown>, allowed: readonly string[], name: string): void {
+        const unknown = Object.keys(source).filter(key => !allowed.includes(key));
+        if (unknown.length > 0) {
+            throw this.invalid(`${name} has unknown keys: ${unknown.join(', ')}.`);
+        }
+    }
+
     // --- argument helpers ---
 
     protected root(): URI {
@@ -235,9 +325,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         return path.replace(/\\/g, '/');
     }
 
-    protected object(value: unknown): Record<string, unknown> {
+    protected object(value: unknown, name?: string): Record<string, unknown> {
         if (typeof value !== 'object' || value === undefined || value === null || Array.isArray(value)) { // eslint-disable-line no-null/no-null
-            throw this.invalid('expected a JSON object.');
+            throw this.invalid(name ? `${name} must be a JSON object.` : 'expected a JSON object.');
         }
         return value as Record<string, unknown>;
     }
