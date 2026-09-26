@@ -24,6 +24,7 @@ try {
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
+import { Emitter } from '@theia/core/lib/common/event';
 import { PluginReportService } from './plugin-report-service';
 
 class Fixture {
@@ -32,6 +33,8 @@ class Fixture {
     responses: string[] = [];
     text = 'Mix @apple{2} and @flour{200%g}.';
     model = true;
+    readonly onDidChangeAuthEmitter = new Emitter<unknown>();
+    readonly onPreferenceChangedEmitter = new Emitter<{ preferenceName: string }>();
 
     create(): PluginReportService {
         const service = new PluginReportService();
@@ -50,6 +53,9 @@ class Fixture {
         };
         (service as any).monacoWorkspace = { getTextDocument: () => this.model ? { getText: () => this.text } : undefined };
         (service as any).fileService = { read: async () => ({ value: `disk: ${this.text}` }) };
+        (service as any).authContribution = { onDidChangeAuth: this.onDidChangeAuthEmitter.event };
+        (service as any).preferences = { onPreferenceChanged: this.onPreferenceChangedEmitter.event };
+        (service as any).init();
         /* eslint-enable @typescript-eslint/no-explicit-any */
         return service;
     }
@@ -120,5 +126,28 @@ describe('PluginReportService', () => {
         fixture.responses.push(JSON.stringify({ output: 'c' }));
         await service.render(URI_A, TEMPLATE, 1);
         expect(fixture.renders).to.have.length(6);
+    });
+
+    it('drops cached results on login/logout and on a cooklang preference change', async () => {
+        const fixture = new Fixture();
+        const service = fixture.create();
+        fixture.responses.push(JSON.stringify({ output: 'a' }));
+        await service.render(URI_A, TEMPLATE, 1);
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders).to.have.length(1);
+
+        fixture.onDidChangeAuthEmitter.fire({ status: 'logged-in' });
+        fixture.responses.push(JSON.stringify({ output: 'b' }));
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders).to.have.length(2);
+
+        fixture.onPreferenceChangedEmitter.fire({ preferenceName: 'cooklang.nutrition.serviceUrl' });
+        fixture.responses.push(JSON.stringify({ output: 'c' }));
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders).to.have.length(3);
+
+        fixture.onPreferenceChangedEmitter.fire({ preferenceName: 'editor.fontSize' });
+        await service.render(URI_A, TEMPLATE, 1);
+        expect(fixture.renders).to.have.length(3);
     });
 });
