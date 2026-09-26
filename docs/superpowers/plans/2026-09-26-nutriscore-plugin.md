@@ -63,7 +63,10 @@
 
 ---
 
-## Task 1: Probe the live nutrition service (no code)
+## Task 1: Probe the live nutrition service (no code) — DONE 2026-09-26
+
+Results: category slugs are plural (`fruits`, `vegetables`, `legumes`); totals carry `micros.sodium_mg` and `micros.energy_kj`. Service data quality issue found: some "raw" matches pick dried/powdered records (banana 346 kcal/100 g, milk 496 kcal/100 g) and apple reports 0 g sugar — reported to the user; out of scope here.
+
 
 Resolves the two facts the spec could not verify without a token: category slug names and the sodium micro key.
 
@@ -1646,6 +1649,10 @@ describe('toPer100g', () => {
         assert.strictEqual(values.fvlPercent, 25);
     });
 
+    it('prefers the service energy_kj over converting kcal', () => {
+        assert.strictEqual(toPer100g(aggregate(200, { energy_kj: 1000 }), undefined)!.energyKj, 500);
+    });
+
     it('treats an unknown fruit/veg share as 0 and missing sodium as 0', () => {
         const values = toPer100g(aggregate(100, {}), undefined)!;
         assert.strictEqual(values.fvlPercent, 0);
@@ -1823,7 +1830,7 @@ export function parseNutritionOutput(output: string, categoriesRequested: boolea
 }
 ```
 
-- [ ] **Step 5: Implement `nutrition-input.ts`** (use the key found in Task 1 in `SODIUM_KEYS`):
+- [ ] **Step 5: Implement `nutrition-input.ts`** (verified 2026-09-26: totals carry `micros.sodium_mg` and `micros.energy_kj`):
 
 ```ts
 import { NutritionAggregate } from './nutrition-template';
@@ -1845,10 +1852,14 @@ export function toPer100g(aggregate: NutritionAggregate, categoryMassG: number |
     }
     const factor = 100 / mass;
     const macros = aggregate.totals.macros;
+    // The service reports energy in kJ directly; fall back to converting kcal.
+    const energyKj = typeof aggregate.totals.micros.energy_kj === 'number'
+        ? aggregate.totals.micros.energy_kj
+        : macros.kcal * KJ_PER_KCAL;
     const sodiumKey = SODIUM_KEYS.find(key => typeof aggregate.totals.micros[key] === 'number');
     const sodiumMg = sodiumKey ? aggregate.totals.micros[sodiumKey] : 0;
     return {
-        energyKj: macros.kcal * KJ_PER_KCAL * factor,
+        energyKj: energyKj * factor,
         sugarsG: macros.sugar_g * factor,
         satFatG: macros.sat_fat_g * factor,
         saltG: sodiumMg * 2.5 / 1000 * factor,
@@ -1866,7 +1877,7 @@ export function toPer100g(aggregate: NutritionAggregate, categoryMassG: number |
 ```bash
 cd ~/Cooklang/plugins/nutriscore && npm run compile && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "
 const n=require('/Users/alexeydubovskoy/Cooklang/editor/packages/cooklang-native/index.js');
-const t=require('./out/nutrition-template.js').nutritionTemplate(['fruit']);
+const t=require('./out/nutrition-template.js').nutritionTemplate(['fruits']);
 console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', t, JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,400));"
 ```
 
@@ -2193,7 +2204,7 @@ describe('NutriScoreBadgeProvider', () => {
 
 - [ ] **Step 2: Run, expect failure.**
 
-- [ ] **Step 3: Implement** `provider.ts` (use Task 1's verified slugs in `FVL_CATEGORIES`):
+- [ ] **Step 3: Implement** `provider.ts` (slugs verified against nutrition.cook.md on 2026-09-26: `fruits`, `vegetables`, `legumes`; singular forms return `category_not_found`):
 
 ```ts
 import { CooklangApi, NutriScoreBadge, PluginReportResult, PreviewOutletContext } from './cooklang-api';
@@ -2203,7 +2214,7 @@ import { nutriScore } from './nutriscore';
 import { summarizeTrust, tooltipMarkdown } from './trust';
 
 /** Category slugs of the nutrition service that count toward the fruit/vegetable/legume share. */
-export const FVL_CATEGORIES = ['fruit', 'vegetable', 'legume'];
+export const FVL_CATEGORIES = ['fruits', 'vegetables', 'legumes'];
 
 function isPreviewContext(value: unknown): value is PreviewOutletContext {
     const context = value as PreviewOutletContext;
