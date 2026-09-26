@@ -1875,6 +1875,16 @@ salt = {}
     }
 
     #[test]
+    fn edit_pantry_rejects_unknown_fields() {
+        let err = edit_pantry(
+            "[fridge]\nmilk = \"1%L\"\n".to_string(),
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"expiry":"x"}}"#.to_string(),
+        )
+        .unwrap_err();
+        assert!(err.reason.starts_with("editPantry: invalid edit:"), "{}", err.reason);
+    }
+
+    #[test]
     fn check_pantry_error_names_its_caller() {
         let err =
             check_pantry("[fridge\nmilk = ".to_string(), vec!["milk".to_string()]).unwrap_err();

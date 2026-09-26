@@ -1,13 +1,26 @@
 //! Editing `config/pantry.conf` **in place**, as text, for `editPantry`.
 //!
 //! Ported from cookcli-core (`crates/core/src/pantry/edit.rs`): only the entry
-//! asked for is touched, so comments, blank lines, key order, the short
-//! `name = "1%kg"` form and attributes `cooklang` does not model all survive.
-//! On top of cookcli, an update can *clear* an attribute (empty string).
+//! asked for is touched, so comments (including a trailing `# note` on the
+//! item), blank lines, key order, the short `name = "1%kg"` form, items
+//! written as `[section.item]` tables and attributes `cooklang` does not model
+//! all survive. On top of cookcli, an update can *clear* an attribute (empty
+//! string).
 //!
-//! Items above the first `[header]` belong to the section the parser calls
-//! `general`; here that is the document root.
+//! The edits must agree with how `cooklang::pantry` reads the file:
+//! - top-level string keys are the items of the section called `general`,
+//!   and they *replace* an explicit `[general]` table. So `general` means the
+//!   document root, unless the root holds no items and a `general` section
+//!   exists, in which case that section is edited like any other; when both
+//!   exist the edit is refused.
+//! - any other top-level key is a section: a table, an inline table, an array
+//!   of names or of tables, or `[[section]]`. Only tables can be edited; an
+//!   array of names is first rewritten as a table.
+//!
+//! Anything the editor cannot change without dropping or rewriting data it
+//! was not asked to touch is refused with a message pointing to the file.
 
+use chrono::Datelike;
 use serde::Deserialize;
 use toml_edit::{DocumentMut, InlineTable, Item, Table, TableLike, Value};
 
@@ -20,19 +33,23 @@ const DATE_FORMATS: [&str; 6] = [
     "%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y.%m.%d", "%d-%m-%Y",
 ];
 
-/// `raw` as `YYYY-MM-DD`, or `None` when no accepted format matches.
+/// `raw` as `YYYY-MM-DD`, or `None` when no accepted format matches. A year
+/// before 1000 is taken as a two-digit year (`01.10.26`) and rejected rather
+/// than read as the year 26.
 pub(crate) fn normalise_pantry_date(raw: &str) -> Option<String> {
     let raw = raw.trim();
     DATE_FORMATS
         .iter()
         .find_map(|format| chrono::NaiveDate::parse_from_str(raw, format).ok())
+        .filter(|date| date.year() >= 1000)
         .map(|date| date.format("%Y-%m-%d").to_string())
 }
 
 /// Item attributes. On `update`: `None` leaves the attribute alone, `Some("")`
 /// removes it, anything else sets it. On `add`: `None` and `Some("")` both
-/// mean "do not write".
+/// mean "do not write". Unknown attributes are rejected.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Attributes {
     #[serde(default)]
     pub quantity: Option<String>,
@@ -44,9 +61,10 @@ pub(crate) struct Attributes {
     pub low: Option<String>,
 }
 
-/// One edit, as JSON: `{"op":"add"|"update"|"remove", ...}`.
+/// One edit, as JSON: `{"op":"add"|"update"|"remove", ...}`. Unknown fields
+/// are rejected, so a misspelt attribute is an error rather than a no-op.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) enum PantryEdit {
     Add {
         section: String,
@@ -96,10 +114,10 @@ impl Attributes {
         }
     }
 
-    /// The value a fresh item takes: short form unless an attribute other
-    /// than the quantity needs a table.
-    fn to_item(&self, section: &str) -> Item {
-        let short = section == GENERAL
+    /// The value a fresh item takes: short form at the root, or unless an
+    /// attribute other than the quantity needs a table.
+    fn to_item(&self, target: SectionTarget) -> Item {
+        let short = matches!(target, SectionTarget::Root)
             || (self.bought.is_none() && self.expire.is_none() && self.low.is_none());
         if short {
             return toml_edit::value(self.quantity.clone().unwrap_or_default());
@@ -111,6 +129,33 @@ impl Attributes {
             }
         }
         toml_edit::value(table)
+    }
+}
+
+/// Where the items of the section an edit names live.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SectionTarget<'a> {
+    /// `general` as the parser reads it: the string keys at the document root.
+    Root,
+    /// The top-level key holding the section (possibly an explicit `general`).
+    Key(&'a str),
+}
+
+/// Decide where `section` lives; see the module doc for `general`.
+fn resolve_target<'a>(doc: &DocumentMut, section: &'a str) -> Result<SectionTarget<'a>, String> {
+    if section != GENERAL {
+        return Ok(SectionTarget::Key(section));
+    }
+    // `general = "1%kg"` would be a root item called general, not a section.
+    let general_section = doc.get(GENERAL).is_some_and(|item| !is_root_item(item));
+    let has_root_items = doc.iter().any(|(_, item)| is_root_item(item));
+    match (general_section, has_root_items) {
+        (true, true) => Err(
+            "both top-level items and a [general] table exist; merge them by hand in config/pantry.conf"
+                .to_string(),
+        ),
+        (true, false) => Ok(SectionTarget::Key(GENERAL)),
+        (false, _) => Ok(SectionTarget::Root),
     }
 }
 
@@ -128,28 +173,37 @@ pub(crate) fn apply_edit(text: &str, edit: &PantryEdit) -> Result<String, String
                 low: low.clone(),
             }
             .written();
-            check_general_attributes(section, name, &attributes)?;
-            normalise_array_section(&mut doc, section);
-            if let Some(existing) = find_item_ignoring_case(&doc, section, name) {
+            let target = resolve_target(&doc, section)?;
+            check_general_attributes(target, name, &attributes)?;
+            normalise_array_section(&mut doc, target)?;
+            if let Some(existing) = matching_items(&doc, target)?.and_then(|keys| {
+                let wanted = name.to_lowercase();
+                keys.into_iter().find(|key| key.to_lowercase() == wanted)
+            }) {
                 return Err(format!("item '{existing}' already exists in section '{section}'"));
             }
-            insert(&mut doc, section, name, &attributes);
+            if target == SectionTarget::Root && doc.get(name).is_some() {
+                return Err(format!("'{name}' is already used as a section name"));
+            }
+            insert(&mut doc, target, name, &attributes)?;
         }
         PantryEdit::Update { section, name, fields } => {
             let (section, name) = (required(section, "section")?, required(name, "name")?);
             if fields.is_empty() {
                 return Err(format!("no fields to update on item '{name}' in section '{section}'"));
             }
-            check_general_attributes(section, name, &fields.written())?;
-            normalise_array_section(&mut doc, section);
-            require_item(&doc, section, name)?;
-            apply(&mut doc, section, name, fields)?;
+            let target = resolve_target(&doc, section)?;
+            check_general_attributes(target, name, &fields.written())?;
+            normalise_array_section(&mut doc, target)?;
+            let key = resolve_item(&doc, target, section, name)?;
+            apply(&mut doc, target, section, &key, fields)?;
         }
         PantryEdit::Remove { section, name } => {
             let (section, name) = (required(section, "section")?, required(name, "name")?);
-            normalise_array_section(&mut doc, section);
-            require_item(&doc, section, name)?;
-            remove(&mut doc, section, name);
+            let target = resolve_target(&doc, section)?;
+            normalise_array_section(&mut doc, target)?;
+            let key = resolve_item(&doc, target, section, name)?;
+            remove(&mut doc, target, &key);
         }
     }
     Ok(doc.to_string())
@@ -163,10 +217,10 @@ fn required<'a>(value: &'a str, what: &str) -> Result<&'a str, String> {
     Ok(value)
 }
 
-/// A `general` item can only be written `name = "quantity"`: the parser reads
-/// a top-level inline table as a section, so refuse rather than corrupt.
-fn check_general_attributes(section: &str, name: &str, attributes: &Attributes) -> Result<(), String> {
-    if section != GENERAL {
+/// A root item can only be written `name = "quantity"`: the parser reads a
+/// top-level inline table as a section, so refuse rather than corrupt.
+fn check_general_attributes(target: SectionTarget, name: &str, attributes: &Attributes) -> Result<(), String> {
+    if target != SectionTarget::Root {
         return Ok(());
     }
     let unwritable: Vec<&str> = attributes
@@ -186,88 +240,146 @@ fn check_general_attributes(section: &str, name: &str, attributes: &Attributes) 
 }
 
 /// Rewrite `fridge = ["milk"]` as a `[fridge]` table so an edit has somewhere
-/// to put a key. Arrays holding anything but strings are left alone.
-fn normalise_array_section(doc: &mut DocumentMut, section: &str) {
-    if section == GENERAL {
-        return;
-    }
+/// to put a key. Arrays holding anything but strings are left alone (and then
+/// refused by the edit); a name listed twice cannot become two keys, so that
+/// is refused here rather than merged.
+fn normalise_array_section(doc: &mut DocumentMut, target: SectionTarget) -> Result<(), String> {
+    let SectionTarget::Key(section) = target else {
+        return Ok(());
+    };
     let Some(array) = doc.get(section).and_then(Item::as_array) else {
-        return;
+        return Ok(());
     };
     let names: Vec<String> = array
         .iter()
         .filter_map(|value| value.as_str().map(str::to_string))
         .collect();
     if names.len() != array.len() {
-        return;
+        return Ok(());
     }
     let mut table = Table::new();
     table.set_implicit(false);
     for name in &names {
+        if table.contains_key(name) {
+            return Err(format!(
+                "section '{section}' lists '{name}' more than once; remove the duplicate by hand in \
+                 config/pantry.conf"
+            ));
+        }
         table.insert(name, toml_edit::value(""));
     }
     doc.insert(section, Item::Table(table));
+    Ok(())
 }
 
-/// The table holding `section`'s items, if it is there.
-fn section_entries<'a>(doc: &'a DocumentMut, section: &str) -> Option<&'a dyn TableLike> {
-    if section == GENERAL {
-        Some(doc.as_table())
-    } else {
-        doc.get(section).and_then(Item::as_table_like)
+/// How `item` is written, for messages ("an array", "a string", ...).
+fn describe(item: &Item) -> &'static str {
+    match item {
+        Item::None => "nothing",
+        Item::Table(_) => "a table",
+        Item::ArrayOfTables(_) => "an array of tables",
+        Item::Value(Value::String(_)) => "a string",
+        Item::Value(Value::Integer(_) | Value::Float(_)) => "a bare number",
+        Item::Value(Value::Boolean(_)) => "a boolean",
+        Item::Value(Value::Datetime(_)) => "a date",
+        Item::Value(Value::Array(_)) => "an array",
+        Item::Value(Value::InlineTable(_)) => "an inline table",
     }
 }
 
-/// Whether `entry` is an item of `section` (a root table is a section, not an item).
-fn is_item(section: &str, entry: &Item) -> bool {
-    section != GENERAL || !entry.is_table_like()
+fn not_a_table(section: &str, item: &Item) -> String {
+    format!(
+        "section '{section}' is written in a form this editor can't change ({}); edit it by hand in \
+         config/pantry.conf",
+        describe(item)
+    )
 }
 
-fn find_item_ignoring_case(doc: &DocumentMut, section: &str, name: &str) -> Option<String> {
-    let wanted = name.to_lowercase();
-    section_entries(doc, section)?
-        .iter()
-        .find(|(key, entry)| is_item(section, entry) && key.to_lowercase() == wanted)
-        .map(|(key, _)| key.to_string())
+/// A root entry that the parser reads as a `general` item (any other root
+/// entry is a section).
+fn is_root_item(entry: &Item) -> bool {
+    entry.as_str().is_some()
 }
 
-fn require_item(doc: &DocumentMut, section: &str, name: &str) -> Result<(), String> {
-    let Some(entries) = section_entries(doc, section) else {
+/// The table holding the section's items: `None` when the section does not
+/// exist, an error when it exists in a form that cannot be edited.
+fn section_entries<'a>(doc: &'a DocumentMut, target: SectionTarget) -> Result<Option<&'a dyn TableLike>, String> {
+    match target {
+        SectionTarget::Root => Ok(Some(doc.as_table())),
+        SectionTarget::Key(section) => match doc.get(section) {
+            None => Ok(None),
+            Some(item) => item.as_table_like().map(Some).ok_or_else(|| not_a_table(section, item)),
+        },
+    }
+}
+
+/// The keys of the section's items (a root table is a section, not an item).
+fn matching_items(doc: &DocumentMut, target: SectionTarget) -> Result<Option<Vec<String>>, String> {
+    Ok(section_entries(doc, target)?.map(|entries| {
+        entries
+            .iter()
+            .filter(|(_, entry)| target != SectionTarget::Root || is_root_item(entry))
+            .map(|(key, _)| key.to_string())
+            .collect()
+    }))
+}
+
+/// The key of item `name`, matched ignoring case like `add`'s duplicate check.
+/// When several keys differ only by case, only an exact match will do.
+fn resolve_item(doc: &DocumentMut, target: SectionTarget, section: &str, name: &str) -> Result<String, String> {
+    let Some(keys) = matching_items(doc, target)? else {
         return Err(format!("section '{section}' not found"));
     };
-    match entries.get(name) {
-        Some(entry) if is_item(section, entry) => Ok(()),
-        _ => Err(format!("item '{name}' not found in section '{section}'")),
+    let wanted = name.to_lowercase();
+    let matches: Vec<String> = keys.into_iter().filter(|key| key.to_lowercase() == wanted).collect();
+    if matches.iter().any(|key| key == name) {
+        return Ok(name.to_string());
+    }
+    match matches.as_slice() {
+        [] => Err(format!("item '{name}' not found in section '{section}'")),
+        [only] => Ok(only.clone()),
+        _ => Err(format!(
+            "more than one item in section '{section}' is called '{name}' ({}); use the exact name",
+            matches.join(", ")
+        )),
     }
 }
 
-fn insert(doc: &mut DocumentMut, section: &str, name: &str, attributes: &Attributes) {
-    let value = attributes.to_item(section);
-    if section == GENERAL {
+/// Add the item, creating a `[section]` table when the section is missing.
+/// Refuses a section that exists in a form other than a table rather than
+/// replacing it.
+fn insert(doc: &mut DocumentMut, target: SectionTarget, name: &str, attributes: &Attributes) -> Result<(), String> {
+    let value = attributes.to_item(target);
+    let SectionTarget::Key(section) = target else {
         // Root keys are emitted before any `[header]`, which is where they belong.
         doc.insert(name, value);
-        return;
-    }
-    if !doc.get(section).is_some_and(Item::is_table_like) {
-        let mut table = Table::new();
-        table.set_implicit(false);
-        doc.insert(section, Item::Table(table));
+        return Ok(());
+    };
+    match doc.get(section) {
+        None => {
+            let mut table = Table::new();
+            table.set_implicit(false);
+            doc.insert(section, Item::Table(table));
+        }
+        Some(item) if !item.is_table_like() => return Err(not_a_table(section, item)),
+        Some(_) => {}
     }
     if let Some(table) = doc.get_mut(section).and_then(Item::as_table_like_mut) {
         table.insert(name, value);
     }
+    Ok(())
 }
 
 /// Remove the item, and its section when that empties it (the parser drops
 /// empty sections anyway, so keeping one would not survive a round-trip).
-fn remove(doc: &mut DocumentMut, section: &str, name: &str) {
-    if section == GENERAL {
-        doc.remove(name);
+fn remove(doc: &mut DocumentMut, target: SectionTarget, key: &str) {
+    let SectionTarget::Key(section) = target else {
+        doc.remove(key);
         return;
-    }
+    };
     let emptied = match doc.get_mut(section).and_then(Item::as_table_like_mut) {
         Some(table) => {
-            table.remove(name);
+            table.remove(key);
             table.is_empty()
         }
         None => false,
@@ -277,16 +389,33 @@ fn remove(doc: &mut DocumentMut, section: &str, name: &str) {
     }
 }
 
-fn apply(doc: &mut DocumentMut, section: &str, name: &str, fields: &Attributes) -> Result<(), String> {
-    let existing = if section == GENERAL {
-        doc.as_table_mut().get_mut(name)
-    } else {
-        doc.get_mut(section)
+/// Update the item at `key`. A `[section.item]` table has its keys edited in
+/// place; a string or inline table value is rewritten in the shortest form
+/// that holds its attributes, keeping its trailing comment.
+fn apply(
+    doc: &mut DocumentMut,
+    target: SectionTarget,
+    section: &str,
+    key: &str,
+    fields: &Attributes,
+) -> Result<(), String> {
+    let existing = match target {
+        SectionTarget::Root => doc.as_table_mut().get_mut(key),
+        SectionTarget::Key(section) => doc
+            .get_mut(section)
             .and_then(Item::as_table_like_mut)
-            .and_then(|table| table.get_mut(name))
+            .and_then(|table| table.get_mut(key)),
     };
     let Some(existing) = existing else {
-        return Err(format!("item '{name}' not found in section '{section}'"));
+        return Err(format!("item '{key}' not found in section '{section}'"));
+    };
+
+    if let Some(table) = existing.as_table_mut() {
+        write_fields(table, fields);
+        return Ok(());
+    }
+    let Some(existing) = existing.as_value_mut() else {
+        return Err(unsupported_item(existing, section, key));
     };
 
     // Only the quantity changes (clearing an attribute a short item does not
@@ -295,60 +424,73 @@ fn apply(doc: &mut DocumentMut, section: &str, name: &str, fields: &Attributes) 
         .entries()
         .iter()
         .all(|(key, value)| *key == "quantity" || value.map_or(true, str::is_empty));
-    if existing.as_str().is_some() && only_quantity {
+    if existing.is_str() && only_quantity {
         if let Some(quantity) = &fields.quantity {
-            *existing = toml_edit::value(quantity.as_str());
+            replace_value(existing, quantity.as_str().into());
         }
         return Ok(());
     }
 
-    let mut table = as_inline_table(existing, section, name)?;
+    let mut table = as_inline_table(existing, section, key)?;
+    let cleared = write_fields(&mut table, fields);
+    let collapse = cleared
+        && table.iter().all(|(key, _)| key == "quantity")
+        && table.get("quantity").map_or(true, |quantity| quantity.as_str().is_some());
+    let replacement = if collapse {
+        table.get("quantity").and_then(Value::as_str).unwrap_or("").into()
+    } else {
+        Value::InlineTable(table)
+    };
+    replace_value(existing, replacement);
+    Ok(())
+}
+
+/// Set or clear `fields` on an item's attribute table, keeping the comments
+/// of the keys it overwrites. True when an attribute was removed.
+fn write_fields(table: &mut dyn TableLike, fields: &Attributes) -> bool {
     let mut cleared = false;
     for (key, value) in fields.entries() {
         match value {
             Some("") => cleared |= table.remove(key).is_some(),
-            Some(value) => {
-                table.insert(key, value.into());
-            }
+            Some(value) => match table.get_mut(key).and_then(Item::as_value_mut) {
+                Some(slot) => replace_value(slot, value.into()),
+                None => {
+                    table.insert(key, toml_edit::value(value));
+                }
+            },
             None => {}
         }
     }
-    let collapse = cleared
-        && table.iter().all(|(key, _)| key == "quantity")
-        && table.get("quantity").map_or(true, |quantity| quantity.as_str().is_some());
-    *existing = if collapse {
-        toml_edit::value(table.get("quantity").and_then(Value::as_str).unwrap_or(""))
-    } else {
-        toml_edit::value(table)
-    };
-    Ok(())
+    cleared
 }
 
-/// The entry as an inline table. Refuses values that are neither a quantity
-/// string nor a table, rather than guessing and overwriting them.
-fn as_inline_table(item: &Item, section: &str, name: &str) -> Result<InlineTable, String> {
-    if let Some(quantity) = item.as_str() {
-        let mut table = InlineTable::new();
-        table.insert("quantity", quantity.into());
-        return Ok(table);
+/// Put `replacement` in `slot`, keeping the whitespace and trailing comment
+/// around the old value.
+fn replace_value(slot: &mut Value, mut replacement: Value) {
+    *replacement.decor_mut() = slot.decor().clone();
+    *slot = replacement;
+}
+
+/// The value as an inline table. Refuses values that are neither a quantity
+/// string nor an inline table, rather than guessing and overwriting them.
+fn as_inline_table(value: &Value, section: &str, name: &str) -> Result<InlineTable, String> {
+    match value {
+        Value::String(quantity) => {
+            let mut table = InlineTable::new();
+            table.insert("quantity", quantity.value().as_str().into());
+            Ok(table)
+        }
+        Value::InlineTable(table) => Ok(table.clone()),
+        _ => Err(unsupported_item(&Item::Value(value.clone()), section, name)),
     }
-    if let Some(table) = item.as_inline_table() {
-        return Ok(table.clone());
-    }
-    if let Some(table) = item.as_table() {
-        return Ok(table.clone().into_inline_table());
-    }
-    let kind = match item.as_value() {
-        Some(Value::Integer(_)) | Some(Value::Float(_)) => "a bare number",
-        Some(Value::Boolean(_)) => "a boolean",
-        Some(Value::Array(_)) => "an array",
-        Some(Value::Datetime(_)) => "a date",
-        _ => "an unsupported value",
-    };
-    Err(format!(
-        "item '{name}' in section '{section}' is written as {kind}, which is not a quantity or a \
-         set of attributes; edit it by hand in config/pantry.conf"
-    ))
+}
+
+fn unsupported_item(item: &Item, section: &str, name: &str) -> String {
+    format!(
+        "item '{name}' in section '{section}' is written as {}, which is not a quantity or a set of \
+         attributes; edit it by hand in config/pantry.conf",
+        describe(item)
+    )
 }
 
 #[cfg(test)]
@@ -598,5 +740,243 @@ mod tests {
         assert_eq!(milk.name(), "milk");
         assert_eq!(milk.quantity(), Some("1%L"));
         assert_eq!(milk.expire(), Some("2026-10-01"));
+    }
+
+    fn general_items(out: &str) -> Vec<(String, Option<String>)> {
+        let conf = cooklang::pantry::parse_lenient(out).into_output().expect("parses");
+        conf.sections
+            .get("general")
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| (item.name().to_string(), item.quantity().map(str::to_string)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn dates_with_a_two_digit_year_are_not_read_as_the_first_century() {
+        assert_eq!(normalise_pantry_date("01.10.26"), None);
+        assert_eq!(normalise_pantry_date("26-10-01"), None);
+        assert_eq!(normalise_pantry_date("0999-01-01"), None);
+        assert_eq!(normalise_pantry_date("1000-01-01").as_deref(), Some("1000-01-01"));
+    }
+
+    #[test]
+    fn add_refuses_to_replace_a_section_that_is_not_a_table() {
+        let add = r#"{"op":"add","section":"fridge","name":"butter","quantity":"200%g"}"#;
+        for (text, kind) in [
+            ("[[fridge]]\nname = \"milk\"\n", "an array of tables"),
+            ("fridge = [{ name = \"milk\" }]\n", "an array"),
+            ("fridge = [\"milk\", 3]\n", "an array"),
+        ] {
+            let err = edit(text, add).unwrap_err();
+            assert_eq!(
+                err,
+                format!(
+                    "section 'fridge' is written in a form this editor can't change ({kind}); \
+                     edit it by hand in config/pantry.conf"
+                ),
+                "{text}"
+            );
+        }
+        let err = edit(
+            "salt = \"1%kg\"\n",
+            r#"{"op":"add","section":"salt","name":"flakes","quantity":"1"}"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("section 'salt' is written in a form") && err.contains("(a string)"), "{err}");
+    }
+
+    #[test]
+    fn update_and_remove_explain_a_section_that_is_not_a_table() {
+        let text = "[[fridge]]\nname = \"milk\"\n";
+        let err = edit(text, r#"{"op":"remove","section":"fridge","name":"milk"}"#).unwrap_err();
+        assert!(err.contains("can't change (an array of tables)"), "{err}");
+        let err = edit(
+            text,
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"quantity":"1"}}"#,
+        )
+        .unwrap_err();
+        assert!(err.contains("can't change (an array of tables)"), "{err}");
+    }
+
+    #[test]
+    fn add_to_general_refuses_a_name_already_used_by_a_section() {
+        let text = "[fridge]\nmilk = \"1%L\"\n";
+        let err = edit(text, r#"{"op":"add","section":"general","name":"fridge","quantity":"1"}"#)
+            .unwrap_err();
+        assert_eq!(err, "'fridge' is already used as a section name");
+        let err = edit(
+            "fridge = [\"milk\"]\n",
+            r#"{"op":"add","section":"general","name":"fridge","quantity":"1"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(err, "'fridge' is already used as a section name");
+    }
+
+    #[test]
+    fn remove_from_general_does_not_touch_a_top_level_array_section() {
+        let err = edit("fridge = [\"milk\"]\n", r#"{"op":"remove","section":"general","name":"fridge"}"#)
+            .unwrap_err();
+        assert_eq!(err, "item 'fridge' not found in section 'general'");
+    }
+
+    #[test]
+    fn an_explicit_general_table_is_edited_as_a_section() {
+        let text = "# spices\n[general]\nsalt = \"1%kg\"\n";
+
+        let out = edit(text, r#"{"op":"update","section":"general","name":"salt","fields":{"quantity":"2%kg"}}"#)
+            .unwrap();
+        assert!(out.contains("[general]\nsalt = \"2%kg\""), "{out}");
+        assert_eq!(general_items(&out), vec![("salt".to_string(), Some("2%kg".to_string()))]);
+
+        let out = edit(text, r#"{"op":"update","section":"general","name":"salt","fields":{"expire":"2027-01-01"}}"#)
+            .unwrap();
+        assert!(out.contains("salt = { quantity = \"1%kg\", expire = \"2027-01-01\" }"), "{out}");
+        let conf = cooklang::pantry::parse_lenient(&out).into_output().expect("parses");
+        assert_eq!(conf.sections["general"][0].expire(), Some("2027-01-01"));
+
+        let out = edit(text, r#"{"op":"add","section":"general","name":"pepper","quantity":"50%g","low":"10%g"}"#)
+            .unwrap();
+        assert!(out.find("pepper").unwrap() > out.find("[general]").unwrap(), "{out}");
+        assert_eq!(
+            general_items(&out),
+            vec![
+                ("salt".to_string(), Some("1%kg".to_string())),
+                ("pepper".to_string(), Some("50%g".to_string())),
+            ]
+        );
+
+        let out = edit(text, r#"{"op":"remove","section":"general","name":"salt"}"#).unwrap();
+        assert!(!out.contains("salt"), "{out}");
+        assert!(general_items(&out).is_empty(), "{out}");
+    }
+
+    #[test]
+    fn a_general_array_section_is_edited_as_a_section() {
+        let out = edit(
+            "general = [\"salt\"]\n",
+            r#"{"op":"add","section":"general","name":"pepper","quantity":"50%g"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            general_items(&out),
+            vec![("salt".to_string(), Some(String::new())), ("pepper".to_string(), Some("50%g".to_string()))]
+        );
+    }
+
+    #[test]
+    fn general_edits_refuse_top_level_items_next_to_a_general_table() {
+        let text = "pepper = \"1\"\n[general]\nsalt = \"1%kg\"\n";
+        let expected = "both top-level items and a [general] table exist; merge them by hand in config/pantry.conf";
+        for json in [
+            r#"{"op":"add","section":"general","name":"cumin"}"#,
+            r#"{"op":"update","section":"general","name":"pepper","fields":{"quantity":"2"}}"#,
+            r#"{"op":"remove","section":"general","name":"salt"}"#,
+        ] {
+            assert_eq!(edit(text, json).unwrap_err(), expected, "{json}");
+        }
+    }
+
+    #[test]
+    fn an_item_written_as_a_subtable_is_edited_in_place() {
+        let text = "[fridge]\neggs = \"6\"\n\n# the good milk\n[fridge.milk]\n# note\nquantity = \"1%L\"\n";
+        let out = edit(text, r#"{"op":"update","section":"fridge","name":"milk","fields":{"expire":"2026-10-01"}}"#)
+            .unwrap();
+        assert!(out.contains("# the good milk\n[fridge.milk]\n# note\nquantity = \"1%L\"\n"), "{out}");
+        assert!(out.contains("expire = \"2026-10-01\""), "{out}");
+        assert!(!out.contains("milk ="), "{out}");
+        let conf = cooklang::pantry::parse_lenient(&out).into_output().expect("parses");
+        let milk = conf.sections["fridge"].iter().find(|item| item.name() == "milk").unwrap();
+        assert_eq!(milk.expire(), Some("2026-10-01"));
+
+        let out = edit(&out, r#"{"op":"update","section":"fridge","name":"milk","fields":{"expire":""}}"#)
+            .unwrap();
+        assert!(out.contains("# the good milk\n[fridge.milk]\n# note\nquantity = \"1%L\"\n"), "{out}");
+        assert!(!out.contains("expire"), "{out}");
+        assert!(!out.contains("milk ="), "{out}");
+    }
+
+    #[test]
+    fn a_trailing_comment_on_the_item_survives_an_update() {
+        let out = edit(
+            "[fridge]\nmilk = \"1%L\" # note\n",
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"quantity":"2%L"}}"#,
+        )
+        .unwrap();
+        assert!(out.contains("milk = \"2%L\" # note"), "{out}");
+
+        let out = edit(
+            "[fridge]\nmilk = \"1%L\" # note\n",
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"expire":"2026-10-01"}}"#,
+        )
+        .unwrap();
+        assert!(out.contains("milk = { quantity = \"1%L\", expire = \"2026-10-01\" } # note"), "{out}");
+
+        let out = edit(
+            "[fridge]\nmilk = { quantity = \"1%L\", expire = \"2026-10-01\" } # note\n",
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"expire":""}}"#,
+        )
+        .unwrap();
+        assert!(out.contains("milk = \"1%L\" # note"), "{out}");
+
+        let out = edit(
+            "salt = \"1%kg\" # note\n",
+            r#"{"op":"update","section":"general","name":"salt","fields":{"quantity":"2%kg"}}"#,
+        )
+        .unwrap();
+        assert!(out.contains("salt = \"2%kg\" # note"), "{out}");
+    }
+
+    #[test]
+    fn unknown_fields_in_an_edit_are_rejected() {
+        for json in [
+            r#"{"op":"update","section":"fridge","name":"milk","fields":{"expiry":"x"}}"#,
+            r#"{"op":"add","section":"fridge","name":"milk","expiry":"x"}"#,
+            r#"{"op":"remove","section":"fridge","name":"milk","quantity":"1"}"#,
+        ] {
+            assert!(serde_json::from_str::<PantryEdit>(json).is_err(), "{json}");
+        }
+    }
+
+    #[test]
+    fn update_and_remove_find_the_item_ignoring_case() {
+        let text = "[fridge]\nMilk = \"1%L\"\n";
+        let out = edit(text, r#"{"op":"update","section":"fridge","name":"milk","fields":{"quantity":"2%L"}}"#)
+            .unwrap();
+        assert!(out.contains("Milk = \"2%L\""), "{out}");
+        let out = edit(text, r#"{"op":"remove","section":"fridge","name":"milk"}"#).unwrap();
+        assert!(!out.contains("Milk"), "{out}");
+        let out = edit(
+            "Salt = \"1%kg\"\n",
+            r#"{"op":"update","section":"general","name":"salt","fields":{"quantity":"2%kg"}}"#,
+        )
+        .unwrap();
+        assert!(out.contains("Salt = \"2%kg\""), "{out}");
+    }
+
+    #[test]
+    fn items_differing_only_by_case_need_an_exact_name() {
+        let text = "[fridge]\nMilk = \"1%L\"\nMILK = \"2%L\"\n";
+        let err = edit(text, r#"{"op":"remove","section":"fridge","name":"milk"}"#).unwrap_err();
+        assert!(err.contains("more than one item") && err.contains("Milk") && err.contains("MILK"), "{err}");
+        let out = edit(text, r#"{"op":"remove","section":"fridge","name":"MILK"}"#).unwrap();
+        assert!(out.contains("Milk = \"1%L\""), "{out}");
+        assert!(!out.contains("MILK"), "{out}");
+    }
+
+    #[test]
+    fn an_array_section_listing_a_name_twice_is_not_converted() {
+        let err = edit(
+            "fridge = [\"rice\", \"rice\"]\n",
+            r#"{"op":"add","section":"fridge","name":"beans"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            "section 'fridge' lists 'rice' more than once; remove the duplicate by hand in config/pantry.conf"
+        );
     }
 }
