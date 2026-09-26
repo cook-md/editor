@@ -33,7 +33,7 @@ editor changes.
 Three pieces. 2 depends on 1; 3 is independent but needed for anyone to see
 the badge.
 
-1. Editor: native `to_json`, `cooklang.api.hasFeature`,
+1. Editor: cooklang-reports 0.5.2 (`tojson` filter), `cooklang.api.hasFeature`,
    `cooklang.api.renderReport`, badge outlet (`cooklang/recipePreview/badge`
    + rendering of `nutriscore` and `pill` badges).
 2. `cooklang.nutriscore` plugin in `../plugins/nutriscore`; publish 0.1.0 to
@@ -71,16 +71,16 @@ type PluginReportResult =
   the open editor model if there is one (unsaved edits count), else the file.
 - `template`: Jinja source, at most 64 KB. It has every function a report
   template has (`aggregate_nutrition`, `is_in_category`, `db`, pantry,
-  aisle, …) plus `to_json(value)` for returning structured data.
+  aisle, …) including the `tojson` filter for returning structured data.
 - Rendering goes through the existing `languageService.renderReport` with
   `ReportConfigService.buildConfigJson(scale, uri)`: same login token,
   `cooklang.nutrition.serviceUrl`, pantry, aisle, datastore and menu
   expansion as the Reports feature. The token never crosses into the plugin
   host.
-- Native change is only a generic `to_json(value)` template function
-  (a `ConfigExtension` always registered in `render_report`), because the
-  report engine has no `tojson` filter. Also available to user report
-  templates.
+- No nutrition-specific native code. The only library change is upstream:
+  cooklang-reports 0.5.2 enables minijinja's built-in `tojson` filter (it
+  escapes `<`, `>`, `&`, `'`, so it is safe in HTML reports too), available
+  to user report templates as well.
 - Error mapping from the render error text: `authentication required` →
   `unauthenticated`; subscription-required / 402 / 403 → `forbidden`;
   `transport error` / `unavailable` → `network`; `server error` → `server`;
@@ -141,7 +141,7 @@ type PreviewBadge =
 - `cooklang-outlet-service.spec.ts`: badge collection drops invalid,
   `undefined` and throwing providers.
 - `preview-badge.spec.tsx`: strip and pill rendering, hover.
-- Native: `to_json` renders JSON.
+- Native: a report template can return JSON via `tojson`.
 
 ---
 
@@ -160,7 +160,7 @@ introduces 1.1–1.3; otherwise does nothing and logs once.
 1. `hasFeature('nutrition')` false → `undefined`.
 2. `cooklang.api.renderReport({ uri, scale, template })` with the plugin's
    nutrition template (`aggregate_nutrition`, `is_in_category` for the
-   fruit/vegetable/legume slugs, `to_json`). If it fails with `template` /
+   fruit/vegetable/legume slugs, `| tojson`). If it fails with `template` /
    `category not found`, render again without categories (share unknown).
    Other failures → `undefined`, each reason logged once per session.
 3. Parse the output (aggregate + category ingredients → `categoryMassG`),

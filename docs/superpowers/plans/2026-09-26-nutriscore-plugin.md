@@ -4,7 +4,7 @@
 
 **Goal:** Show an official-style Nutri-Score strip (A–E) in the recipe preview header, computed from the cook.md nutrition API by an optional plugin, with a hover card explaining how trustworthy the score is, for users whose plan has the `nutrition` feature — built on general editor pieces so later plugins (calories, cost, allergens…) need no editor changes.
 
-**Architecture:** The editor gains three generic pieces: `cooklang.api.hasFeature`, `cooklang.api.renderReport` (renders a plugin-supplied Jinja template against a recipe or menu with the Reports engine and configuration, so plugins get `aggregate_nutrition` & co. while the login token never leaves the editor; plus a native `to_json` template function), and a data-driven badge outlet `cooklang/recipePreview/badge` (plugins return a `PreviewBadge` — the `nutriscore` strip or a generic `pill` — and the editor draws it and shows its markdown in Theia's `HoverService`). The new `cooklang.nutriscore` plugin in `~/Cooklang/plugins/nutriscore` ships its nutrition template and owns the 2023 Nutri-Score algorithm and the trust summary.
+**Architecture:** The editor gains three generic pieces: `cooklang.api.hasFeature`, `cooklang.api.renderReport` (renders a plugin-supplied Jinja template against a recipe or menu with the Reports engine and configuration, so plugins get `aggregate_nutrition` & co. while the login token never leaves the editor; plus the `tojson` filter, enabled upstream in cooklang-reports 0.5.2), and a data-driven badge outlet `cooklang/recipePreview/badge` (plugins return a `PreviewBadge` — the `nutriscore` strip or a generic `pill` — and the editor draws it and shows its markdown in Theia's `HoverService`). The new `cooklang.nutriscore` plugin in `~/Cooklang/plugins/nutriscore` ships its nutrition template and owns the 2023 Nutri-Score algorithm and the trust summary.
 
 **Tech Stack:** Rust (NAPI-RS, minijinja 2), TypeScript 5.4, InversifyJS, React 18, Theia `HoverService`, VS Code extension API, mocha/chai.
 
@@ -28,8 +28,8 @@
 
 | File | Change |
 |---|---|
-| `cooklang-native/Cargo.toml` | add `minijinja = "2"` |
-| `cooklang-native/src/lib.rs` | `JsonExtension` (`to_json`), registered in `render_report`; test |
+| `cooklang-native/Cargo.toml`, `Cargo.lock` | `cooklang-reports` 0.5.2 (built-in `tojson` filter) |
+| `cooklang-native/src/lib.rs` | regression test for `tojson` |
 | `cooklang/src/common/plugin-report-types.ts` | create: `PluginReportResult` |
 | `cooklang/src/common/cooklang-outlet-context.ts` | add `PreviewBadge` JSON type (`nutriscore` \| `pill`) + namespace |
 | `cooklang/src/common/cooklang-outlet-context.spec.ts` | tests for `PreviewBadge.parse/equals` |
@@ -88,97 +88,63 @@ Expected: HTTP 200 JSON `{"in_category": …}` for existing slugs, `category not
 
 ---
 
-## Task 2: Native `to_json` template function
+## Task 2: Use the `tojson` filter from cooklang-reports 0.5.2
 
-**Files:**
-- Modify: `packages/cooklang-native/Cargo.toml`
-- Modify: `packages/cooklang-native/src/lib.rs` (near `render_report`, ~line 1320–1370)
+`JsonExtension` (a custom `to_json` function, commit af97a4442) is replaced by minijinja's built-in `tojson` filter, now enabled upstream in `cooklang-reports` (branch `feat/tojson-filter`, commit 64e1406 in `~/Cooklang/cooklang-reports`). The built-in escapes `<`, `>`, `&`, `'` as `\uXXXX`, so it is also safe in HTML reports.
 
-- [ ] **Step 1: Add dependency.** In `[dependencies]` after `cooklang-reports = "0.5"`:
+**Files:** `packages/cooklang-native/Cargo.toml`, `Cargo.lock`, `src/lib.rs`
 
-```toml
-minijinja = "2"
-```
+- [ ] **Step 1: Revert the custom function.** `git revert --no-edit af97a4442`
 
-(Cargo unifies with the `2.20.0` already in `Cargo.lock` via `cooklang-reports`; the `ConfigExtension` trait takes that crate's `Environment`, so the major version must match.)
+- [ ] **Step 2: Depend on the new crate.**
+  - Released: set `cooklang-reports = "0.5.2"` in `packages/cooklang-native/Cargo.toml`, run `cargo update -p cooklang-reports`.
+  - Not yet released (local development only, **never commit**): append to `packages/cooklang-native/Cargo.toml`:
 
-- [ ] **Step 2: Write the failing test.** Append to `lib.rs`:
+    ```toml
+    [patch.crates-io]
+    cooklang-reports = { path = "../../../cooklang-reports" }
+    ```
+
+    and remove it again before committing Step 5.
+
+- [ ] **Step 3: Regression test** — append to `packages/cooklang-native/src/lib.rs`:
 
 ```rust
 #[cfg(test)]
-mod to_json_tests {
+mod tojson_tests {
     use super::*;
 
     #[test]
-    fn to_json_renders_values_as_json() {
+    fn report_templates_can_return_json() {
         let out = render_report(
             "Mix @flour{200%g}.".to_string(),
-            r#"{{ to_json({"a": [1, 2], "s": "x<y"}) }}"#.to_string(),
+            r#"{{ {"a": [1, 2], "s": "x<y"} | tojson }}"#.to_string(),
             "{}".to_string(),
         );
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(v["output"].as_str().unwrap(), r#"{"a":[1,2],"s":"x<y"}"#);
+        let json: serde_json::Value = serde_json::from_str(v["output"].as_str().unwrap()).unwrap();
+        assert_eq!(json, serde_json::json!({ "a": [1, 2], "s": "x<y" }));
     }
 }
 ```
 
-- [ ] **Step 3: Run it, expect failure**
+Run: `cd packages/cooklang-native && cargo test --features nutrition tojson_tests && cargo test`
+Expected: PASS (fails with `unknown filter` against 0.5.1 — confirms the dependency is picked up).
 
-Run: `cd packages/cooklang-native && cargo test --features nutrition to_json_tests`
-Expected: FAIL — output contains `"error"` with `unknown function` / `to_json`.
-
-- [ ] **Step 4: Implement.** Above `render_report` add:
-
-```rust
-/// Registers `to_json(value)`: serializes any template value to a JSON
-/// string. The report engine ships no `tojson` filter; the editor's internal
-/// templates (e.g. nutrition for plugins) use this to hand structured data
-/// back to TypeScript. Marked safe so no escaping touches the JSON.
-struct JsonExtension;
-
-impl cooklang_reports::extension::ConfigExtension for JsonExtension {
-    fn register(&self, env: &mut minijinja::Environment<'_>) {
-        env.add_function(
-            "to_json",
-            |value: minijinja::Value| -> Result<minijinja::Value, minijinja::Error> {
-                serde_json::to_string(&value)
-                    .map(minijinja::Value::from_safe_string)
-                    .map_err(|e| {
-                        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
-                    })
-            },
-        );
-    }
-}
-```
-
-In `render_report`, change `let config = builder.build();` to:
-
-```rust
-    let config = builder.build().with_extension(JsonExtension);
-```
-
-- [ ] **Step 5: Run tests, expect pass**
-
-Run: `cd packages/cooklang-native && cargo test --features nutrition to_json_tests && cargo test`
-Expected: PASS; the plain `cargo test` (no nutrition feature) also passes because the `#[cfg(not(feature = "nutrition"))]` path uses the same `config`.
-
-- [ ] **Step 6: Rebuild the addon**
-
-Run: `cd packages/cooklang-native && npm run build`
-Expected: `cooklang-native.darwin-x64.node` rebuilt. Smoke-check:
+- [ ] **Step 4: Rebuild and smoke-check**
 
 ```bash
-PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "const n=require('./index.js');console.log(n.renderReport('Mix @flour{200%g}.','{{ to_json([1]) }}','{}'))"
+cd packages/cooklang-native && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH npm run build && \
+PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "const n=require('./index.js');console.log(n.renderReport('Mix @flour{200%g}.','{{ [1] | tojson }}','{}'))"
 ```
 
 Expected: `{"output":"[1]"}`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit** (only once `0.5.2` is on crates.io and no `[patch]` section remains)
 
 ```bash
 git add packages/cooklang-native/Cargo.toml packages/cooklang-native/Cargo.lock packages/cooklang-native/src/lib.rs
-git commit -m "feat(native): to_json template function for internal report templates"
+git commit -m "chore(native): cooklang-reports 0.5.2 — report templates get the tojson filter"
 ```
 
 ---
@@ -365,7 +331,7 @@ class Fixture {
 }
 
 const URI_A = new URI('file:///ws/a.cook');
-const TEMPLATE = '{{ to_json(ingredients | length) }}';
+const TEMPLATE = '{{ ingredients | length | tojson }}';
 
 describe('PluginReportService', () => {
     it('renders the template against the open editor text with the report config', async () => {
@@ -665,7 +631,7 @@ Add to `Commands`:
          * `{ uri, template, scale? }` → `PluginReportResult`: renders a Jinja template (≤ 64 KB)
          * against a `.cook` or `.menu` URI of any scheme (unsaved edits included) with the
          * Reports engine and configuration. Template functions include everything reports
-         * have (e.g. `aggregate_nutrition`) plus `to_json(value)`.
+         * have (e.g. `aggregate_nutrition`, the `tojson` filter).
          */
         RENDER_REPORT: 'cooklang.api.renderReport',
 ```
@@ -729,12 +695,12 @@ Methods (after `editPantry`):
 
 Run: same as Step 2. Expected: PASS (whole package).
 
-- [ ] **Step 5: Verify against the real engine.** With the dev app built later this is covered end to end (Task 14); here, a quick native check that report functions and `to_json` combine (no token → auth error proves `aggregate_nutrition` ran; with `NUTRITION_TOKEN` set → JSON):
+- [ ] **Step 5: Verify against the real engine.** With the dev app built later this is covered end to end (Task 14); here, a quick native check that report functions and `tojson` combine (no token → auth error proves `aggregate_nutrition` ran; with `NUTRITION_TOKEN` set → JSON):
 
 ```bash
 cd packages/cooklang-native && PATH=~/.local/node-v22.23.2-darwin-x64/bin:$PATH node -e "
 const n=require('./index.js');
-console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', '{{ to_json(aggregate_nutrition(ingredients)) }}', JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,300));"
+console.log(n.renderReport('Mix @apple{2} and @flour{200%g}.', '{{ aggregate_nutrition(ingredients) | tojson }}', JSON.stringify({nutritionApiUrl:'https://nutrition.cook.md',nutritionToken:process.env.NUTRITION_TOKEN||''})).slice(0,300));"
 ```
 
 Expected without token: `{"error":"Error: authentication required: …`. With token: `{"output":"{\"items\":[…`.
@@ -1619,11 +1585,11 @@ const aggregate = {
 };
 
 describe('nutritionTemplate', () => {
-    it('embeds the category slugs and returns JSON through to_json', () => {
+    it('embeds the category slugs and returns JSON through tojson', () => {
         const template = nutritionTemplate(['fruit', 'vegetable']);
         assert.ok(template.startsWith('{%- set categories = ["fruit","vegetable"] -%}'));
         assert.ok(template.includes('aggregate_nutrition(ingredients)'));
-        assert.ok(template.trimEnd().endsWith('{{ to_json({"aggregate": agg, "categoryIngredients": found.names}) }}'));
+        assert.ok(template.trimEnd().endsWith('{{ {"aggregate": agg, "categoryIngredients": found.names} | tojson }}'));
     });
 
     it('rejects slugs that could break the template', () => {
@@ -1762,7 +1728,7 @@ export class CooklangApi {
 ```ts
 // The Jinja template this plugin asks the editor's Reports engine to render.
 // It uses the engine's nutrition functions (`aggregate_nutrition`,
-// `is_in_category`) and hands the data back with `to_json`. Types mirror the
+// `is_in_category`) and hands the data back with the `tojson` filter. Types mirror the
 // cook.md nutrition service's `/aggregate` response (snake_case, verbatim).
 
 export interface NutritionMacros {
@@ -1831,7 +1797,7 @@ export function nutritionTemplate(categories: readonly string[]): string {
         '{%- endfor -%}',
         '{%- if hit.value -%}{%- set found.names = found.names + [item.ingredient] -%}{%- endif -%}',
         '{%- endfor -%}',
-        '{{ to_json({"aggregate": agg, "categoryIngredients": found.names}) }}',
+        '{{ {"aggregate": agg, "categoryIngredients": found.names} | tojson }}',
     ].join('\n');
 }
 
