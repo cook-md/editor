@@ -50,6 +50,8 @@ class Fixture {
         lowStock: [],
     });
     editPantryError: Error | undefined = undefined;
+    features = new Set<string>(['nutrition']);
+    reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -93,6 +95,13 @@ class Fixture {
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
         (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
         (contribution as any).fileService = { hasProvider: (scheme: string) => this.hasProvider(scheme) };
+        (contribution as any).subscriptions = { hasFeature: async (name: string) => this.features.has(name) };
+        (contribution as any).pluginReports = {
+            render: async (uri: URI, template: string, scale: number) => {
+                this.reportCalls.push({ uri: uri.toString(), template, scale });
+                return { ok: true, output: 'rendered' };
+            },
+        };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -345,5 +354,57 @@ describe('CooklangPluginApiContribution', () => {
         const id = CooklangPluginApi.Commands.EDIT_PANTRY;
         expect(await fixture.error(id, { text: 'T', edit: { op: 'remove', section: 'y', name: 'x' } }))
             .to.equal("editPantry: item 'x' not found in section 'y'");
+    });
+});
+
+describe('CooklangPluginApiContribution — hasFeature and renderReport', () => {
+    const { HAS_FEATURE, RENDER_REPORT } = CooklangPluginApi.Commands;
+
+    it('reports plan features', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition' })).to.equal(true);
+        expect(await fixture.run(HAS_FEATURE, { name: 'sync' })).to.equal(false);
+    });
+
+    it('treats a failing subscription lookup as no feature', async () => {
+        const fixture = new Fixture();
+        const contribution = fixture.create();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (contribution as any).subscriptions = { hasFeature: async () => { throw new Error('offline'); } };
+        expect(await fixture.run(HAS_FEATURE, { name: 'nutrition' })).to.equal(false);
+    });
+
+    it('rejects a missing feature name', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.error(HAS_FEATURE, {})).to.match(/^Invalid arguments/);
+    });
+
+    it('renders a template for a recipe or menu URI of any scheme, scale 1 by default', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(RENDER_REPORT, { uri: 'cooklang-hub:/x/Soup.cook', template: '{{ 1 }}' }))
+            .to.deep.equal({ ok: true, output: 'rendered' });
+        await fixture.run(RENDER_REPORT, { uri: 'file:///ws/week.menu', template: '{{ 2 }}', scale: 3 });
+        expect(fixture.reportCalls).to.deep.equal([
+            { uri: 'cooklang-hub:/x/Soup.cook', template: '{{ 1 }}', scale: 1 },
+            { uri: 'file:///ws/week.menu', template: '{{ 2 }}', scale: 3 },
+        ]);
+    });
+
+    it('rejects bad URIs, scales and templates', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            { uri: 'file:///ws/notes.md', template: '{{ 1 }}' },
+            { uri: 'a.cook', template: '{{ 1 }}' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', scale: 0 },
+            { uri: 'file:///ws/a.cook', template: '' },
+            { uri: 'file:///ws/a.cook', template: 'x'.repeat(64 * 1024 + 1) },
+        ]) {
+            expect(await fixture.error(RENDER_REPORT, args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.reportCalls).to.deep.equal([]);
     });
 });
