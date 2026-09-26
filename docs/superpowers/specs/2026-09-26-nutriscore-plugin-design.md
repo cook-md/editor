@@ -29,7 +29,7 @@ Three pieces. 2 depends on 1; 3 is independent but needed for anyone to see
 the badge.
 
 1. Editor: `cooklang.api.hasFeature`, `cooklang.api.nutrition`, badge outlet
-   (`cooklang.api.registerBadgeProvider` + rendering).
+   (`cooklang/recipePreview/badge` + rendering).
 2. `cooklang.nutriscore` plugin in `../plugins/nutriscore`; publish 0.1.0 to
    plugins.cook.md.
 3. cook.md backend: add `nutrition` to `features[]` of `/api/subscription` for
@@ -55,21 +55,28 @@ interface NutritionArgs { uri: string; scale?: number; categories?: string[] }
 interface NutritionResult {
     ok: true;
     aggregate: AggregateResponse;          // verbatim from nutrition service
-    categoryMass?: Record<string, number>; // grams per requested category slug
+    categoryMassG?: number;               // grams of ingredients in any requested category
 } | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'network' | 'parse' | 'server'; message: string }
 ```
 
-- Parses the recipe via the language service (same path as preview), scales
-  it, and calls the nutrition service with the user's token and the
-  `cooklang.nutrition.serviceUrl` preference.
-- Implementation: a new native function `nutrition_json(recipe, config_json)`
-  in `cooklang-native` using `cookmd-nutrition-client` directly (the crate is
-  already a dependency under the `nutrition` feature): `/aggregate` for the
-  recipe's ingredients, then `/categories/{slug}/check` for each requested
-  category, summing `amount.mass_g` of matching ingredients into
-  `categoryMass`. Runs in the backend (node) process, like `renderReport`.
+- Reads the recipe text (open editor model first, else `FileService`), and
+  renders a fixed internal Jinja template through the existing
+  `languageService.renderReport` with `ReportConfigService.buildConfigJson`
+  (same token, `cooklang.nutrition.serviceUrl` and scale as reports). The
+  template calls `aggregate_nutrition(ingredients)` and, per matched item and
+  requested slug, `is_in_category(item.ingredient, slug)`, and prints
+  `to_json({ aggregate, categoryIngredients })`. `categoryMassG` is summed in
+  TS from `aggregate.items[].amount.mass_g`.
+- Native change is only a generic `to_json(value)` template function
+  (a `ConfigExtension` always registered in `render_report`), because the
+  report engine has no `tojson` filter.
 - The token never crosses into the plugin host.
-- HTTP 401 → `unauthenticated`, 403 → `forbidden`, others as named.
+- Error mapping from the render error text: `authentication required` →
+  `unauthenticated`, subscription-required message / 402 / 403 → `forbidden`,
+  `transport error` / `unavailable` → `network`, `server error` → `server`,
+  anything else → `parse`. `category not found` → retry once without
+  categories (share unknown).
+- Results cached in memory keyed by `(text, scale, categories)`, 20 entries.
 
 The plugin asks for `categories: ['fruit', 'vegetable', 'legume']`. If the
 service has no such slug, the check fails for that slug only; the result
@@ -78,17 +85,19 @@ omits it and the plugin treats the share as unknown (0, disclosed).
 
 ### 1.3 Badge outlet
 
-New outlet: `CooklangOutlets.RECIPE_PREVIEW_BADGE`. Plugins cannot render
-into the preview, so badges are data-driven:
+New outlet: `CooklangOutlets.RECIPE_PREVIEW_BADGE`
+(`cooklang/recipePreview/badge`). Plugins cannot render into the preview, so
+badges are data-driven. A plugin contributes a command to the outlet in its
+manifest, like the toolbar outlets (`when` clauses apply):
+
+```json
+"menus": { "cooklang/recipePreview/badge": [{ "command": "cooklang.nutriscore.provideBadge" }] }
+```
+
+The editor executes each visible command with the `PreviewOutletContext` and
+expects a `PreviewBadge` (or `undefined`) back:
 
 ```ts
-// plugin side
-await vscode.commands.executeCommand('cooklang.api.registerBadgeProvider', {
-    id: 'cooklang.nutriscore',
-    command: 'cooklang.nutriscore.provideBadge', // plugin command
-});
-
-// editor calls: provideBadge(context: PreviewOutletContext) →
 interface PreviewBadge {
     kind: 'nutriscore';
     grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'unknown';
@@ -114,16 +123,18 @@ interface PreviewBadge {
   content or scale changes (debounced 500 ms), and when the subscription
   state changes. A provider returning `undefined` or throwing hides the badge.
   Stale responses (older than the latest request) are dropped.
-- Max one badge per provider; providers ordered by registration.
+- One badge per contributed command, in outlet order.
 
 ### 1.4 Tests (editor)
 
-- `cooklang-plugin-api-contribution.spec.ts`: `hasFeature` false when logged
-  out; badge provider registration, `undefined`/throw hides badge,
-  stale-response drop.
-- Native: unit test for category mass summation and HTTP status mapping
-  (mock server as in `cookmd-nutrition-client` tests, or pure function over
-  responses).
+- `cooklang-plugin-api-contribution.spec.ts`: `hasFeature`, `nutrition`
+  argument validation and delegation.
+- `recipe-nutrition-service.spec.ts`: error mapping, category retry,
+  category mass summation, cache.
+- `cooklang-outlet-service.spec.ts`: badge collection drops invalid,
+  `undefined` and throwing providers.
+- `preview-badge.spec.tsx`: strip rendering and hover.
+- Native: `to_json` renders JSON.
 
 ---
 
@@ -134,16 +145,16 @@ mocha). No webview.
 
 ### 2.1 Flow
 
-`activate()` registers `cooklang.nutriscore.provideBadge` and calls
-`registerBadgeProvider`. Requires `cooklang.apiVersion` ≥ the version that
+`activate()` registers `cooklang.nutriscore.provideBadge` (contributed to
+`cooklang/recipePreview/badge` in `package.json`). Requires `cooklang.apiVersion` ≥ the version that
 introduces 1.1–1.3; otherwise does nothing and logs once.
 
 `provideBadge(ctx)`:
 1. `hasFeature('nutrition')` false → `undefined`.
-2. Cache lookup by `(uri, contentHash, scale)`; hit → return.
-3. `cooklang.api.nutrition({ uri, scale, categories })`; `ok: false` →
+2. `cooklang.api.nutrition({ uri, scale, categories })`; `ok: false` →
    `undefined` (network/server errors logged once per session).
-4. Compute score (2.2) and tooltip (2.3); cache; return.
+3. Compute score (2.2) and tooltip (2.3); return. (Caching lives in the
+   editor's nutrition command.)
 
 ### 2.2 Scoring (`nutriscore.ts`, pure)
 
@@ -153,19 +164,20 @@ introduces 1.1–1.3; otherwise does nothing and logs once.
   Salt = `sodium_mg × 2.5 / 1000`.
 - Negative points: energy (kJ = kcal × 4.184), sugars, saturated fat, salt.
 - Positive points: protein, fibre, fruit/veg/legume % =
-  `sum(categoryMass) / totals.mass_g × 100`.
-- Protein cap rule as per 2023 update.
+  `categoryMassG / totals.mass_g × 100`.
+- Protein counts only when negative points < 11 (2023 rule; the 2017
+  fruit/veg exception is gone).
 - Grade thresholds: A ≤ 0, B 1–2, C 3–10, D 11–18, E ≥ 19.
-- `grade = 'unknown'` if `totals.mass_g` is 0/missing, or unmatched mass
-  share > 30 % (unmatched mass estimated from quantities where the service
-  reports `mass_g` for failures, otherwise by ingredient count).
+- `grade = 'unknown'` if `totals.mass_g` is 0/missing, or more than 30 % of
+  the ingredients are unmatched (by count: the service reports no mass for
+  unmatched ingredients).
 
 ### 2.3 Trust summary (hover markdown)
 
 ```
 **Nutri-Score B** · 1 point (neg 7, pos 6)
 Confidence: **High** (mass-weighted)
-Matched: 9 of 10 ingredients (96 % of weight)
+Matched: 9 of 10 ingredients
 Not matched: pinch of salt
 Estimated: vanilla extract (partial)
 Sources: USDA (8), OFF (1)
@@ -175,9 +187,8 @@ _Estimate from recipe ingredients, not a certified label._
 ```
 
 - Confidence rollup: `confirmed` = 1, `partial` = 0.6, `estimated` = 0.3,
-  weighted by `mass_g`; ≥ 0.8 High, ≥ 0.5 Medium, else Low. (Use the
-  service's `confidence_weighted` if present and equivalent.)
-- For `unknown`, the first line explains why ("Only 60 % of the weight
+  weighted by `mass_g`; ≥ 0.8 High, ≥ 0.5 Medium, else Low.
+- For `unknown`, the first line explains why ("Only 6 of 10 ingredients
   could be matched").
 - Ingredient names are escaped for markdown.
 
@@ -187,8 +198,7 @@ _Estimate from recipe ingredients, not a certified label._
   specification tables; boundary grades; protein cap; salt from sodium.
 - `trust.spec.ts`: confidence rollup, unknown-grade threshold, markdown
   escaping.
-- `provider.spec.ts`: feature off → undefined; cache hit skips API; API
-  error → undefined.
+- `provider.spec.ts`: feature off → undefined; API error → undefined.
 
 ### 2.5 Release
 
