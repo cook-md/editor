@@ -55,7 +55,7 @@
 .cooklang-nutriscore-b { background: var(--theia-cooklang-nutriscoreB); color: var(--theia-cooklang-nutriscoreForegroundDark); }
 .cooklang-nutriscore-c { background: var(--theia-cooklang-nutriscoreC); color: var(--theia-cooklang-nutriscoreForegroundDark); }
 .cooklang-nutriscore-d { background: var(--theia-cooklang-nutriscoreD); color: var(--theia-cooklang-nutriscoreForegroundDark); }
-.cooklang-nutriscore-e { background: var(--theia-cooklang-nutriscoreE); color: var(--theia-cooklang-nutriscoreForegroundLight); }
+.cooklang-nutriscore-e { background: var(--theia-cooklang-nutriscoreE); color: var(--theia-cooklang-nutriscoreForegroundDark); }
 
 .cooklang-nutriscore-strip .cooklang-nutriscore-cell.selected {
     width: 20px;
@@ -89,6 +89,7 @@
     cursor: default;
     /* Button reset: this is a native <button>, kept visually identical to the old <span>. */
     appearance: none;
+    background: none;
     margin: 0;
     font: inherit;
     font-size: 11px;
