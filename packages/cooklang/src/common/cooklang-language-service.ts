@@ -127,7 +127,8 @@ export interface CooklangLanguageService {
 
     /**
      * Parse a `pantry.conf` (TOML). Returns JSON
-     * `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow }] }], lowStock: [...] }`.
+     * `{ sections: [{ name, items: [{ name, quantity, bought, expire, low, isLow, isOutOfStock, expireDate, boughtDate }] }], lowStock: [...] }`.
+     * `expireDate`/`boughtDate` are the dates normalised to `YYYY-MM-DD` (null when unparseable).
      * Rejects on an unparseable file.
      */
     parsePantry(text: string): Promise<string>;
@@ -137,6 +138,13 @@ export interface CooklangLanguageService {
      * `[{ name, inStock, section, quantity, isLow }]` in input order.
      */
     checkPantry(text: string, names: string[]): Promise<string>;
+
+    /**
+     * Apply one pantry edit (JSON, see native `editPantry`) to a `pantry.conf`
+     * text and return the new text, preserving comments and formatting.
+     * Rejects with `editPantry: <message>` on a bad edit or unparseable file.
+     */
+    editPantry(text: string, editJson: string): Promise<string>;
 
     /**
      * Render a Jinja2 report template against a recipe (cookcli-compatible,

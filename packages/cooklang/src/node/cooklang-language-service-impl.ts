@@ -311,6 +311,11 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         return native.checkPantry(text, names);
     }
 
+    async editPantry(text: string, editJson: string): Promise<string> {
+        const native = require('@theia/cooklang-native');
+        return native.editPantry(text, editJson);
+    }
+
     async renderReport(recipeContent: string, templateContent: string, configJson: string): Promise<string> {
         try {
             const native = require('@theia/cooklang-native');
