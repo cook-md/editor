@@ -93,6 +93,15 @@ export class CooklangOutletService {
     }
 
     /**
+     * Tells outlet hosts that contents may have changed although no menu or
+     * command did, e.g. a badge provider's settings. Hosts re-query on
+     * {@link onDidChange}; the recipe preview debounces badge refreshes.
+     */
+    refresh(): void {
+        this.onDidChangeEmitter.fire();
+    }
+
+    /**
      * The outlet's visible entries. `element` scopes `when` clauses: context keys
      * set on it or on an ancestor (like the recipe preview's
      * `cooklangPreviewScheme`) apply. Without it, `when` clauses are evaluated

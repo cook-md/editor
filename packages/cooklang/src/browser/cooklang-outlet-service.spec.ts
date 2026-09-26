@@ -163,6 +163,15 @@ describe('CooklangOutletService', () => {
         expect(fired).to.equal(2);
     });
 
+    it('fires onDidChange on refresh', () => {
+        const fixture = new Fixture();
+        const service = fixture.create();
+        let fired = 0;
+        service.onDidChange(() => { fired += 1; });
+        service.refresh();
+        expect(fired).to.equal(1);
+    });
+
     it('describes a resource with its URI and workspace-relative path', () => {
         const service = new Fixture().create();
         expect(service.describe(new URI('file:///ws/Dinner/Soup.cook'))).to.deep.equal({ uri: 'file:///ws/Dinner/Soup.cook', path: 'Dinner/Soup.cook' });
