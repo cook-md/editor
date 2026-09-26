@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod shopping_list;
+mod pantry_file;
 
 use camino::Utf8PathBuf;
 
