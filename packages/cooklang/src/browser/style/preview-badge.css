@@ -1,0 +1,97 @@
+.cooklang-nutriscore {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 2px 4px 3px;
+    border: 1px solid var(--theia-widget-border, var(--theia-panel-border));
+    border-radius: 8px;
+    background: var(--theia-editor-background);
+    cursor: default;
+    user-select: none;
+}
+
+.cooklang-nutriscore:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.cooklang-nutriscore-title {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--theia-descriptionForeground);
+    text-align: center;
+    line-height: 1.2;
+}
+
+.cooklang-nutriscore-strip {
+    display: flex;
+    align-items: center;
+}
+
+.cooklang-nutriscore-cell {
+    width: 14px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--theia-cooklang-nutriscoreForeground);
+    opacity: 0.55;
+}
+
+.cooklang-nutriscore-cell:first-child { border-radius: 6px 0 0 6px; }
+.cooklang-nutriscore-cell:last-child { border-radius: 0 6px 6px 0; }
+
+.cooklang-nutriscore-a { background: var(--theia-cooklang-nutriscoreA); }
+.cooklang-nutriscore-b { background: var(--theia-cooklang-nutriscoreB); }
+.cooklang-nutriscore-c { background: var(--theia-cooklang-nutriscoreC); }
+.cooklang-nutriscore-d { background: var(--theia-cooklang-nutriscoreD); }
+.cooklang-nutriscore-e { background: var(--theia-cooklang-nutriscoreE); }
+
+.cooklang-nutriscore-cell.selected {
+    width: 20px;
+    height: 22px;
+    margin: -3px 0;
+    font-size: 14px;
+    opacity: 1;
+    border-radius: 7px;
+    box-shadow: 0 0 0 2px var(--theia-editor-background);
+    z-index: 1;
+}
+
+.cooklang-nutriscore.unknown .cooklang-nutriscore-cell {
+    background: var(--theia-disabledForeground);
+}
+
+.cooklang-nutriscore.unknown .cooklang-nutriscore-cell.selected {
+    background: var(--theia-descriptionForeground);
+}
+
+.cooklang-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border: 1px solid var(--theia-badge-background);
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--theia-foreground);
+    white-space: nowrap;
+    cursor: default;
+}
+
+.cooklang-badge-pill:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 1px;
+}
+
+.cooklang-badge-pill.good { border-color: var(--theia-charts-green); color: var(--theia-charts-green); }
+.cooklang-badge-pill.warning { border-color: var(--theia-charts-yellow); color: var(--theia-charts-yellow); }
+.cooklang-badge-pill.bad { border-color: var(--theia-charts-red); color: var(--theia-charts-red); }
+
+.theia-hover.cooklang-preview-badge-hover {
+    max-width: 360px;
+}

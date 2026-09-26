@@ -1,0 +1,44 @@
+// *****************************************************************************
+// Copyright (C) 2026 cook.md and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception
+//
+// This program is free software: you can redistribute it and/or modify it
+// under the terms of the GNU Affero General Public License version 3 as
+// published by the Free Software Foundation, with the linking exception
+// documented in NOTICE.md.
+//
+// See LICENSE-AGPL for the full license text.
+// *****************************************************************************
+
+import { injectable } from '@theia/core/shared/inversify';
+import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
+import { ColorRegistry } from '@theia/core/lib/browser/color-registry';
+
+/**
+ * Nutri-Score grade colors. These are the official label colors, not theme
+ * colors, so they are the same in every theme; registered (not hard-coded in
+ * CSS) so a theme can still override them.
+ */
+@injectable()
+export class NutriScoreColorContribution implements ColorContribution {
+    registerColors(colors: ColorRegistry): void {
+        const grade = (letter: string, color: string): void => {
+            colors.register({
+                id: `cooklang.nutriscore${letter}`,
+                defaults: { dark: color, light: color, hcDark: color, hcLight: color },
+                description: `Nutri-Score grade ${letter} color in the recipe preview.`,
+            });
+        };
+        grade('A', '#038141');
+        grade('B', '#85BB2F');
+        grade('C', '#FECB02');
+        grade('D', '#EE8100');
+        grade('E', '#E63E11');
+        colors.register({
+            id: 'cooklang.nutriscoreForeground',
+            defaults: { dark: '#FFFFFF', light: '#FFFFFF', hcDark: '#FFFFFF', hcLight: '#FFFFFF' },
+            description: 'Letter color on the Nutri-Score strip.',
+        });
+    }
+}
