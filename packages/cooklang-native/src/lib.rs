@@ -1339,6 +1339,27 @@ struct ReportConfig {
     is_menu: Option<bool>,
 }
 
+/// Registers `to_json(value)`: serializes any template value to a JSON
+/// string. The report engine ships no `tojson` filter; the editor's internal
+/// templates (e.g. nutrition for plugins) use this to hand structured data
+/// back to TypeScript. Marked safe so no escaping touches the JSON.
+struct JsonExtension;
+
+impl cooklang_reports::extension::ConfigExtension for JsonExtension {
+    fn register(&self, env: &mut minijinja::Environment<'_>) {
+        env.add_function(
+            "to_json",
+            |value: minijinja::Value| -> Result<minijinja::Value, minijinja::Error> {
+                serde_json::to_string(&value)
+                    .map(minijinja::Value::from_safe_string)
+                    .map_err(|e| {
+                        minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, e.to_string())
+                    })
+            },
+        );
+    }
+}
+
 /// Render a Jinja2 report template against a recipe via cooklang-reports
 /// (the same engine cookcli's `cook report` uses).
 ///
@@ -1367,7 +1388,7 @@ pub fn render_report(recipe: String, template: String, config_json: String) -> S
     if let Some(p) = cfg.datastore_path {
         builder.datastore_path(p);
     }
-    let config = builder.build();
+    let config = builder.build().with_extension(JsonExtension);
     #[cfg(feature = "nutrition")]
     let mut config = match cfg.nutrition_api_url {
         Some(url) => {
@@ -2157,5 +2178,21 @@ mod recipe_images_tests {
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(value["title"].is_null());
         assert_eq!(value["steps"].as_object().unwrap().len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod to_json_tests {
+    use super::*;
+
+    #[test]
+    fn to_json_renders_values_as_json() {
+        let out = render_report(
+            "Mix @flour{200%g}.".to_string(),
+            r#"{{ to_json({"a": [1, 2], "s": "x<y"}) }}"#.to_string(),
+            "{}".to_string(),
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["output"].as_str().unwrap(), r#"{"a":[1,2],"s":"x<y"}"#);
     }
 }
