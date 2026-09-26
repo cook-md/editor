@@ -30,6 +30,7 @@ import {
     toWireCheckedLog,
     toWireShoppingList,
 } from '../common/shopping-list-types';
+import { PantryAttributes, PantryContents, PantryEdit, PantryItemInfo } from '../common/pantry-types';
 import { ShoppingListGenerator } from './shopping-list-generator';
 import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-reference-resolver';
 import { ReportConfigService } from './report-config-service';
@@ -62,6 +63,10 @@ export namespace CooklangPluginApi {
         COMPACT_SHOPPING_CHECKED: 'cooklang.api.compactShoppingChecked',
         /** `{ uri }`: open the recipe preview for a `.cook` URI of any scheme (e.g. `cooklang-hub:`). */
         OPEN_PREVIEW: 'cooklang.api.openPreview',
+        /** `{ text }` → `PantryContents`: parse a `config/pantry.conf` text. */
+        PARSE_PANTRY: 'cooklang.api.parsePantry',
+        /** `{ text, edit: PantryEdit }` → new file text, comments and formatting preserved. */
+        EDIT_PANTRY: 'cooklang.api.editPantry',
     } as const;
 }
 
@@ -111,6 +116,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.WRITE_SHOPPING_CHECKED }, { execute: (args: unknown) => this.writeShoppingChecked(args) });
         registry.registerCommand({ id: Commands.COMPACT_SHOPPING_CHECKED }, { execute: (args: unknown) => this.compactShoppingChecked(args) });
         registry.registerCommand({ id: Commands.OPEN_PREVIEW }, { execute: (args: unknown) => this.openPreview(args) });
+        registry.registerCommand({ id: Commands.PARSE_PANTRY }, { execute: (args: unknown) => this.parsePantry(args) });
+        registry.registerCommand({ id: Commands.EDIT_PANTRY }, { execute: (args: unknown) => this.editPantry(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -198,6 +205,65 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             throw this.invalid(`no file system for scheme "${uri.scheme}".`);
         }
         await this.recipePreview.open(uri);
+    }
+
+    protected async parsePantry(args: unknown): Promise<PantryContents> {
+        const text = this.text(this.object(args).text, '`text`');
+        const wire = JSON.parse(await this.languageService.parsePantry(text)) as { sections: Array<{ name: string; items: Record<string, unknown>[] }> };
+        return {
+            sections: wire.sections.map(section => ({ name: section.name, items: section.items.map(item => this.pantryItem(item)) })),
+        };
+    }
+
+    /** Native JSON uses null for absent attributes; the plugin shape omits them. */
+    protected pantryItem(wire: Record<string, unknown>): PantryItemInfo {
+        const item: PantryItemInfo = { name: String(wire.name), isLow: wire.isLow === true, isOutOfStock: wire.isOutOfStock === true };
+        for (const key of ['quantity', 'bought', 'expire', 'low', 'expireDate', 'boughtDate'] as const) {
+            const value = wire[key];
+            if (typeof value === 'string') {
+                item[key] = value;
+            }
+        }
+        return item;
+    }
+
+    protected async editPantry(args: unknown): Promise<string> {
+        const request = this.object(args);
+        const text = this.text(request.text, '`text`');
+        const edit = this.pantryEdit(request.edit);
+        return this.languageService.editPantry(text, JSON.stringify(edit));
+    }
+
+    protected pantryEdit(value: unknown): PantryEdit {
+        const edit = this.object(value);
+        const op = edit.op;
+        if (op !== 'add' && op !== 'update' && op !== 'remove') {
+            throw this.invalid('`edit.op` must be "add", "update" or "remove".');
+        }
+        const section = this.string(edit.section, '`edit.section`');
+        const name = this.string(edit.name, '`edit.name`');
+        switch (op) {
+            case 'add': return { op, section, name, ...this.pantryAttributes(edit, '`edit`') };
+            case 'update': return { op, section, name, fields: this.pantryAttributes(this.object(edit.fields), '`edit.fields`') };
+            case 'remove': return { op, section, name };
+        }
+    }
+
+    /** Picks the four known attributes; an empty string is kept (it clears on update). */
+    protected pantryAttributes(source: Record<string, unknown>, name: string): PantryAttributes {
+        const attributes: PantryAttributes = {};
+        for (const key of ['quantity', 'bought', 'expire', 'low'] as const) {
+            const value = source[key];
+            if (value === undefined) {
+                continue;
+            }
+            if (typeof value !== 'string') {
+                throw this.invalid(`${name}.${key} must be a string.`);
+            }
+            this.noControlCharacters(value, `${name}.${key}`);
+            attributes[key] = value.trim();
+        }
+        return attributes;
     }
 
     // --- argument helpers ---
