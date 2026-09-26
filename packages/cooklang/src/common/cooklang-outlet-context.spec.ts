@@ -15,7 +15,7 @@
 /* eslint-disable no-null/no-null */
 
 import { expect } from 'chai';
-import { IngredientOutletInfo, PreviewOutletContext } from './cooklang-outlet-context';
+import { IngredientOutletInfo, PreviewBadge, PreviewOutletContext } from './cooklang-outlet-context';
 import { Ingredient } from './recipe-types';
 
 function ingredient(quantity: Ingredient['quantity']): Ingredient {
@@ -53,5 +53,41 @@ describe('PreviewOutletContext.is', () => {
         expect(PreviewOutletContext.is({ version: 1, uri: 'file:///ws/a.cook', path: 'a.cook', scale: 1 })).to.equal(true);
         expect(PreviewOutletContext.is(undefined)).to.equal(false);
         expect(PreviewOutletContext.is({ uri: 'file:///ws/a.cook' })).to.equal(false);
+    });
+});
+
+describe('PreviewBadge', () => {
+    it('accepts a Nutri-Score badge', () => {
+        expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'B', tooltipMarkdown: '**B**' }))
+            .to.deep.equal({ kind: 'nutriscore', grade: 'B', tooltipMarkdown: '**B**' });
+    });
+
+    it('accepts a pill badge and trims its text', () => {
+        expect(PreviewBadge.parse({ kind: 'pill', text: ' 540 kcal ', tone: 'neutral', tooltipMarkdown: 'per serving' }))
+            .to.deep.equal({ kind: 'pill', text: '540 kcal', tone: 'neutral', tooltipMarkdown: 'per serving' });
+    });
+
+    it('rejects unknown kinds, grades, tones and bad text', () => {
+        expect(PreviewBadge.parse({ kind: 'other', grade: 'B', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'F', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'nutriscore', grade: 'A', tooltipMarkdown: 3 })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'x', tone: 'loud', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: '   ', tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'x'.repeat(PreviewBadge.MAX_TEXT_LENGTH + 1), tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse({ kind: 'pill', text: 'a\nb', tone: 'good', tooltipMarkdown: '' })).to.equal(undefined);
+        expect(PreviewBadge.parse(undefined)).to.equal(undefined);
+    });
+
+    it('drops extra keys and truncates very long tooltips', () => {
+        const parsed = PreviewBadge.parse({ kind: 'nutriscore', grade: 'unknown', tooltipMarkdown: 'x'.repeat(10000), extra: 1 });
+        expect(parsed).to.deep.equal({ kind: 'nutriscore', grade: 'unknown', tooltipMarkdown: 'x'.repeat(PreviewBadge.MAX_TOOLTIP_LENGTH) });
+    });
+
+    it('compares badge lists by value', () => {
+        const a: PreviewBadge = { kind: 'nutriscore', grade: 'A', tooltipMarkdown: 't' };
+        const pill: PreviewBadge = { kind: 'pill', text: 'x', tone: 'bad', tooltipMarkdown: '' };
+        expect(PreviewBadge.equals([a, pill], [{ ...a }, { ...pill }])).to.equal(true);
+        expect(PreviewBadge.equals([a], [{ ...a, grade: 'B' }])).to.equal(false);
+        expect(PreviewBadge.equals([a], [])).to.equal(false);
     });
 });
