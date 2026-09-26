@@ -168,8 +168,8 @@ shown in the banner and the view reloads.
   total). Sections with no matching items are hidden while a search or filter
   is active.
 - **Item row:** status dot (ok / low / out / expired-or-expiring, worst wins),
-  name, quantity (`500%g` displayed as `500 g`), expiry badge ("in 3 d",
-  "today", "expired 2 d ago") when `expireDate` is set.
+  name, quantity (`500%g` displayed as `500 g`), expiry badge ("in 3 days",
+  "today", "expired 2 days ago") when `expireDate` is set.
 - **Edit:** clicking a row expands an inline form: quantity, low, bought,
   expire (`<input type="date">`, prefilled from the normalised date; written
   back as ISO), *Save* / *Cancel* / *Delete*. Enter saves, Escape cancels.
