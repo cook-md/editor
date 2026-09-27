@@ -22,8 +22,8 @@ cooklang-language-server = { path = "../../../cooklang-language-server" }
 cooklang-sync-client = "0.6.0"
 chrono = "0.4"
 toml_edit = "0.22"
-cookmd-nutrition-client = { version = "0.1", optional = true }
-cooklang-reports-nutrition = { version = "0.1", optional = true }
+cookmd-nutrition-client = { version = "0.1.1", optional = true }
+cooklang-reports-nutrition = { version = "0.1.2", optional = true }
 
 [features]
 nutrition = ["dep:cookmd-nutrition-client", "dep:cooklang-reports-nutrition"]

@@ -52,6 +52,7 @@ class Fixture {
     editPantryError: Error | undefined = undefined;
     features = new Set<string>(['nutrition_api']);
     reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
+    refreshes = 0;
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -102,6 +103,7 @@ class Fixture {
                 return { ok: true, output: 'rendered' };
             },
         };
+        (contribution as any).outlets = { refresh: () => { this.refreshes += 1; } };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -406,5 +408,16 @@ describe('CooklangPluginApiContribution — hasFeature and renderReport', () => 
             expect(await fixture.error(RENDER_REPORT, args)).to.match(/^Invalid arguments/);
         }
         expect(fixture.reportCalls).to.deep.equal([]);
+    });
+});
+
+describe('CooklangPluginApiContribution — refreshBadges', () => {
+    const { REFRESH_BADGES } = CooklangPluginApi.Commands;
+
+    it('asks the outlet service to re-query badges', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(REFRESH_BADGES)).to.equal(undefined);
+        expect(fixture.refreshes).to.equal(1);
     });
 });

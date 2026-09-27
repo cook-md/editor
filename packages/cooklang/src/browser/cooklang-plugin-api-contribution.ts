@@ -38,6 +38,7 @@ import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-refer
 import { ReportConfigService } from './report-config-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { PluginReportService } from './plugin-report-service';
+import { CooklangOutletService } from './cooklang-outlet-service';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
@@ -85,6 +86,11 @@ export namespace CooklangPluginApi {
          * user's behalf (counting against their quota) without ever seeing the token.
          */
         RENDER_REPORT: 'cooklang.api.renderReport',
+        /**
+         * No argument → `undefined`: asks open previews to re-query their badges, e.g. after a
+         * badge provider's settings changed. Refreshes are debounced, so calling it often is cheap.
+         */
+        REFRESH_BADGES: 'cooklang.api.refreshBadges',
     } as const;
 
     /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
@@ -128,6 +134,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(PluginReportService)
     protected readonly pluginReports: PluginReportService;
 
+    @inject(CooklangOutletService)
+    protected readonly outlets: CooklangOutletService;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -147,6 +156,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.EDIT_PANTRY }, { execute: (args: unknown) => this.editPantry(args) });
         registry.registerCommand({ id: Commands.HAS_FEATURE }, { execute: (args: unknown) => this.hasFeature(args) });
         registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
+        registry.registerCommand({ id: Commands.REFRESH_BADGES }, { execute: () => this.outlets.refresh() });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {

@@ -407,9 +407,9 @@ dependencies = [
 
 [[package]]
 name = "cooklang-reports-nutrition"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f41f58147081c97e90043be865d8544586e39cfebc9521dc0e2d38d28f54fc08"
+checksum = "2c48f7a0953528f4ddffbc621baa4a4cfd83e70eef6fb21add257e5b6070f2d9"
 dependencies = [
  "cooklang",
  "cooklang-reports",
@@ -454,9 +454,9 @@ dependencies = [
 
 [[package]]
 name = "cookmd-nutrition-client"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "291517bf73e91e62cf571ca84fb69ad5f600ec496104a6fa3117b8e29908029f"
+checksum = "0b960cdadced600d6714cfe531ae9250aebcde7f8789ba5b40655a67654a9989"
 dependencies = [
  "reqwest",
  "serde",
