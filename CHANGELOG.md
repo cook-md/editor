@@ -13,6 +13,18 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.49](https://github.com/cook-md/editor/compare/v0.1.0-alpha.48...v0.1.0-alpha.49) (2026-09-27)
+
+
+### Features
+
+* **app:** recommend first-party plugins in the Extensions view ([#156](https://github.com/cook-md/editor/issues/156)) ([4b49e19](https://github.com/cook-md/editor/commit/4b49e19bc30a80262f2bee8f4c7fce0c3a0ba02c))
+
+
+### Bug Fixes
+
+* **cooklang-native:** cooklang-reports-nutrition 0.1.3 (½ cup and fraction ranges read correctly) ([#158](https://github.com/cook-md/editor/issues/158)) ([ac7bb3e](https://github.com/cook-md/editor/commit/ac7bb3e7eaa2b866161745e4932cf6006a47c17d))
+
 ## [0.1.0-alpha.48](https://github.com/cook-md/editor/compare/v0.1.0-alpha.47...v0.1.0-alpha.48) (2026-09-27)
 
 
