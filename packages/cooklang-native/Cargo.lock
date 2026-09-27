@@ -407,9 +407,9 @@ dependencies = [
 
 [[package]]
 name = "cooklang-reports-nutrition"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c48f7a0953528f4ddffbc621baa4a4cfd83e70eef6fb21add257e5b6070f2d9"
+checksum = "ff9bdd4029e9a93264397114a9c6e39e1f03b63d11f82dd8ac4d23f6992df5d7"
 dependencies = [
  "cooklang",
  "cooklang-reports",
