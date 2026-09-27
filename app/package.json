@@ -29,7 +29,17 @@
           "uriScheme": "cook"
         },
         "preferences": {
-          "security.workspace.trust.enabled": false
+          "security.workspace.trust.enabled": false,
+          "extensions": {
+            "recommendations": [
+              "cooklang.pantry",
+              "cooklang.nutriscore",
+              "cooklang.allergens",
+              "cooklang.recipe-hub",
+              "cooklang.meal-journal"
+            ]
+          },
+          "extensions.ignoreRecommendations": true
         }
       }
     },
