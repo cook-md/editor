@@ -70,7 +70,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
 
     registerCommands(registry: CommandRegistry): void {
         registry.registerCommand(CookmdLoginCommand, {
-            execute: () => this.doLogin(),
+            execute: (from?: string) => this.doLogin(typeof from === 'string' ? from : undefined),
         });
         registry.registerCommand(CookmdLogoutCommand, {
             execute: () => this.doLogout(),
@@ -111,9 +111,9 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         }
     }
 
-    private async doLogin(): Promise<void> {
+    private async doLogin(from?: string): Promise<void> {
         try {
-            const result = await this.authService.login();
+            const result = await this.authService.login(from);
             this.windowService.openNewWindow(result.authUrl, { external: true });
             this.startAuthPolling();
         } catch (err) {

@@ -17,6 +17,7 @@ import * as https from 'https';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { AuthState } from '../common/auth-protocol';
 import { AuthServiceBackend } from './auth-service';
+import { buildUpgradeUrl } from '../common/url-builders';
 import { parseSubscription } from '../common/parse-subscription';
 import { SubscriptionService, SubscriptionState, UpgradeCallbackResult } from '../common/subscription-protocol';
 
@@ -68,7 +69,7 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         return this.cachedState;
     }
 
-    async startUpgradeFlow(): Promise<string> {
+    async startUpgradeFlow(from?: string): Promise<string> {
         this.cleanupUpgradeFlow(new Error('Upgrade flow superseded'));
 
         const expectedState = crypto.randomUUID();
@@ -91,10 +92,7 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         this.upgradeFlow = { expectedState, server, timeout, resolve, reject, callbackPromise };
 
         const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        const url = new URL('/pricing', webBaseUrl);
-        url.searchParams.set('callback', `http://localhost:${port}/upgrade-done`);
-        url.searchParams.set('state', expectedState);
-        return url.toString();
+        return buildUpgradeUrl(webBaseUrl, port, expectedState, from);
     }
 
     async awaitUpgradeCallback(): Promise<UpgradeCallbackResult> {
