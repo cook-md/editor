@@ -51,9 +51,10 @@ export interface FindFirstRecipeOptions {
     maxDirs?: number;
 }
 
+/** Lower-case; names are compared case-insensitively. */
 const SKIPPED_FOLDERS = new Set([
     'node_modules', 'target', 'dist', 'build', 'venv', '.venv', '__pycache__',
-    'Library', 'Applications', 'Pictures', 'Music', 'Movies',
+    'library', 'applications', 'pictures', 'music', 'movies',
 ]);
 
 const CHUNK = 16;
@@ -78,13 +79,13 @@ export async function findFirstRecipe(read: DirReader, roots: string[], options:
         budget -= dirs.length;
         for (let i = 0; i < dirs.length; i += CHUNK) {
             const chunk = dirs.slice(i, i + CHUNK);
-            const listings = await Promise.all(chunk.map(dir => read(dir).catch(() => [])));
+            const listings = await Promise.all(chunk.map(dir => (async () => read(dir))().catch(() => [])));
             for (let j = 0; j < chunk.length; j++) {
                 for (const entry of listings[j]) {
                     if (!entry.dir && entry.name.toLowerCase().endsWith('.cook')) {
                         return join(chunk[j], entry.name);
                     }
-                    if (entry.dir && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name)) {
+                    if (entry.dir && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name.toLowerCase())) {
                         next.push(join(chunk[j], entry.name));
                     }
                 }

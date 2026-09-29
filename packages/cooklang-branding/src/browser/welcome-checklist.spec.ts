@@ -81,6 +81,20 @@ describe('findFirstRecipe', () => {
         expect(visited).to.deep.equal(['/r']);
     });
 
+    it('skips heavy folders regardless of case', async () => {
+        const r: DirReader = async dir => dir === '/r' ? [d('Node_Modules')] : [f('X.cook')];
+        expect(await findFirstRecipe(r, ['/r'])).to.equal(undefined);
+    });
+
+    it('skips a directory whose reader throws synchronously', async () => {
+        const r: DirReader = (dir => {
+            if (dir === '/r') { return Promise.resolve([d('bad'), d('good')]); }
+            if (dir === '/r/bad') { throw new Error('sync'); }
+            return Promise.resolve([f('Ok.cook')]);
+        });
+        expect(await findFirstRecipe(r, ['/r'])).to.equal('/r/good/Ok.cook');
+    });
+
     it('stops after maxDirs reads and treats unknown as none', async () => {
         let reads = 0;
         const r: DirReader = async dir => {

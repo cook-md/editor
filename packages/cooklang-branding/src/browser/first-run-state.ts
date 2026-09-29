@@ -91,9 +91,16 @@ export class FirstRunState implements FrontendApplicationContribution, Disposabl
         return this._flags ??= new FirstRunFlags(this.storage());
     }
 
-    /** Overridable in tests. Access can throw when site data is blocked; FirstRunFlags copes with that. */
+    /**
+     * Overridable in tests. Even reading `window.localStorage` can throw (SecurityError when site
+     * data is blocked); then a no-op storage is returned and FirstRunFlags keeps state in memory.
+     */
     protected storage(): FlagStorage {
-        return window.localStorage;
+        try {
+            return window.localStorage;
+        } catch {
+            return { getItem: () => null, setItem: () => undefined }; // eslint-disable-line no-null/no-null
+        }
     }
 
     protected readonly onDidChangeEmitter = new Emitter<void>();

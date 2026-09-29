@@ -110,4 +110,19 @@ describe('FirstRunState', () => {
         exec(RENDER_REPORT_COMMAND_ID);
         expect(fired()).to.equal(0);
     });
+
+    it('works when window.localStorage itself is unavailable', () => {
+        // In Node there is no window, so the default storage() access throws, like a SecurityError in a browser.
+        const emitter = new Emitter<CommandEvent>();
+        const state = new FirstRunState();
+        (state as unknown as { commands: unknown }).commands = { onDidExecuteCommand: emitter.event };
+        (state as unknown as { init(): void }).init();
+        let n = 0;
+        state.onDidChange(() => n++);
+        expect(state.flags.cookbotUsed).to.equal(false);
+        expect(state.markCookbotUsed()).to.equal(true);
+        expect(state.markCookbotUsed()).to.equal(false);
+        emitter.fire({ commandId: RENDER_REPORT_COMMAND_ID, args: [] });
+        expect(n).to.equal(2);
+    });
 });
