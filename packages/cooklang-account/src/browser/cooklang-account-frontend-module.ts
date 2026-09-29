@@ -25,6 +25,10 @@ import { SyncService, SyncServicePath } from '../common/sync-protocol';
 import { SubscriptionFrontendService, SubscriptionFrontendServiceImpl } from './subscription-frontend-service';
 import { AccountWidget, ACCOUNT_WIDGET_ID } from './account-widget';
 import { AccountContribution } from './account-contribution';
+import { PreferenceContribution } from '@theia/core/lib/common/preferences/preference-schema';
+import { UsageEventsService, UsageEventsServicePath } from '../common/usage-events-protocol';
+import { UsageEventsFrontend } from './usage-events-frontend';
+import { UsagePreferencesSchema } from './usage-preferences';
 
 export default new ContainerModule(bind => {
     // Auth service RPC proxy
@@ -61,4 +65,11 @@ export default new ContainerModule(bind => {
     // Account view contribution
     bindViewContribution(bind, AccountContribution);
     bind(FrontendApplicationContribution).toService(AccountContribution);
+
+    // Usage events (opt-out preference, RPC proxy to the backend poster)
+    bind(PreferenceContribution).toConstantValue({ schema: UsagePreferencesSchema });
+    bind(UsageEventsService).toDynamicValue(ctx =>
+        ServiceConnectionProvider.createProxy<UsageEventsService>(ctx.container, UsageEventsServicePath)
+    ).inSingletonScope();
+    bind(UsageEventsFrontend).toSelf().inSingletonScope();
 });
