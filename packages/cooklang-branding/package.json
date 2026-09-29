@@ -9,7 +9,11 @@
     "@theia/cooklang-account": "1.70.0",
     "@theia/cooklang-ai": "1.70.0",
     "@theia/core": "1.70.0",
+    "@theia/editor": "1.70.0",
+    "@theia/filesystem": "1.70.0",
+    "@theia/getting-started": "1.70.0",
     "@theia/monaco": "1.70.0",
+    "@theia/workspace": "1.70.0",
     "tslib": "^2.6.2"
   },
   "main": "lib/common",
