@@ -19,7 +19,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { AuthServiceBackend } from './auth-service';
-import { UsageEvent, UsageEventContext, UsageEventsService } from '../common/usage-events-protocol';
+import { USAGE_EVENT_NAMES, UsageEvent, UsageEventContext, UsageEventsService } from '../common/usage-events-protocol';
 import { buildEventsBody, buildVisitBody } from '../common/usage-events-payload';
 
 /** Same folder as cookbot-auth.json and the telemetry consent file. */
@@ -27,7 +27,11 @@ export function usageFilePath(): string {
     return path.join(os.homedir(), '.theia', 'cook-usage.json');
 }
 
-/** A random ID for this install, created once. Not tied to the account. */
+/**
+ * A random ID for this install, created once. It is not derived from the
+ * account. If the file can't be read or written (read-only home), a fresh
+ * in-memory UUID is returned; callers should cache it for the session.
+ */
 export function loadOrCreateVisitorToken(file: string): string {
     try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
@@ -38,8 +42,12 @@ export function loadOrCreateVisitorToken(file: string): string {
         // missing or unreadable: fall through and create one
     }
     const visitorToken = crypto.randomUUID();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ visitorToken }, undefined, 2), 'utf-8');
+    try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify({ visitorToken }, undefined, 2), 'utf-8');
+    } catch (err) {
+        console.debug('[usage-events] could not persist visitor token:', err instanceof Error ? err.message : err);
+    }
     return visitorToken;
 }
 
@@ -55,44 +63,90 @@ export class UsageEventsServiceImpl implements UsageEventsService {
     @inject(AuthServiceBackend)
     protected readonly authService: AuthServiceBackend;
 
+    /** Overall deadline per request, independent of socket idle time. Overridable for tests. */
+    protected requestTimeoutMs = 10_000;
+
     /** One visit per app launch. */
-    private readonly visitToken = crypto.randomUUID();
-    private visitorToken: string | undefined;
-    private visitPosted: Promise<void> | undefined;
+    protected readonly visitToken = crypto.randomUUID();
+    protected visitorToken: string | undefined;
+    protected visitPosted: Promise<void> | undefined;
+
+    /** Overridable so tests don't touch the real home directory. */
+    protected usageFile(): string {
+        return usageFilePath();
+    }
 
     async track(event: UsageEvent, context: UsageEventContext): Promise<void> {
+        if (!(USAGE_EVENT_NAMES as readonly string[]).includes(event?.name)) {
+            return;
+        }
         try {
-            this.visitorToken ??= loadOrCreateVisitorToken(usageFilePath());
-            this.visitPosted ??= this.post('/ahoy/visits', buildVisitBody(this.visitToken, this.visitorToken, context.appVersion), context);
+            const visitorToken = this.visitorToken ??= loadOrCreateVisitorToken(this.usageFile());
+            if (!this.visitPosted) {
+                const posted = this.post('/ahoy/visits', buildVisitBody(this.visitToken, visitorToken, context.appVersion), context, visitorToken);
+                this.visitPosted = posted;
+                // A failed visit must not be cached for the whole launch: let the next track() retry.
+                posted.catch(() => {
+                    if (this.visitPosted === posted) {
+                        this.visitPosted = undefined;
+                    }
+                });
+            }
             await this.visitPosted;
-            await this.post('/ahoy/events', buildEventsBody(this.visitToken, this.visitorToken, [event]), context);
+            await this.post('/ahoy/events', buildEventsBody(this.visitToken, visitorToken, [event]), context, visitorToken);
         } catch (err) {
             console.debug('[usage-events] not sent:', err instanceof Error ? err.message : err);
         }
     }
 
-    private async post(pathname: string, body: unknown, context: UsageEventContext): Promise<void> {
+    /** Only https (or local dev) gets the bearer token. */
+    protected shouldSendToken(url: URL): boolean {
+        return url.protocol === 'https:' || url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    }
+
+    protected async post(pathname: string, body: unknown, context: UsageEventContext, visitorToken: string): Promise<void> {
         const url = new URL(pathname, process.env.WEB_BASE_URL || 'https://cook.md');
-        const token = await this.authService.getToken();
+        const token = this.shouldSendToken(url) ? await this.authService.getToken() : undefined;
         const payload = JSON.stringify(body);
         const headers: Record<string, string | number> = {
             'Content-Type': 'application/json',
             'Content-Length': Buffer.byteLength(payload),
             'User-Agent': context.userAgent,
             'Ahoy-Visit': this.visitToken,
-            'Ahoy-Visitor': this.visitorToken ?? '',
+            'Ahoy-Visitor': visitorToken,
         };
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
         }
         const lib = url.protocol === 'https:' ? https : http;
         await new Promise<void>((resolve, reject) => {
-            const req = lib.request(url, { method: 'POST', headers, timeout: 10_000 }, res => {
+            let settled = false;
+            let timer: NodeJS.Timeout | undefined;
+            const finish = (err?: Error): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                if (timer) {
+                    clearTimeout(timer);
+                }
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve();
+                }
+            };
+            const req = lib.request(url, { method: 'POST', headers }, res => {
+                res.on('error', finish);
+                res.on('aborted', () => finish(new Error('aborted')));
                 res.resume();
-                res.on('end', () => (res.statusCode && res.statusCode < 300 ? resolve() : reject(new Error(`status ${res.statusCode}`))));
+                finish(res.statusCode && res.statusCode < 300 ? undefined : new Error(`status ${res.statusCode}`));
             });
-            req.on('timeout', () => req.destroy(new Error('timeout')));
-            req.on('error', reject);
+            timer = setTimeout(() => {
+                finish(new Error('timeout'));
+                req.destroy();
+            }, this.requestTimeoutMs);
+            req.on('error', finish);
             req.end(payload);
         });
     }

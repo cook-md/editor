@@ -35,3 +35,17 @@ describe('loadOrCreateVisitorToken', () => {
         expect(loadOrCreateVisitorToken(file)).to.match(/^[0-9a-f-]{36}$/);
     });
 });
+
+describe('loadOrCreateVisitorToken with an unwritable location', () => {
+    it('returns an in-memory UUID instead of throwing', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cook-usage-'));
+        try {
+            const blocker = path.join(dir, 'file');
+            fs.writeFileSync(blocker, 'x');
+            const token = loadOrCreateVisitorToken(path.join(blocker, 'sub', 'cook-usage.json'));
+            expect(token).to.match(/^[0-9a-f-]{36}$/);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+});

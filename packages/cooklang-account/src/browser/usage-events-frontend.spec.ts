@@ -16,14 +16,14 @@ import { UsageEventsFrontend } from './usage-events-frontend';
 import { UsageEvent, UsageEventContext } from '../common/usage-events-protocol';
 import { USAGE_EVENTS_PREF } from './usage-preferences';
 
-function make(enabled: boolean): { frontend: UsageEventsFrontend; sent: Array<[UsageEvent, UsageEventContext]> } {
+function make(enabled: boolean | undefined): { frontend: UsageEventsFrontend; sent: Array<[UsageEvent, UsageEventContext]> } {
     const sent: Array<[UsageEvent, UsageEventContext]> = [];
     const frontend = new UsageEventsFrontend();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const f = frontend as any;
-    f.preferenceService = { get: (name: string, dflt: boolean) => (name === USAGE_EVENTS_PREF ? enabled : dflt) };
+    f.preferenceService = { ready: Promise.resolve(), get: (name: string, dflt: boolean) => (name === USAGE_EVENTS_PREF && enabled !== undefined ? enabled : dflt) };
+    f.appVersionPromise = Promise.resolve('0.1.0-alpha.50');
     f.service = { track: async (e: UsageEvent, c: UsageEventContext) => { sent.push([e, c]); } };
-    f.appVersion = '0.1.0-alpha.50';
     f.userAgent = 'Mozilla/5.0 (Macintosh) Chrome/134 Electron/37';
     return { frontend, sent };
 }
@@ -44,6 +44,34 @@ describe('UsageEventsFrontend', () => {
         expect(event.properties).to.include({ action: 'trial', surface: 'editor', app_version: '0.1.0-alpha.50' });
         expect(event.properties.os).to.be.oneOf(['mac', 'windows', 'linux']);
         expect(context).to.deep.equal({ userAgent: 'Mozilla/5.0 (Macintosh) Chrome/134 Electron/37', appVersion: '0.1.0-alpha.50' });
+    });
+
+    it('defaults to ON when the preference is unset', async () => {
+        const { frontend, sent } = make(undefined);
+        await frontend.track('editor_welcome_shown', {});
+        expect(sent).to.have.length(1);
+    });
+
+    it('waits for preferences to load before deciding', async () => {
+        const { frontend, sent } = make(false);
+        let release!: () => void;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (frontend as any).preferenceService.ready = new Promise<void>(r => { release = r; });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const p = frontend.track('editor_welcome_shown', {});
+        release();
+        await p;
+        expect(sent).to.have.length(0);
+    });
+
+    it('falls back to "unknown" when the version lookup fails', async () => {
+        const { frontend, sent } = make(true);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (frontend as any).appVersionPromise = undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (frontend as any).appServer = { getApplicationInfo: async () => { throw new Error('nope'); } };
+        await frontend.track('editor_welcome_shown', {});
+        expect(sent[0][1].appVersion).to.equal('unknown');
     });
 
     it('never throws when the backend fails', async () => {

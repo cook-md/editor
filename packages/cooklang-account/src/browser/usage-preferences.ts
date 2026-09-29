@@ -23,8 +23,8 @@ export const UsagePreferencesSchema: PreferenceSchema = {
             type: 'boolean',
             title: nls.localize('theia/cooklang-account/usageStatistics/title', 'Send Usage Statistics'),
             description: nls.localize('theia/cooklang-account/usageStatistics/description',
-                'Send a few anonymous events (welcome checklist steps, CookBot sign-in and trial prompts) to cook.md '
-                + 'so we can see where new users get stuck. Never includes recipe content, file or folder names, '
+                'Send a few usage events (welcome checklist steps, CookBot sign-in and trial prompts) to cook.md '
+                + 'so we can see where new users get stuck. When you\'re signed in they are linked to your cook.md account. Never includes recipe content, file or folder names, '
                 + 'or what you type to CookBot.'),
             default: true,
         },

@@ -14,13 +14,16 @@
 export const UsageEventsServicePath = '/services/cook-usage-events';
 export const UsageEventsService = Symbol('UsageEventsService');
 
-export type UsageEventName =
-    | 'editor_welcome_shown'
-    | 'editor_checklist_clicked'
-    | 'editor_checklist_completed'
-    | 'cookbot_gate_shown'
-    | 'cookbot_gate_clicked'
-    | 'editor_cookbot_first_message';
+export const USAGE_EVENT_NAMES = [
+    'editor_welcome_shown',
+    'editor_checklist_clicked',
+    'editor_checklist_completed',
+    'cookbot_gate_shown',
+    'cookbot_gate_clicked',
+    'editor_cookbot_first_message',
+] as const;
+
+export type UsageEventName = typeof USAGE_EVENT_NAMES[number];
 
 /**
  * Properties are an allow-listed, flat map of small values. Never put recipe

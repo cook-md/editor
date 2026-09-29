@@ -11,7 +11,7 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { inject, injectable } from '@theia/core/shared/inversify';
 import { PreferenceService } from '@theia/core/lib/common/preferences/preference-service';
 import { ApplicationServer } from '@theia/core/lib/common/application-protocol';
 import { isOSX, isWindows } from '@theia/core/lib/common/os';
@@ -30,27 +30,30 @@ export class UsageEventsFrontend {
     @inject(ApplicationServer)
     protected readonly appServer: ApplicationServer;
 
-    protected appVersion = 'unknown';
+    protected appVersionPromise: Promise<string> | undefined;
     protected userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 
-    @postConstruct()
-    protected init(): void {
-        this.appServer.getApplicationInfo().then(info => {
-            if (info?.version) {
-                this.appVersion = info.version;
-            }
-        });
+    protected getAppVersion(): Promise<string> {
+        return this.appVersionPromise ??= this.appServer.getApplicationInfo()
+            .then(info => info?.version || 'unknown')
+            .catch(() => 'unknown');
     }
 
     async track(name: UsageEventName, properties: UsageEventProperties): Promise<void> {
+        try {
+            await this.preferenceService.ready;
+        } catch {
+            return;
+        }
         if (!this.preferenceService.get<boolean>(USAGE_EVENTS_PREF, true)) {
             return;
         }
+        const appVersion = await this.getAppVersion();
         const os = isOSX ? 'mac' : isWindows ? 'windows' : 'linux';
         try {
             await this.service.track(
-                { name, properties: { ...properties, surface: 'editor', app_version: this.appVersion, os }, time: new Date().toISOString() },
-                { userAgent: this.userAgent, appVersion: this.appVersion },
+                { name, properties: { ...properties, surface: 'editor', app_version: appVersion, os }, time: new Date().toISOString() },
+                { userAgent: this.userAgent, appVersion },
             );
         } catch {
             // analytics must never break the editor
