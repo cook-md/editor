@@ -172,7 +172,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             this.trialRequestedAt = undefined;
         }
         if (next === 'start') {
-            void this.startUpgradeFlow();
+            this.startUpgradeFlow();
         }
     }
 
@@ -201,7 +201,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.lastGate = gate;
         if (gate !== 'loading') {
             if (gate !== 'open' && gate !== this.lastTrackedGate) {
-                void this.usageEvents.track('cookbot_gate_shown', {
+                this.usageEvents.track('cookbot_gate_shown', {
                     state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
                     // Eligibility isn't known when signed out or when the plan failed to load.
                     trial_eligible: gate === 'signed_out' || gate === 'plan_unknown' ? 'unknown' : gate !== 'upgrade',
@@ -284,9 +284,9 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         };
 
         if (gate === 'loading') {
-            const title = heading(nls.localize('theia/ai-chat/gate/checkingPlan', 'Checking your plan…'));
-            title.setAttribute('aria-live', 'polite');
-            this.gateOverlay.append(icon, title);
+            const loadingTitle = heading(nls.localize('theia/ai-chat/gate/checkingPlan', 'Checking your plan…'));
+            loadingTitle.setAttribute('aria-live', 'polite');
+            this.gateOverlay.append(icon, loadingTitle);
             return;
         }
 
@@ -300,17 +300,18 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         if (gate === 'signed_out') {
             button.textContent = nls.localize('theia/ai-chat/gate/startTrial', 'Start 7-day free trial');
             button.addEventListener('click', () => {
-                void this.usageEvents.track('cookbot_gate_clicked', { action: 'trial' });
+                this.usageEvents.track('cookbot_gate_clicked', { action: 'trial' });
                 this.trialRequestedAt = Date.now();
-                void this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_trial');
+                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_trial');
             });
-            const login = el('ai-chat-gate-note ai-chat-gate-link', nls.localize('theia/ai-chat/gate/haveAccount', 'I already have an account: Log in'), 'button') as HTMLButtonElement;
+            const loginText = nls.localize('theia/ai-chat/gate/haveAccount', 'I already have an account: Log in');
+            const login = el('ai-chat-gate-note ai-chat-gate-link', loginText, 'button') as HTMLButtonElement;
             login.type = 'button';
             login.addEventListener('click', () => {
-                void this.usageEvents.track('cookbot_gate_clicked', { action: 'login' });
+                this.usageEvents.track('cookbot_gate_clicked', { action: 'login' });
                 // A plain login cancels an earlier "Start trial" choice.
                 this.trialRequestedAt = undefined;
-                void this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_login');
+                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_login');
             });
             this.gateOverlay.append(icon, title, message, button, login);
             return;
@@ -318,8 +319,8 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
         button.textContent = offer.button;
         button.addEventListener('click', () => {
-            void this.usageEvents.track('cookbot_gate_clicked', { action: offer.action });
-            void this.startUpgradeFlow();
+            this.usageEvents.track('cookbot_gate_clicked', { action: offer.action });
+            this.startUpgradeFlow();
         });
         this.gateOverlay.append(icon, title, message, button, el('ai-chat-gate-note', offer.note));
     }
@@ -379,7 +380,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.usageTracking.push(model.onDidChange(event => {
             if (event.kind === 'addResponse') {
                 if (this.firstRunState.markCookbotUsed()) {
-                    void this.usageEvents.track('editor_cookbot_first_message', {});
+                    this.usageEvents.track('editor_cookbot_first_message', {});
                 }
                 // A note about the previous exchange is stale once the next one starts.
                 this.exchangeCostNote.style.display = 'none';
@@ -473,7 +474,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             this.commandService.executeCommand(AccountCommands.OPEN_VIEW.id);
         });
         const upgrade = this.createQuotaBannerAction(nls.localizeByDefault('Upgrade'), () => {
-            void this.startUpgradeFlow();
+            this.startUpgradeFlow();
         });
 
         this.quotaBanner.append(message, account, upgrade);

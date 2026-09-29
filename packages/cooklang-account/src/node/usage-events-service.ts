@@ -121,15 +121,12 @@ export class UsageEventsServiceImpl implements UsageEventsService {
         const lib = url.protocol === 'https:' ? https : http;
         await new Promise<void>((resolve, reject) => {
             let settled = false;
-            let timer: NodeJS.Timeout | undefined;
             const finish = (err?: Error): void => {
                 if (settled) {
                     return;
                 }
                 settled = true;
-                if (timer) {
-                    clearTimeout(timer);
-                }
+                clearTimeout(timer);
                 if (err) {
                     reject(err);
                 } else {
@@ -142,7 +139,9 @@ export class UsageEventsServiceImpl implements UsageEventsService {
                 res.resume();
                 finish(res.statusCode && res.statusCode < 300 ? undefined : new Error(`status ${res.statusCode}`));
             });
-            timer = setTimeout(() => {
+            // Declared after `req` so a synchronous throw from lib.request leaves no timer behind.
+            // `finish` reads it only from request callbacks, which Node never calls synchronously.
+            const timer = setTimeout(() => {
                 finish(new Error('timeout'));
                 req.destroy();
             }, this.requestTimeoutMs);
