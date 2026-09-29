@@ -36,6 +36,24 @@ export function computeChecklist(f: ChecklistFacts): { steps: ChecklistStep[]; a
     return { steps, allDone: steps.every(s => s.done) };
 }
 
+const STEP_ORDER: ChecklistStepId[] = ['folder', 'recipes', 'cookbot', 'report'];
+
+/**
+ * Steps that went from not done to done, in checklist order. `previous` is undefined until the
+ * first computation is taken as the baseline, so steps already done at startup are never reported.
+ */
+export function newlyCompleted(previous: ReadonlySet<ChecklistStepId> | undefined, next: ReadonlySet<ChecklistStepId>): ChecklistStepId[] {
+    if (!previous) {
+        return [];
+    }
+    return STEP_ORDER.filter(id => next.has(id) && !previous.has(id));
+}
+
+/** True for a `.cook` file path (extension matched case-insensitively). */
+export function isRecipePath(path: string): boolean {
+    return path.toLowerCase().endsWith('.cook');
+}
+
 /**
  * Lists one directory by path. Injected so the search is testable without a filesystem.
  * Paths are URI path strings (Theia `URI.path.toString()`): forward slashes, e.g. `/c:/Users/me`
@@ -59,7 +77,8 @@ const SKIPPED_FOLDERS = new Set([
 
 const CHUNK = 16;
 
-function join(dir: string, name: string): string {
+/** Joins a directory path and an entry name the way `findFirstRecipe` builds the paths it returns. */
+export function childPath(dir: string, name: string): string {
     return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
 }
 
@@ -82,11 +101,11 @@ export async function findFirstRecipe(read: DirReader, roots: string[], options:
             const listings = await Promise.all(chunk.map(dir => (async () => read(dir))().catch(() => [])));
             for (let j = 0; j < chunk.length; j++) {
                 for (const entry of listings[j]) {
-                    if (!entry.dir && entry.name.toLowerCase().endsWith('.cook')) {
-                        return join(chunk[j], entry.name);
+                    if (!entry.dir && isRecipePath(entry.name)) {
+                        return childPath(chunk[j], entry.name);
                     }
                     if (entry.dir && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name.toLowerCase())) {
-                        next.push(join(chunk[j], entry.name));
+                        next.push(childPath(chunk[j], entry.name));
                     }
                 }
             }

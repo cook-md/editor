@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { computeChecklist, findFirstRecipe, DirReader } from './welcome-checklist';
+import { computeChecklist, findFirstRecipe, isRecipePath, newlyCompleted, DirReader } from './welcome-checklist';
 
 const none = { folderOpen: false, hasRecipes: false, cookbotUsed: false, reportRendered: false };
 
@@ -126,5 +126,32 @@ describe('findFirstRecipe', () => {
     it('does not produce a double slash when the root ends with a slash', async () => {
         const r: DirReader = async dir => dir === '/' ? [d('mains')] : [f('P.cook')];
         expect(await findFirstRecipe(r, ['/'])).to.equal('/mains/P.cook');
+    });
+});
+
+describe('newlyCompleted', () => {
+    it('reports nothing on the first computation', () => {
+        expect(newlyCompleted(undefined, new Set(['folder', 'recipes']))).to.deep.equal([]);
+    });
+
+    it('reports steps that became done, in checklist order', () => {
+        expect(newlyCompleted(new Set(['folder']), new Set(['report', 'folder', 'recipes']))).to.deep.equal(['recipes', 'report']);
+    });
+
+    it('ignores steps that stayed done or went back to not done', () => {
+        expect(newlyCompleted(new Set(['folder', 'recipes']), new Set(['folder']))).to.deep.equal([]);
+    });
+});
+
+describe('isRecipePath', () => {
+    it('matches .cook files case-insensitively', () => {
+        expect(isRecipePath('/home/me/recipes/Pasta.COOK')).to.equal(true);
+        expect(isRecipePath('/c:/Users/me/soup.cook')).to.equal(true);
+    });
+
+    it('rejects other files and look-alikes', () => {
+        expect(isRecipePath('/home/me/recipes/notes.md')).to.equal(false);
+        expect(isRecipePath('/home/me/recipes/cook')).to.equal(false);
+        expect(isRecipePath('/home/me/recipes/pasta.cook.bak')).to.equal(false);
     });
 });
