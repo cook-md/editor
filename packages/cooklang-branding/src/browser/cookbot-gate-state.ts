@@ -28,3 +28,28 @@ export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGa
     }
     return trialEligible ? 'trial' : 'upgrade';
 }
+
+export type TrialContinuation = 'none' | 'wait' | 'start' | 'drop';
+
+export interface TrialContinuationInput {
+    /** The signed-out user chose "Start 7-day free trial" and hasn't reached checkout yet. */
+    pending: boolean;
+    loggedIn: boolean;
+    /** The subscription has been fetched since login; until then eligibility and features are stale. */
+    subscriptionKnown: boolean;
+    hasAi: boolean;
+}
+
+/**
+ * What to do with a pending "trial after login" request. `start` and `drop`
+ * both consume the request; `wait` keeps it for the next auth or subscription change.
+ */
+export function decideTrialContinuation({ pending, loggedIn, subscriptionKnown, hasAi }: TrialContinuationInput): TrialContinuation {
+    if (!pending) {
+        return 'none';
+    }
+    if (!loggedIn || !subscriptionKnown) {
+        return 'wait';
+    }
+    return hasAi ? 'drop' : 'start';
+}

@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { computeCookbotGate } from './cookbot-gate-state';
+import { computeCookbotGate, decideTrialContinuation } from './cookbot-gate-state';
 
 describe('computeCookbotGate', () => {
     it('asks a signed-out user to sign in', () => {
@@ -26,5 +26,24 @@ describe('computeCookbotGate', () => {
     });
     it('opens for Cook Pro', () => {
         expect(computeCookbotGate({ loggedIn: true, hasAi: true, trialEligible: false })).to.equal('open');
+    });
+});
+
+describe('decideTrialContinuation', () => {
+    const base = { pending: true, loggedIn: true, subscriptionKnown: true, hasAi: false };
+    it('does nothing when the user did not choose the trial', () => {
+        expect(decideTrialContinuation({ ...base, pending: false })).to.equal('none');
+    });
+    it('waits while still signed out', () => {
+        expect(decideTrialContinuation({ ...base, loggedIn: false })).to.equal('wait');
+    });
+    it('waits until the subscription has loaded after login', () => {
+        expect(decideTrialContinuation({ ...base, subscriptionKnown: false })).to.equal('wait');
+    });
+    it('starts checkout for a signed-in user without Cook Pro', () => {
+        expect(decideTrialContinuation(base)).to.equal('start');
+    });
+    it('drops the request when the account already has Cook Pro', () => {
+        expect(decideTrialContinuation({ ...base, hasAi: true })).to.equal('drop');
     });
 });

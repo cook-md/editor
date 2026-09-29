@@ -25,7 +25,11 @@ import { ChatModel, ChatResponseModel, isActiveSessionChangedEvent } from '@thei
 import { CookbotUsageService, CookbotUsageStats } from '@theia/cooklang-ai/lib/common';
 import { takePendingPrompt } from '@theia/cooklang-ai/lib/browser/pending-prompt';
 import { AccountCommands } from '@theia/cooklang-account/lib/browser/account-contribution';
+import { UsageEventsFrontend } from '@theia/cooklang-account/lib/browser/usage-events-frontend';
+import { proOfferCopy } from '@theia/cooklang-account/lib/common/pro-offer-copy';
 import { computeExchangeCost, computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
+import { computeCookbotGate, CookbotGate, decideTrialContinuation } from './cookbot-gate-state';
+import { FirstRunState } from './first-run-state';
 
 const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
@@ -46,6 +50,17 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
     private authState: AuthState = { status: 'logged-out' };
     private hasAiFeature = false;
+
+    @inject(UsageEventsFrontend)
+    protected readonly usageEvents: UsageEventsFrontend;
+
+    @inject(FirstRunState)
+    protected readonly firstRunState: FirstRunState;
+
+    private trialEligible = true;
+    private lastGate: CookbotGate | undefined;
+    /** Set when a signed-out user chose "Start 7-day free trial": go straight on to checkout after login. */
+    private continueToTrialAfterLogin = false;
     private gateOverlay: HTMLDivElement;
     private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
@@ -117,19 +132,43 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     private async checkAiFeature(): Promise<void> {
         if (this.authState.status === 'logged-in') {
             this.hasAiFeature = await this.subscriptionFrontendService.hasFeature('ai');
+            this.trialEligible = this.subscriptionFrontendService.subscription?.trialEligible ?? true;
         } else {
             this.hasAiFeature = false;
         }
         this.updateGating();
+        // Runs on both auth and subscription changes. Right after login the
+        // subscription may not be fetched yet; wait for the change event it fires.
+        const next = decideTrialContinuation({
+            pending: this.continueToTrialAfterLogin,
+            loggedIn: this.authState.status === 'logged-in',
+            subscriptionKnown: this.subscriptionFrontendService.subscription !== undefined,
+            hasAi: this.hasAiFeature,
+        });
+        if (next === 'start' || next === 'drop') {
+            // Clear before starting so an overlapping call can't open checkout twice.
+            this.continueToTrialAfterLogin = false;
+        }
+        if (next === 'start') {
+            this.startUpgradeFlow();
+        }
     }
 
     private updateGating(): void {
-        if (this.authState.status === 'logged-out') {
-            this.showGateScreen('login');
-            return;
+        const gate = computeCookbotGate({
+            loggedIn: this.authState.status === 'logged-in',
+            hasAi: this.hasAiFeature,
+            trialEligible: this.trialEligible,
+        });
+        if (gate !== this.lastGate && gate !== 'open') {
+            this.usageEvents.track('cookbot_gate_shown', {
+                state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
+                trial_eligible: this.trialEligible,
+            });
         }
-        if (!this.hasAiFeature) {
-            this.showGateScreen('upgrade');
+        this.lastGate = gate;
+        if (gate !== 'open') {
+            this.showGateScreen(gate);
             return;
         }
         this.gateOverlay.style.display = 'none';
@@ -142,59 +181,66 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.refreshUsage();
     }
 
-    private showGateScreen(type: 'login' | 'upgrade'): void {
+    private showGateScreen(gate: Exclude<CookbotGate, 'open'>): void {
         const layout = this.layout;
         if (layout) {
             for (const widget of layout) {
                 widget.hide();
             }
         }
-
         this.gateOverlay.style.display = 'flex';
         this.gateOverlay.replaceChildren();
         this.quotaBanner.style.display = 'none';
 
-        const icon = document.createElement('div');
-        icon.className = 'ai-chat-gate-icon';
-        icon.textContent = '\u{1F916}';
+        const offer = proOfferCopy(gate !== 'upgrade');
+        const el = (cls: string, text: string, tag = 'div'): HTMLElement => {
+            const node = document.createElement(tag);
+            node.className = cls;
+            node.textContent = text;
+            return node;
+        };
+        const icon = el('ai-chat-gate-icon', '\u{1F916}');
+        const title = el('ai-chat-gate-title', offer.headline);
+        const message = el('ai-chat-gate-message', offer.body);
+        const button = el('theia-button main', '', 'button') as HTMLButtonElement;
 
-        const title = document.createElement('div');
-        title.className = 'ai-chat-gate-title';
-        title.textContent = nls.localize('theia/ai-chat/gate/title', 'AI Assistant');
-
-        const message = document.createElement('div');
-        message.className = 'ai-chat-gate-message';
-
-        const button = document.createElement('button');
-        button.className = 'theia-button main';
-
-        if (type === 'login') {
-            message.textContent = nls.localize('theia/ai-chat/gate/loginMessage', 'Log in to your Cook.md account to use the AI recipe assistant.');
-            button.textContent = nls.localizeByDefault('Log In');
+        if (gate === 'signed_out') {
+            button.textContent = nls.localize('theia/ai-chat/gate/startTrial', 'Start 7-day free trial');
             button.addEventListener('click', () => {
-                this.commandService.executeCommand(CookmdLoginCommand.id);
+                this.usageEvents.track('cookbot_gate_clicked', { action: 'trial' });
+                this.continueToTrialAfterLogin = true;
+                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_trial');
             });
-        } else {
-            message.textContent = nls.localize('theia/ai-chat/gate/upgradeMessage',
-                'The AI assistant requires the AI addon. Add it to your subscription to get started.');
-            button.textContent = nls.localize('theia/ai-chat/gate/upgradeButton', 'Get AI Addon \u2192');
-            button.addEventListener('click', () => {
-                this.startUpgradeFlow();
+            const login = el('ai-chat-gate-note ai-chat-gate-link', nls.localize('theia/ai-chat/gate/haveAccount', 'I already have an account: Log in'), 'a');
+            login.setAttribute('role', 'link');
+            login.tabIndex = 0;
+            const runLogin = (): void => {
+                this.usageEvents.track('cookbot_gate_clicked', { action: 'login' });
+                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_login');
+            };
+            login.addEventListener('click', runLogin);
+            login.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    runLogin();
+                }
             });
-            const note = document.createElement('div');
-            note.className = 'ai-chat-gate-note';
-            note.textContent = nls.localize('theia/ai-chat/gate/upgradeNote', 'Opens cook.md in your browser');
-            this.gateOverlay.append(icon, title, message, button, note);
+            this.gateOverlay.append(icon, title, message, button, login);
             return;
         }
 
-        this.gateOverlay.append(icon, title, message, button);
+        button.textContent = offer.button;
+        button.addEventListener('click', () => {
+            this.usageEvents.track('cookbot_gate_clicked', { action: offer.action });
+            this.startUpgradeFlow();
+        });
+        this.gateOverlay.append(icon, title, message, button, el('ai-chat-gate-note', offer.note));
     }
 
     private async startUpgradeFlow(): Promise<void> {
         let url: string;
         try {
-            url = await this.subscriptionFrontendService.startUpgradeFlow();
+            url = await this.subscriptionFrontendService.startUpgradeFlow('editor_cookbot');
         } catch (err) {
             console.warn('Failed to start upgrade flow, falling back to pricing page:', err);
             this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });
@@ -209,6 +255,17 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         } catch (err) {
             // Timeout, state mismatch, or superseded flow — gate will stay as-is.
             console.warn('Upgrade flow did not complete:', err);
+        }
+    }
+
+    /** Put text in the input without sending it. Works before and after the input editor mounts. */
+    prefillPrompt(text: string): void {
+        const editor = this.inputWidget.editor;
+        if (editor) {
+            editor.getControl().setValue(text);
+            editor.focus();
+        } else {
+            this.inputWidget.initialValue = text;
         }
     }
 
@@ -234,6 +291,9 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.usageTracking.dispose();
         this.usageTracking.push(model.onDidChange(event => {
             if (event.kind === 'addResponse') {
+                if (this.firstRunState.markCookbotUsed()) {
+                    this.usageEvents.track('editor_cookbot_first_message', {});
+                }
                 // A note about the previous exchange is stale once the next one starts.
                 this.exchangeCostNote.style.display = 'none';
                 this.watchResponseCompletion(event.response);
