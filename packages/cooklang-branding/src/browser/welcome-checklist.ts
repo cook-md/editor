@@ -36,22 +36,57 @@ export function computeChecklist(f: ChecklistFacts): { steps: ChecklistStep[]; a
     return { steps, allDone: steps.every(s => s.done) };
 }
 
-/** Lists one directory by path. Injected so the search is testable without a filesystem. */
+/**
+ * Lists one directory by path. Injected so the search is testable without a filesystem.
+ * Paths are URI path strings (Theia `URI.path.toString()`): forward slashes, e.g. `/c:/Users/me`
+ * on Windows. Roots passed to `findFirstRecipe`, the paths given to the reader and the returned
+ * value all use this form.
+ */
 export type DirReader = (dir: string) => Promise<Array<{ name: string; dir: boolean }>>;
 
-/** Breadth-first search for a .cook file, skipping dot-folders, to `maxDepth` levels. */
-export async function findFirstRecipe(read: DirReader, roots: string[], maxDepth = 3): Promise<string | undefined> {
+export interface FindFirstRecipeOptions {
+    /** Levels to look at; root folders are level 1. */
+    maxDepth?: number;
+    /** Upper bound on directories read. */
+    maxDirs?: number;
+}
+
+const SKIPPED_FOLDERS = new Set([
+    'node_modules', 'target', 'dist', 'build', 'venv', '.venv', '__pycache__',
+    'Library', 'Applications', 'Pictures', 'Music', 'Movies',
+]);
+
+const CHUNK = 16;
+
+function join(dir: string, name: string): string {
+    return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
+}
+
+/**
+ * Breadth-first search for a .cook file (extension matched case-insensitively). Skips dot-folders
+ * and well-known heavy folders, ignores directories that cannot be read, and reads each level in
+ * parallel chunks while keeping the first match deterministic (listing order within a level).
+ * If `maxDirs` is reached before a recipe turns up the result is `undefined`: unknown is treated as none.
+ */
+export async function findFirstRecipe(read: DirReader, roots: string[], options: FindFirstRecipeOptions = {}): Promise<string | undefined> {
+    const { maxDepth = 3, maxDirs = 200 } = options;
+    let budget = maxDirs;
     let level = roots;
-    for (let depth = 0; depth < maxDepth && level.length > 0; depth++) {
+    for (let depth = 0; depth < maxDepth && level.length > 0 && budget > 0; depth++) {
         const next: string[] = [];
-        for (const dir of level) {
-            for (const entry of await read(dir)) {
-                const full = `${dir}/${entry.name}`;
-                if (!entry.dir && entry.name.endsWith('.cook')) {
-                    return full;
-                }
-                if (entry.dir && !entry.name.startsWith('.')) {
-                    next.push(full);
+        const dirs = level.slice(0, budget);
+        budget -= dirs.length;
+        for (let i = 0; i < dirs.length; i += CHUNK) {
+            const chunk = dirs.slice(i, i + CHUNK);
+            const listings = await Promise.all(chunk.map(dir => read(dir).catch(() => [])));
+            for (let j = 0; j < chunk.length; j++) {
+                for (const entry of listings[j]) {
+                    if (!entry.dir && entry.name.toLowerCase().endsWith('.cook')) {
+                        return join(chunk[j], entry.name);
+                    }
+                    if (entry.dir && !entry.name.startsWith('.') && !SKIPPED_FOLDERS.has(entry.name)) {
+                        next.push(join(chunk[j], entry.name));
+                    }
                 }
             }
         }

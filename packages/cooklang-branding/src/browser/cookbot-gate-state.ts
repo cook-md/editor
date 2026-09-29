@@ -19,6 +19,7 @@ export interface CookbotGateInput {
     trialEligible: boolean;
 }
 
+/** Which CookBot gate to show. `trialEligible` is ignored when `hasAi` is true (a Cook Pro user is always `open`). */
 export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGateInput): CookbotGate {
     if (!loggedIn) {
         return 'signed_out';
