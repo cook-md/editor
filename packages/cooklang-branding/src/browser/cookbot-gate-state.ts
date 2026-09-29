@@ -11,15 +11,15 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-export type CookbotGate = 'open' | 'signed_out' | 'trial' | 'upgrade';
+export type CookbotGate = 'open' | 'signed_out' | 'loading' | 'trial' | 'upgrade';
 
 export interface CookbotGateInput {
     loggedIn: boolean;
     hasAi: boolean;
-    trialEligible: boolean;
+    /** `undefined` while the subscription hasn't loaded yet. */
+    trialEligible: boolean | undefined;
 }
 
-/** Which CookBot gate to show. `trialEligible` is ignored when `hasAi` is true (a Cook Pro user is always `open`). */
 export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGateInput): CookbotGate {
     if (!loggedIn) {
         return 'signed_out';
@@ -27,30 +27,43 @@ export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGa
     if (hasAi) {
         return 'open';
     }
+    if (trialEligible === undefined) {
+        return 'loading';
+    }
     return trialEligible ? 'trial' : 'upgrade';
+}
+
+/** How long "Start 7-day free trial" keeps waiting for the browser login to finish. */
+export const TRIAL_CONTINUATION_TTL_MS = 10 * 60 * 1000;
+
+export function isTrialRequestPending(requestedAt: number | undefined, now: number, ttlMs = TRIAL_CONTINUATION_TTL_MS): boolean {
+    return requestedAt !== undefined && now - requestedAt < ttlMs;
 }
 
 export type TrialContinuation = 'none' | 'wait' | 'start' | 'drop';
 
 export interface TrialContinuationInput {
-    /** The signed-out user chose "Start 7-day free trial" and hasn't reached checkout yet. */
-    pending: boolean;
+    /** When the signed-out user chose "Start 7-day free trial", if they did. */
+    requestedAt: number | undefined;
+    now: number;
     loggedIn: boolean;
-    /** The subscription has been fetched since login; until then eligibility and features are stale. */
-    subscriptionKnown: boolean;
     hasAi: boolean;
+    /** `undefined` while the subscription hasn't loaded yet. */
+    trialEligible: boolean | undefined;
 }
 
 /**
- * What to do with a pending "trial after login" request. `start` and `drop`
- * both consume the request; `wait` keeps it for the next auth or subscription change.
+ * What to do with a "trial after login" request. `start` and `drop` both
+ * consume the request; `wait` keeps it for the next auth or subscription change.
+ * A used-up trial drops the request: the upgrade gate shows instead of
+ * opening checkout under trial wording.
  */
-export function decideTrialContinuation({ pending, loggedIn, subscriptionKnown, hasAi }: TrialContinuationInput): TrialContinuation {
-    if (!pending) {
+export function decideTrialContinuation({ requestedAt, now, loggedIn, hasAi, trialEligible }: TrialContinuationInput): TrialContinuation {
+    if (!isTrialRequestPending(requestedAt, now)) {
         return 'none';
     }
-    if (!loggedIn || !subscriptionKnown) {
+    if (!loggedIn || (!hasAi && trialEligible === undefined)) {
         return 'wait';
     }
-    return hasAi ? 'drop' : 'start';
+    return !hasAi && trialEligible === true ? 'start' : 'drop';
 }

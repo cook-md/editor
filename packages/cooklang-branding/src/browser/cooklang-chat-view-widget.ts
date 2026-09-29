@@ -57,10 +57,17 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     @inject(FirstRunState)
     protected readonly firstRunState: FirstRunState;
 
-    private trialEligible = true;
+    /** `undefined` until the subscription has loaded. */
+    private trialEligible: boolean | undefined;
+    /** The gate currently rendered, to skip rebuilding an unchanged one. */
     private lastGate: CookbotGate | undefined;
-    /** Set when a signed-out user chose "Start 7-day free trial": go straight on to checkout after login. */
-    private continueToTrialAfterLogin = false;
+    /** The last real gate reported in cookbot_gate_shown ('loading' is never reported). */
+    private lastTrackedGate: CookbotGate | undefined;
+    /**
+     * When a signed-out user chose "Start 7-day free trial": go straight on to
+     * checkout after login. Expires after TRIAL_CONTINUATION_TTL_MS.
+     */
+    private trialRequestedAt: number | undefined;
     private gateOverlay: HTMLDivElement;
     private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
@@ -110,18 +117,20 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         }));
         this.toDispose.push(this.usageTracking);
 
-        this.authState = this.authContribution.authState;
         this.checkAiFeature();
-        this.authContribution.onDidChangeAuth(state => {
-            this.authState = state;
+        this.toDispose.push(this.authContribution.onDidChangeAuth(state => {
+            if (state.status === 'logged-out') {
+                this.trialRequestedAt = undefined;
+            }
             this.checkAiFeature();
-        });
-        this.subscriptionFrontendService.onDidChangeSubscription(() => {
+        }));
+        this.toDispose.push(this.subscriptionFrontendService.onDidChangeSubscription(() => {
             this.checkAiFeature();
-        });
+        }));
 
-        // Mirror the Node-side services' WEB_BASE_URL override so the Get AI
-        // Addon button points at the same backend during local dev.
+        // Mirror the Node-side services' WEB_BASE_URL override so the
+        // pricing-page fallback in startUpgradeFlow points at the same backend
+        // during local dev.
         this.envVariablesServer.getValue('WEB_BASE_URL').then(envVar => {
             if (envVar?.value) {
                 this.webBaseUrl = envVar.value;
@@ -129,28 +138,32 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         });
     }
 
-    private async checkAiFeature(): Promise<void> {
-        if (this.authState.status === 'logged-in') {
-            this.hasAiFeature = await this.subscriptionFrontendService.hasFeature('ai');
-            this.trialEligible = this.subscriptionFrontendService.subscription?.trialEligible ?? true;
-        } else {
-            this.hasAiFeature = false;
-        }
+    /**
+     * Synchronous on purpose: everything comes from the frontend caches, which
+     * fire change events whenever they update, so no await can race a newer call.
+     */
+    private checkAiFeature(): void {
+        this.authState = this.authContribution.authState;
+        const loggedIn = this.authState.status === 'logged-in';
+        const sub = loggedIn ? this.subscriptionFrontendService.subscription : undefined;
+        this.hasAiFeature = sub?.features.includes('ai') ?? false;
+        this.trialEligible = sub?.trialEligible;
         this.updateGating();
-        // Runs on both auth and subscription changes. Right after login the
-        // subscription may not be fetched yet; wait for the change event it fires.
+
         const next = decideTrialContinuation({
-            pending: this.continueToTrialAfterLogin,
-            loggedIn: this.authState.status === 'logged-in',
-            subscriptionKnown: this.subscriptionFrontendService.subscription !== undefined,
+            requestedAt: this.trialRequestedAt,
+            now: Date.now(),
+            loggedIn,
             hasAi: this.hasAiFeature,
+            trialEligible: this.trialEligible,
         });
-        if (next === 'start' || next === 'drop') {
-            // Clear before starting so an overlapping call can't open checkout twice.
-            this.continueToTrialAfterLogin = false;
+        if (next !== 'wait') {
+            // Consumed, dropped or expired. Clear before starting so an
+            // overlapping call can't open checkout twice.
+            this.trialRequestedAt = undefined;
         }
         if (next === 'start') {
-            this.startUpgradeFlow();
+            void this.startUpgradeFlow();
         }
     }
 
@@ -160,13 +173,19 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             hasAi: this.hasAiFeature,
             trialEligible: this.trialEligible,
         });
-        if (gate !== this.lastGate && gate !== 'open') {
-            this.usageEvents.track('cookbot_gate_shown', {
-                state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
-                trial_eligible: this.trialEligible,
-            });
+        if (gate === this.lastGate) {
+            return;
         }
         this.lastGate = gate;
+        if (gate !== 'loading') {
+            if (gate !== 'open' && gate !== this.lastTrackedGate) {
+                void this.usageEvents.track('cookbot_gate_shown', {
+                    state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
+                    trial_eligible: gate !== 'upgrade',
+                });
+            }
+            this.lastTrackedGate = gate;
+        }
         if (gate !== 'open') {
             this.showGateScreen(gate);
             return;
@@ -192,7 +211,6 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.gateOverlay.replaceChildren();
         this.quotaBanner.style.display = 'none';
 
-        const offer = proOfferCopy(gate !== 'upgrade');
         const el = (cls: string, text: string, tag = 'div'): HTMLElement => {
             const node = document.createElement(tag);
             node.className = cls;
@@ -200,30 +218,41 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             return node;
         };
         const icon = el('ai-chat-gate-icon', '\u{1F916}');
-        const title = el('ai-chat-gate-title', offer.headline);
+        icon.setAttribute('aria-hidden', 'true');
+        const heading = (text: string): HTMLElement => {
+            const node = el('ai-chat-gate-title', text);
+            node.setAttribute('role', 'heading');
+            node.setAttribute('aria-level', '2');
+            return node;
+        };
+
+        if (gate === 'loading') {
+            const title = heading(nls.localize('theia/ai-chat/gate/checkingPlan', 'Checking your plan…'));
+            title.setAttribute('aria-live', 'polite');
+            this.gateOverlay.append(icon, title);
+            return;
+        }
+
+        const offer = proOfferCopy(gate !== 'upgrade');
+        const title = heading(offer.headline);
         const message = el('ai-chat-gate-message', offer.body);
         const button = el('theia-button main', '', 'button') as HTMLButtonElement;
+        button.type = 'button';
 
         if (gate === 'signed_out') {
             button.textContent = nls.localize('theia/ai-chat/gate/startTrial', 'Start 7-day free trial');
             button.addEventListener('click', () => {
-                this.usageEvents.track('cookbot_gate_clicked', { action: 'trial' });
-                this.continueToTrialAfterLogin = true;
-                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_trial');
+                void this.usageEvents.track('cookbot_gate_clicked', { action: 'trial' });
+                this.trialRequestedAt = Date.now();
+                void this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_trial');
             });
-            const login = el('ai-chat-gate-note ai-chat-gate-link', nls.localize('theia/ai-chat/gate/haveAccount', 'I already have an account: Log in'), 'a');
-            login.setAttribute('role', 'link');
-            login.tabIndex = 0;
-            const runLogin = (): void => {
-                this.usageEvents.track('cookbot_gate_clicked', { action: 'login' });
-                this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_login');
-            };
-            login.addEventListener('click', runLogin);
-            login.addEventListener('keydown', event => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    runLogin();
-                }
+            const login = el('ai-chat-gate-note ai-chat-gate-link', nls.localize('theia/ai-chat/gate/haveAccount', 'I already have an account: Log in'), 'button') as HTMLButtonElement;
+            login.type = 'button';
+            login.addEventListener('click', () => {
+                void this.usageEvents.track('cookbot_gate_clicked', { action: 'login' });
+                // A plain login cancels an earlier "Start trial" choice.
+                this.trialRequestedAt = undefined;
+                void this.commandService.executeCommand(CookmdLoginCommand.id, 'cookbot_login');
             });
             this.gateOverlay.append(icon, title, message, button, login);
             return;
@@ -231,8 +260,8 @@ export class CooklangChatViewWidget extends ChatViewWidget {
 
         button.textContent = offer.button;
         button.addEventListener('click', () => {
-            this.usageEvents.track('cookbot_gate_clicked', { action: offer.action });
-            this.startUpgradeFlow();
+            void this.usageEvents.track('cookbot_gate_clicked', { action: offer.action });
+            void this.startUpgradeFlow();
         });
         this.gateOverlay.append(icon, title, message, button, el('ai-chat-gate-note', offer.note));
     }
@@ -292,7 +321,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         this.usageTracking.push(model.onDidChange(event => {
             if (event.kind === 'addResponse') {
                 if (this.firstRunState.markCookbotUsed()) {
-                    this.usageEvents.track('editor_cookbot_first_message', {});
+                    void this.usageEvents.track('editor_cookbot_first_message', {});
                 }
                 // A note about the previous exchange is stale once the next one starts.
                 this.exchangeCostNote.style.display = 'none';
@@ -386,7 +415,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             this.commandService.executeCommand(AccountCommands.OPEN_VIEW.id);
         });
         const upgrade = this.createQuotaBannerAction(nls.localizeByDefault('Upgrade'), () => {
-            this.startUpgradeFlow();
+            void this.startUpgradeFlow();
         });
 
         this.quotaBanner.append(message, account, upgrade);

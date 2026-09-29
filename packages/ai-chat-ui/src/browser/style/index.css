@@ -1672,9 +1672,21 @@ div:last-child>.theia-ChatNode {
     margin-top: 8px;
 }
 
+/* A <button> that reads as a link. */
 .ai-chat-gate-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 11px;
+    color: var(--theia-textLink-foreground);
     cursor: pointer;
     text-decoration: underline;
+}
+
+.ai-chat-gate-link:focus-visible {
+    outline: 1px solid var(--theia-focusBorder);
+    outline-offset: 2px;
 }
 
 /* Chat quota banner — warns when Cookbot AI credits near/at the cycle limit */

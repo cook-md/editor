@@ -81,12 +81,18 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
     }
 
     private async refreshAuthState(): Promise<void> {
+        const previous = this._authState;
         try {
             this._authState = await this.authService.getAuthState();
         } catch {
             this._authState = { status: 'logged-out' };
         }
         this.updateStatusBar();
+        // Widgets that read authState before this resolved would otherwise
+        // stay on the startup default (logged-out) until the next change.
+        if (this._authState.status !== previous.status || this._authState.email !== previous.email) {
+            this.onDidChangeAuthEmitter.fire(this._authState);
+        }
     }
 
     private updateStatusBar(): void {
