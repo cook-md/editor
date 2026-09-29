@@ -11,16 +11,22 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-export type CookbotGate = 'open' | 'signed_out' | 'loading' | 'trial' | 'upgrade';
+/** `plan_unknown`: signed in, but the plan couldn't be loaded; the trial offer is shown as a fallback. */
+export type CookbotGate = 'open' | 'signed_out' | 'loading' | 'plan_unknown' | 'trial' | 'upgrade';
+
+/** How long 'loading' may last before the gate retries once and then falls back to the trial offer. */
+export const LOADING_FALLBACK_MS = 8000;
 
 export interface CookbotGateInput {
     loggedIn: boolean;
     hasAi: boolean;
     /** `undefined` while the subscription hasn't loaded yet. */
     trialEligible: boolean | undefined;
+    /** The plan still wasn't known after the loading fallback retried. */
+    planUnavailable?: boolean;
 }
 
-export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGateInput): CookbotGate {
+export function computeCookbotGate({ loggedIn, hasAi, trialEligible, planUnavailable }: CookbotGateInput): CookbotGate {
     if (!loggedIn) {
         return 'signed_out';
     }
@@ -28,7 +34,7 @@ export function computeCookbotGate({ loggedIn, hasAi, trialEligible }: CookbotGa
         return 'open';
     }
     if (trialEligible === undefined) {
-        return 'loading';
+        return planUnavailable ? 'plan_unknown' : 'loading';
     }
     return trialEligible ? 'trial' : 'upgrade';
 }

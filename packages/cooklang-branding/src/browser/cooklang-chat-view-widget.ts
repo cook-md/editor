@@ -19,7 +19,7 @@ import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
 import { AuthState } from '@theia/cooklang-account/lib/common/auth-protocol';
 import { AuthContribution, CookmdLoginCommand } from '@theia/cooklang-account/lib/browser/auth-contribution';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
-import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { Message } from '@theia/core/lib/browser';
 import { ChatModel, ChatResponseModel, isActiveSessionChangedEvent } from '@theia/ai-chat/lib/common';
 import { CookbotUsageService, CookbotUsageStats } from '@theia/cooklang-ai/lib/common';
@@ -28,7 +28,7 @@ import { AccountCommands } from '@theia/cooklang-account/lib/browser/account-con
 import { UsageEventsFrontend } from '@theia/cooklang-account/lib/browser/usage-events-frontend';
 import { proOfferCopy } from '@theia/cooklang-account/lib/common/pro-offer-copy';
 import { computeExchangeCost, computeQuotaBannerState, CookbotQuotaBannerState } from './cookbot-quota-banner-state';
-import { computeCookbotGate, CookbotGate, decideTrialContinuation } from './cookbot-gate-state';
+import { computeCookbotGate, CookbotGate, decideTrialContinuation, LOADING_FALLBACK_MS } from './cookbot-gate-state';
 import { FirstRunState } from './first-run-state';
 
 const DEFAULT_WEB_BASE_URL = 'https://cook.md';
@@ -68,6 +68,11 @@ export class CooklangChatViewWidget extends ChatViewWidget {
      * checkout after login. Expires after TRIAL_CONTINUATION_TTL_MS.
      */
     private trialRequestedAt: number | undefined;
+    /** Timer for the 'loading' fallback; runs at most once per stretch of loading. */
+    private loadingFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+    private loadingFallbackArmed = false;
+    /** Set when the plan still wasn't known after the fallback's refresh. */
+    private planUnavailable = false;
     private gateOverlay: HTMLDivElement;
     private webBaseUrl: string = DEFAULT_WEB_BASE_URL;
 
@@ -117,6 +122,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         }));
         this.toDispose.push(this.usageTracking);
 
+        this.toDispose.push(Disposable.create(() => this.clearLoadingFallback()));
         this.checkAiFeature();
         this.toDispose.push(this.authContribution.onDidChangeAuth(state => {
             if (state.status === 'logged-out') {
@@ -148,6 +154,9 @@ export class CooklangChatViewWidget extends ChatViewWidget {
         const sub = loggedIn ? this.subscriptionFrontendService.subscription : undefined;
         this.hasAiFeature = sub?.features.includes('ai') ?? false;
         this.trialEligible = sub?.trialEligible;
+        if (!loggedIn || sub) {
+            this.planUnavailable = false;
+        }
         this.updateGating();
 
         const next = decideTrialContinuation({
@@ -172,7 +181,14 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             loggedIn: this.authState.status === 'logged-in',
             hasAi: this.hasAiFeature,
             trialEligible: this.trialEligible,
+            planUnavailable: this.planUnavailable,
         });
+        if (gate === 'loading') {
+            this.armLoadingFallback();
+        } else if (gate !== 'plan_unknown') {
+            this.clearLoadingFallback();
+            this.loadingFallbackArmed = false;
+        }
         if (gate === this.lastGate) {
             return;
         }
@@ -181,7 +197,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             if (gate !== 'open' && gate !== this.lastTrackedGate) {
                 void this.usageEvents.track('cookbot_gate_shown', {
                     state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
-                    trial_eligible: gate !== 'upgrade',
+                    trial_eligible: gate === 'plan_unknown' ? 'unknown' : gate !== 'upgrade',
                 });
             }
             this.lastTrackedGate = gate;
@@ -198,6 +214,40 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             }
         }
         this.refreshUsage();
+    }
+
+    /**
+     * If the plan hasn't loaded after LOADING_FALLBACK_MS, retry once; if it's
+     * still unknown, show the trial offer rather than a spinner forever. A
+     * subscription arriving later takes over through the normal change event.
+     */
+    private armLoadingFallback(): void {
+        if (this.loadingFallbackArmed) {
+            return;
+        }
+        this.loadingFallbackArmed = true;
+        this.loadingFallbackTimer = setTimeout(async () => {
+            this.loadingFallbackTimer = undefined;
+            try {
+                await this.subscriptionFrontendService.refresh();
+            } catch {
+                // fall through to the check below
+            }
+            if (this.isDisposed || !this.loadingFallbackArmed) {
+                return;
+            }
+            if (this.authContribution.authState.status === 'logged-in' && !this.subscriptionFrontendService.subscription) {
+                this.planUnavailable = true;
+                this.checkAiFeature();
+            }
+        }, LOADING_FALLBACK_MS);
+    }
+
+    private clearLoadingFallback(): void {
+        if (this.loadingFallbackTimer !== undefined) {
+            clearTimeout(this.loadingFallbackTimer);
+            this.loadingFallbackTimer = undefined;
+        }
     }
 
     private showGateScreen(gate: Exclude<CookbotGate, 'open'>): void {
@@ -233,6 +283,7 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             return;
         }
 
+        // 'plan_unknown' shows the trial offer: checkout on cook.md knows the real plan.
         const offer = proOfferCopy(gate !== 'upgrade');
         const title = heading(offer.headline);
         const message = el('ai-chat-gate-message', offer.body);

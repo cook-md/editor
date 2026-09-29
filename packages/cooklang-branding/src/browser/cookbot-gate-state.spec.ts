@@ -30,6 +30,13 @@ describe('computeCookbotGate', () => {
     it('waits for the plan while the subscription is unknown after login', () => {
         expect(computeCookbotGate({ loggedIn: true, hasAi: false, trialEligible: undefined })).to.equal('loading');
     });
+    it('falls back to the trial offer once the plan could not be loaded', () => {
+        expect(computeCookbotGate({ loggedIn: true, hasAi: false, trialEligible: undefined, planUnavailable: true })).to.equal('plan_unknown');
+    });
+    it('uses the real plan as soon as it arrives, even after the fallback', () => {
+        expect(computeCookbotGate({ loggedIn: true, hasAi: false, trialEligible: false, planUnavailable: true })).to.equal('upgrade');
+        expect(computeCookbotGate({ loggedIn: true, hasAi: true, trialEligible: undefined, planUnavailable: true })).to.equal('open');
+    });
     it('still asks a signed-out user to sign in when the subscription is unknown', () => {
         expect(computeCookbotGate({ loggedIn: false, hasAi: false, trialEligible: undefined })).to.equal('signed_out');
     });
