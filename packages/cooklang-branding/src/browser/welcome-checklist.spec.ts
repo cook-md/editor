@@ -12,7 +12,9 @@
 // *****************************************************************************
 
 import { expect } from 'chai';
-import { computeChecklist, findFirstRecipe, isRecipePath, newlyCompleted, DirReader } from './welcome-checklist';
+import {
+    computeChecklist, findFirstRecipe, isRecipePath, newlyCompleted, reconcileReportedSteps, showTrialLine, DirReader
+} from './welcome-checklist';
 
 const none = { folderOpen: false, hasRecipes: false, cookbotUsed: false, reportRendered: false };
 
@@ -153,5 +155,45 @@ describe('isRecipePath', () => {
         expect(isRecipePath('/home/me/recipes/notes.md')).to.equal(false);
         expect(isRecipePath('/home/me/recipes/cook')).to.equal(false);
         expect(isRecipePath('/home/me/recipes/pasta.cook.bak')).to.equal(false);
+    });
+});
+
+describe('reconcileReportedSteps', () => {
+    it('seeds silently when nothing was stored yet (steps done before this feature shipped)', () => {
+        const r = reconcileReportedSteps(undefined, new Set(['folder', 'recipes']));
+        expect(r.report).to.deep.equal([]);
+        expect([...r.store].sort()).to.deep.equal(['folder', 'recipes']);
+    });
+
+    it('reports a step completed since the stored set, even across a window reload', () => {
+        const r = reconcileReportedSteps([], new Set(['folder']));
+        expect(r.report).to.deep.equal(['folder']);
+        expect([...r.store]).to.deep.equal(['folder']);
+    });
+
+    it('is monotonic: an unticked step stays stored and is never reported twice', () => {
+        const unticked = reconcileReportedSteps(['folder', 'recipes'], new Set(['folder']));
+        expect(unticked.report).to.deep.equal([]);
+        expect([...unticked.store].sort()).to.deep.equal(['folder', 'recipes']);
+        const retick = reconcileReportedSteps([...unticked.store], new Set(['folder', 'recipes']));
+        expect(retick.report).to.deep.equal([]);
+    });
+
+    it('ignores unknown ids in storage', () => {
+        const r = reconcileReportedSteps(['bogus', 'folder'], new Set(['folder', 'cookbot']));
+        expect(r.report).to.deep.equal(['cookbot']);
+        expect([...r.store].sort()).to.deep.equal(['cookbot', 'folder']);
+    });
+});
+
+describe('showTrialLine', () => {
+    it('shows for signed-out users and eligible accounts without AI', () => {
+        expect(showTrialLine(undefined)).to.equal(true);
+        expect(showTrialLine({ features: [], trialEligible: true })).to.equal(true);
+    });
+
+    it('hides once the account has AI or has used its trial', () => {
+        expect(showTrialLine({ features: ['ai'], trialEligible: true })).to.equal(false);
+        expect(showTrialLine({ features: [], trialEligible: false })).to.equal(false);
     });
 });

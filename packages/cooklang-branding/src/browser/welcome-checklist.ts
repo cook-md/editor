@@ -49,6 +49,30 @@ export function newlyCompleted(previous: ReadonlySet<ChecklistStepId> | undefine
     return STEP_ORDER.filter(id => next.has(id) && !previous.has(id));
 }
 
+/**
+ * Decides which completed steps to report, given the set stored from earlier sessions (it survives
+ * window reloads, e.g. the reload that follows opening a folder).
+ * - Nothing stored yet (first computation on this install): seed with what is done, report nothing,
+ *   so steps done before this feature shipped are never reported.
+ * - Otherwise report steps done now but not stored. The stored set only grows (monotonic): each step
+ *   is reported at most once per install, even if it is unticked (recipe deleted) and ticked again.
+ */
+export function reconcileReportedSteps(
+    stored: readonly string[] | undefined, done: ReadonlySet<ChecklistStepId>
+): { report: ChecklistStepId[]; store: Set<ChecklistStepId> } {
+    if (stored === undefined) {
+        return { report: [], store: new Set(done) };
+    }
+    const previous = new Set(STEP_ORDER.filter(id => stored.includes(id)));
+    const report = newlyCompleted(previous, done);
+    return { report, store: new Set([...previous, ...report]) };
+}
+
+/** "Cook Pro, 7 days free" is shown unless the account already has AI or has used its one trial. */
+export function showTrialLine(subscription: { features: string[]; trialEligible?: boolean } | undefined): boolean {
+    return !subscription?.features.includes('ai') && subscription?.trialEligible !== false;
+}
+
 /** True for a `.cook` file path (extension matched case-insensitively). */
 export function isRecipePath(path: string): boolean {
     return path.toLowerCase().endsWith('.cook');

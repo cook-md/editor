@@ -22,12 +22,13 @@ import URI from '@theia/core/lib/common/uri';
 import { GettingStartedWidget } from '@theia/getting-started/lib/browser/getting-started-widget';
 import { WorkspaceCommands } from '@theia/workspace/lib/browser/workspace-commands';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
+import { FileChangeType } from '@theia/filesystem/lib/common/files';
 import { EditorManager } from '@theia/editor/lib/browser/editor-manager';
 import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-contribution';
 import { UsageEventsFrontend } from '@theia/cooklang-account/lib/browser/usage-events-frontend';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 import {
-    childPath, computeChecklist, ChecklistStep, ChecklistStepId, findFirstRecipe, isRecipePath, newlyCompleted
+    childPath, computeChecklist, ChecklistStep, ChecklistStepId, findFirstRecipe, isRecipePath, reconcileReportedSteps, showTrialLine
 } from './welcome-checklist';
 import { FirstRunState, RENDER_REPORT_COMMAND_ID } from './first-run-state';
 import { CooklangChatViewWidget } from './cooklang-chat-view-widget';
@@ -61,17 +62,23 @@ export class CookWelcomeWidget extends GettingStartedWidget {
     /** First `.cook` file found in the workspace roots (bounded search). */
     protected firstRecipe: URI | undefined;
     protected state: ChecklistResult | undefined;
-    /** Undefined until the baseline is taken: steps done at startup never fire `editor_checklist_completed`. */
-    protected previousDone: Set<ChecklistStepId> | undefined;
+    /**
+     * False until the first scan has finished and the app is ready. Completed steps are only reconciled
+     * against the stored set after that, so a half-known state (recipes not scanned yet) is never stored.
+     */
+    protected baselineReady = false;
     protected scanGeneration = 0;
     protected rescanTimer: number | undefined;
     protected webBaseUrl = 'https://cook.md';
 
     protected override async doInit(): Promise<void> {
+        // Only catches roots added to or removed from a multi-root workspace: opening a folder from an
+        // empty window reloads the window, which is why completed steps are persisted (see reportCompleted).
         this.toDispose.push(this.workspaceService.onWorkspaceChanged(() => this.refreshRecipes()));
         this.toDispose.push(this.fileService.onDidFilesChange(e => {
-            // Only a deletion can lose the recipe we found; only an addition can create the first one.
-            if (this.firstRecipe ? e.gotDeleted() : e.gotAdded()) {
+            // Only deleting the found recipe (or a folder containing it) can lose it; only an addition can create the first one.
+            const rescan = this.firstRecipe ? e.contains(this.firstRecipe, FileChangeType.DELETED) : e.gotAdded();
+            if (rescan) {
                 this.scheduleRescan();
             }
         }));
@@ -80,7 +87,9 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         this.toDispose.push(this.editorManager.onCreated(widget => {
             this.recompute();
             // `all` drops the widget only after dispose finishes, so recompute on the next tick.
-            widget.disposed.connect(() => setTimeout(() => this.recompute(), 0));
+            const onEditorDisposed = (): void => { setTimeout(() => this.recompute(), 0); };
+            widget.disposed.connect(onEditorDisposed);
+            this.toDispose.push(Disposable.create(() => widget.disposed.disconnect(onEditorDisposed)));
         }));
         this.toDispose.push(this.editorManager.onCurrentEditorChanged(() => this.recompute()));
         this.toDispose.push(Disposable.create(() => this.cancelRescan()));
@@ -96,7 +105,10 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         }
         this.recompute();
         await Promise.all([this.refreshRecipes(), this.appState.reachedState('ready')]);
-        this.previousDone = this.doneSteps(this.state ?? this.computeState());
+        if (!this.isDisposed) {
+            this.baselineReady = true;
+            this.reportCompleted(this.state ?? this.computeState());
+        }
     }
 
     protected scheduleRescan(): void {
@@ -165,26 +177,39 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         return new Set(result.steps.filter(s => s.done).map(s => s.id));
     }
 
-    /** Recomputes the steps, reports transitions to done (after the baseline), and re-renders. */
+    /** Recomputes the steps, reports newly completed ones (after the baseline), and re-renders. */
     protected recompute(): void {
         if (this.isDisposed) {
             return;
         }
         this.state = this.computeState();
-        if (this.previousDone) {
-            const done = this.doneSteps(this.state);
-            for (const step of newlyCompleted(this.previousDone, done)) {
-                this.usageEvents.track('editor_checklist_completed', { step });
-            }
-            this.previousDone = done;
+        if (this.baselineReady) {
+            this.reportCompleted(this.state);
         }
         this.update();
+    }
+
+    /**
+     * Diffs against the steps stored in the install's first-run flags, so a step completed across a
+     * window reload is still reported. The first time on an install the set is seeded without events;
+     * after that each step is reported at most once (see reconcileReportedSteps).
+     */
+    protected reportCompleted(result: ChecklistResult): void {
+        const stored = this.firstRunState.flags.reportedSteps;
+        const { report, store } = reconcileReportedSteps(stored, this.doneSteps(result));
+        if (stored === undefined || report.length > 0) {
+            this.firstRunState.flags.setReportedSteps([...store]);
+        }
+        for (const step of report) {
+            this.usageEvents.track('editor_checklist_completed', { step });
+        }
     }
 
     protected override onAfterShow(msg: Message): void {
         super.onAfterShow(msg);
         if (!CookWelcomeWidget.welcomeTrackedThisLaunch) {
             CookWelcomeWidget.welcomeTrackedThisLaunch = true;
+            // takeFirstWelcome() runs even when usage statistics are off: it only flips a local flag.
             this.usageEvents.track('editor_welcome_shown', { first_run: this.firstRunState.flags.takeFirstWelcome() });
         }
     }
@@ -205,9 +230,9 @@ export class CookWelcomeWidget extends GettingStartedWidget {
 
     protected renderChecklist(steps: ChecklistStep[]): React.ReactNode {
         const step = (id: ChecklistStepId): ChecklistStep => steps.find(s => s.id === id)!;
-        const trialLine = this.subscriptions.subscription?.features.includes('ai')
-            ? undefined
-            : nls.localize('theia/cooklang-branding/welcome/trialLine', 'Cook Pro, 7 days free');
+        const trialLine = showTrialLine(this.subscriptions.subscription)
+            ? nls.localize('theia/cooklang-branding/welcome/trialLine', 'Cook Pro, 7 days free')
+            : undefined;
         return <div className='gs-section cook-checklist'>
             <h3 className='gs-section-header'><i className={codicon('checklist')}></i>
                 {nls.localize('theia/cooklang-branding/welcome/getStarted', 'Get started')}</h3>
@@ -225,7 +250,7 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         </div>;
     }
 
-    protected renderStep(s: ChecklistStep, label: string, actions: Array<[string, string, () => void]>, hint?: string): React.ReactNode {
+    protected renderStep(s: ChecklistStep, label: string, actions: Array<[string, string, () => void | Promise<void>]>, hint?: string): React.ReactNode {
         return <div className={`cook-step${s.done ? ' done' : ''}${s.enabled ? '' : ' disabled'}`} key={s.id}>
             <i className={codicon(s.done ? 'pass-filled' : 'circle-large-outline')}></i>
             <div className='cook-step-body'>
@@ -240,9 +265,9 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         </div>;
     }
 
-    protected runAction(step: string, run: () => void): void {
+    protected runAction(step: string, run: () => void | Promise<void>): void {
         this.usageEvents.track('editor_checklist_clicked', { step });
-        run();
+        Promise.resolve().then(run).catch(err => console.warn(`Welcome checklist: '${step}' action failed`, err));
     }
 
     protected doPickFolder = (): void => {

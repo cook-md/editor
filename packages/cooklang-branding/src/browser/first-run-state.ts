@@ -13,17 +13,25 @@
 
 import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
-import { CommandRegistry } from '@theia/core/lib/common/command';
+import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { Disposable, DisposableCollection } from '@theia/core/lib/common/disposable';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
 
 /** Command id of Render Report, defined in packages/cooklang/src/browser/report-contribution.ts. */
 export const RENDER_REPORT_COMMAND_ID = 'cooklang.renderReport';
 
+/**
+ * Widget factory id of the rendered report (REPORT_WIDGET_ID in packages/cooklang/src/browser/report-widget-types.ts;
+ * not imported to avoid a dependency on @theia/cooklang). ReportWidgetPresenter creates it through the WidgetManager
+ * only once a template was picked, so a cancelled picker does not count as a rendered report.
+ */
+export const REPORT_WIDGET_FACTORY_ID = 'cooklang-report-widget';
+
 const KEYS = {
     cookbotUsed: 'cook.firstRun.cookbotUsed',
     reportRendered: 'cook.firstRun.reportRendered',
     welcomeSeen: 'cook.firstRun.welcomeSeen',
+    reportedSteps: 'cook.firstRun.reportedSteps',
 } as const;
 
 type FlagStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -46,6 +54,27 @@ export class FirstRunFlags {
     /** @returns true the first time the welcome page is ever shown. */
     takeFirstWelcome(): boolean { return this.mark(KEYS.welcomeSeen); }
 
+    /**
+     * Checklist steps already reported as completed (JSON array of step ids), or undefined if
+     * nothing was ever stored (or the value is corrupt). Monotonic: see reconcileReportedSteps.
+     */
+    get reportedSteps(): string[] | undefined {
+        const raw = this.get(KEYS.reportedSteps);
+        if (raw === null) { // eslint-disable-line no-null/no-null
+            return undefined;
+        }
+        try {
+            const parsed: unknown = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    setReportedSteps(steps: readonly string[]): void {
+        this.set(KEYS.reportedSteps, JSON.stringify(steps));
+    }
+
     protected get(key: string): string | null {
         try {
             const value = this.storage.getItem(key);
@@ -62,26 +91,30 @@ export class FirstRunFlags {
         if (this.get(key) === '1') {
             return false;
         }
-        this.memory.set(key, '1');
+        this.set(key, '1');
+        return true;
+    }
+
+    protected set(key: string, value: string): void {
+        this.memory.set(key, value);
         try {
-            this.storage.setItem(key, '1');
+            this.storage.setItem(key, value);
         } catch {
             // kept in memory only
         }
-        return true;
     }
 }
 
 /**
- * App-wide wrapper: fires onDidChange, and marks a report once Render Report runs.
+ * App-wide wrapper: fires onDidChange, and marks a report once a report widget is created.
  * Declared as a FrontendApplicationContribution (and bound to that token) only so it is
- * constructed at startup: its command listener must be live before any widget injects it.
+ * constructed at startup: its widget listener must be live before any widget injects it.
  */
 @injectable()
 export class FirstRunState implements FrontendApplicationContribution, Disposable {
 
-    @inject(CommandRegistry)
-    protected readonly commands: CommandRegistry;
+    @inject(WidgetManager)
+    protected readonly widgetManager: WidgetManager;
 
     protected readonly toDispose = new DisposableCollection();
     protected _flags?: FirstRunFlags;
@@ -109,8 +142,8 @@ export class FirstRunState implements FrontendApplicationContribution, Disposabl
     @postConstruct()
     protected init(): void {
         this.toDispose.push(this.onDidChangeEmitter);
-        this.toDispose.push(this.commands.onDidExecuteCommand(e => {
-            if (e.commandId === RENDER_REPORT_COMMAND_ID && this.flags.markReportRendered()) {
+        this.toDispose.push(this.widgetManager.onDidCreateWidget(e => {
+            if (e.factoryId === REPORT_WIDGET_FACTORY_ID && this.flags.markReportRendered()) {
                 this.onDidChangeEmitter.fire();
             }
         }));
