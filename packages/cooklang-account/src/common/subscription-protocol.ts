@@ -21,6 +21,8 @@ export interface SubscriptionState {
     planName: string | undefined;
     aiCreditsRemaining: number;
     billingPeriodEnd: string | undefined;
+    /** One free Cook Pro trial per account, ever. Missing from older servers → true. */
+    trialEligible: boolean;
 }
 
 export interface UpgradeCallbackResult {

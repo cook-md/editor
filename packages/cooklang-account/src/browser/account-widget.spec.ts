@@ -80,6 +80,7 @@ function makeSubscription(features: string[]): SubscriptionState {
         planName: 'Cook Pro',
         aiCreditsRemaining: 100,
         billingPeriodEnd: undefined,
+        trialEligible: true,
     };
 }
 
