@@ -15,6 +15,10 @@ import { expect } from 'chai';
 import { computeCookbotGate, decideTrialContinuation, isTrialRequestPending, TRIAL_CONTINUATION_TTL_MS } from './cookbot-gate-state';
 
 describe('computeCookbotGate', () => {
+    it('waits while the auth state is not known yet', () => {
+        expect(computeCookbotGate({ authKnown: false, loggedIn: false, hasAi: false, trialEligible: undefined })).to.equal('loading');
+        expect(computeCookbotGate({ authKnown: false, loggedIn: true, hasAi: true, trialEligible: true })).to.equal('loading');
+    });
     it('asks a signed-out user to sign in', () => {
         expect(computeCookbotGate({ loggedIn: false, hasAi: false, trialEligible: true })).to.equal('signed_out');
     });

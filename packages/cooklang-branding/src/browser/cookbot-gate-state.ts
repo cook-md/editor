@@ -18,6 +18,8 @@ export type CookbotGate = 'open' | 'signed_out' | 'loading' | 'plan_unknown' | '
 export const LOADING_FALLBACK_MS = 8000;
 
 export interface CookbotGateInput {
+    /** False until the first auth check finishes; `loggedIn` is only a default before that. Omitted = known. */
+    authKnown?: boolean;
     loggedIn: boolean;
     hasAi: boolean;
     /** `undefined` while the subscription hasn't loaded yet. */
@@ -26,7 +28,10 @@ export interface CookbotGateInput {
     planUnavailable?: boolean;
 }
 
-export function computeCookbotGate({ loggedIn, hasAi, trialEligible, planUnavailable }: CookbotGateInput): CookbotGate {
+export function computeCookbotGate({ authKnown, loggedIn, hasAi, trialEligible, planUnavailable }: CookbotGateInput): CookbotGate {
+    if (authKnown === false) {
+        return 'loading';
+    }
     if (!loggedIn) {
         return 'signed_out';
     }

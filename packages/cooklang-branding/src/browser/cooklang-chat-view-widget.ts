@@ -177,19 +177,25 @@ export class CooklangChatViewWidget extends ChatViewWidget {
     }
 
     private updateGating(): void {
+        const authKnown = this.authContribution.authStateKnown;
         const gate = computeCookbotGate({
+            authKnown,
             loggedIn: this.authState.status === 'logged-in',
             hasAi: this.hasAiFeature,
             trialEligible: this.trialEligible,
             planUnavailable: this.planUnavailable,
         });
-        if (gate === 'loading') {
+        if (gate === 'loading' && authKnown) {
+            // Waiting for the plan (not for auth): retry, then fall back.
             this.armLoadingFallback();
         } else if (gate !== 'plan_unknown') {
             this.clearLoadingFallback();
             this.loadingFallbackArmed = false;
         }
         if (gate === this.lastGate) {
+            if (gate === 'open') {
+                this.refreshUsage();
+            }
             return;
         }
         this.lastGate = gate;
@@ -197,7 +203,8 @@ export class CooklangChatViewWidget extends ChatViewWidget {
             if (gate !== 'open' && gate !== this.lastTrackedGate) {
                 void this.usageEvents.track('cookbot_gate_shown', {
                     state: gate === 'signed_out' ? 'signed_out' : 'no_pro',
-                    trial_eligible: gate === 'plan_unknown' ? 'unknown' : gate !== 'upgrade',
+                    // Eligibility isn't known when signed out or when the plan failed to load.
+                    trial_eligible: gate === 'signed_out' || gate === 'plan_unknown' ? 'unknown' : gate !== 'upgrade',
                 });
             }
             this.lastTrackedGate = gate;
