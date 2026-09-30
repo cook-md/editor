@@ -175,6 +175,22 @@ describe('CookbotError', () => {
             expect(CookbotError.isSessionExpired(grpcError(14, 'UNAVAILABLE', 'nope'))).to.be.false;
         });
 
+        it('recognises the friendly login-required message after it crossed the RPC hop', () => {
+            const friendly = CookbotError.toUserFacing(
+                grpcError(16, 'UNAUTHENTICATED', 'Authentication failed: Invalid or expired token')
+            );
+            expect(friendly.message).to.equal(
+                'Your cook.md session has expired. Log in again to keep using CookBot.'
+            );
+            // Only the message survives RPC, so detection must work from it alone.
+            expect(CookbotError.isLoginRequired(new Error(friendly.message))).to.be.true;
+            expect(CookbotError.isLoginRequired(grpcError(16, 'UNAUTHENTICATED', 'x'))).to.be.true;
+            expect(CookbotError.isLoginRequired(new Error('plain failure'))).to.be.false;
+            // A backend in another locale sends its localized text; the English default must still match.
+            expect(CookbotError.isLoginRequired(new Error(CookbotError.LOGIN_REQUIRED_DEFAULT))).to.be.true;
+            expect(CookbotError.isLoginRequired(grpcError(14, 'UNAVAILABLE', 'nope'))).to.be.false;
+        });
+
         it('recognises a context window overflow but not an output token cap', () => {
             expect(CookbotError.isConversationTooLong(new Error('prompt is too long: 210000 tokens > 200000 maximum'))).to.be.true;
             expect(CookbotError.isConversationTooLong(

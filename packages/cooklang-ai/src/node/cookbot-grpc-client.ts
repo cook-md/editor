@@ -36,6 +36,7 @@ import {
 } from '../common/cookbot-server-tools-protocol';
 import { CookbotUsageStats } from '../common/cookbot-usage-protocol';
 import { CookbotError } from '../common/cookbot-error';
+import { isPackagedApp, resolveCookbotAddress } from './cookbot-address';
 import { AuthService } from '@theia/cooklang-account/lib/common/auth-protocol';
 
 @injectable()
@@ -107,9 +108,17 @@ export class CookbotGrpcClient {
             oneofs: true,
         });
         const proto = grpc.loadPackageDefinition(packageDefinition) as any;
-        const isPackaged = !!(process as any).resourcesPath && !(process as any).defaultApp;
-        const defaultAddress = isPackaged ? 'cookbot.cook.md:443' : '127.0.0.1:50052';
-        const address = process.env.COOKBOT_ADDRESS || defaultAddress;
+        const { address, warning } = resolveCookbotAddress({
+            packaged: isPackagedApp({
+                resourcesPath: (process as any).resourcesPath,
+                defaultApp: (process as any).defaultApp,
+                backendDir: __dirname,
+            }),
+            env: process.env,
+        });
+        if (warning) {
+            console.warn(warning);
+        }
         const useSecure = address.includes('cook.md') || address.startsWith('https://');
         const cleanAddress = address.replace(/^https?:\/\//, '');
         const credentials = useSecure ? grpc.credentials.createSsl() : grpc.credentials.createInsecure();

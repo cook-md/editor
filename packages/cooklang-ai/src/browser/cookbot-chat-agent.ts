@@ -12,7 +12,9 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
-import { AbstractStreamParsingChatAgent } from '@theia/ai-chat/lib/common';
+import { AbstractStreamParsingChatAgent, CommandChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common';
+import { nls } from '@theia/core/lib/common/nls';
+import { CookbotError } from '../common/cookbot-error';
 import { LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core/lib/common';
 
 @injectable()
@@ -48,5 +50,18 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
         this.toolRegistry.onDidChange(() => {
             this.additionalToolRequests = this.toolRegistry.getAllFunctions();
         });
+    }
+
+    protected override handleError(request: MutableChatRequestModel, error: Error): void {
+        if (CookbotError.isLoginRequired(error)) {
+            // `from` attributes the sign-in to the re-auth prompt, like the other login entry points.
+            request.response.response.addContent(new CommandChatResponseContentImpl(
+                { id: 'cooked.login', label: nls.localize('theia/cooklang-ai/loginAgain', 'Log in again') },
+                undefined,
+                ['cookbot_reauth']
+            ));
+        }
+        // After the button: super marks the response as errored, and content must not be added to it afterwards.
+        super.handleError(request, error);
     }
 }
