@@ -17,6 +17,8 @@ import * as https from 'https';
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { AuthState } from '../common/auth-protocol';
 import { AuthServiceBackend } from './auth-service';
+import { buildUpgradeUrl } from '../common/url-builders';
+import { parseSubscription } from '../common/parse-subscription';
 import { SubscriptionService, SubscriptionState, UpgradeCallbackResult } from '../common/subscription-protocol';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -67,7 +69,7 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         return this.cachedState;
     }
 
-    async startUpgradeFlow(): Promise<string> {
+    async startUpgradeFlow(from?: string): Promise<string> {
         this.cleanupUpgradeFlow(new Error('Upgrade flow superseded'));
 
         const expectedState = crypto.randomUUID();
@@ -90,10 +92,7 @@ export class SubscriptionServiceImpl implements SubscriptionService {
         this.upgradeFlow = { expectedState, server, timeout, resolve, reject, callbackPromise };
 
         const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        const url = new URL('/pricing', webBaseUrl);
-        url.searchParams.set('callback', `http://localhost:${port}/upgrade-done`);
-        url.searchParams.set('state', expectedState);
-        return url.toString();
+        return buildUpgradeUrl(webBaseUrl, port, expectedState, from);
     }
 
     async awaitUpgradeCallback(): Promise<UpgradeCallbackResult> {
@@ -238,15 +237,7 @@ p { color: #666; }`;
             const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
             const url = new URL('/api/subscription', webBaseUrl);
             const response = await this.httpGet(url, token);
-            const data = JSON.parse(response);
-            this.cachedState = {
-                status: data.status ?? 'none',
-                hasAccess: data.has_access ?? false,
-                features: data.features ?? [],
-                planName: data.plan_name ?? undefined,
-                aiCreditsRemaining: typeof data.ai_credits_remaining === 'number' ? data.ai_credits_remaining : 0,
-                billingPeriodEnd: data.billing_period_end ?? undefined,
-            };
+            this.cachedState = parseSubscription(JSON.parse(response));
             this.cacheTimestamp = Date.now();
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

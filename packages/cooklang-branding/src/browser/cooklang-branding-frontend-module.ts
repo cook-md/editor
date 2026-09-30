@@ -18,13 +18,23 @@ import { CooklangBrandingContribution } from './cooklang-branding-contribution';
 import { CooklangChatViewWidget } from './cooklang-chat-view-widget';
 import { CookAboutDialog } from './cook-about-dialog';
 import { ChatViewWidget } from '@theia/ai-chat-ui/lib/browser/chat-view-widget';
+import { FirstRunState } from './first-run-state';
+import { GettingStartedWidget } from '@theia/getting-started/lib/browser/getting-started-widget';
+import { CookWelcomeWidget } from './cook-welcome-widget';
 
 export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(CooklangBrandingContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(CooklangBrandingContribution);
 
+    bind(FirstRunState).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(FirstRunState);
+
     bind(CooklangChatViewWidget).toSelf();
     rebind(ChatViewWidget).toService(CooklangChatViewWidget);
+
+    // The getting-started WidgetFactory resolves GettingStartedWidget from the container.
+    bind(CookWelcomeWidget).toSelf();
+    rebind(GettingStartedWidget).toService(CookWelcomeWidget);
 
     rebind(AboutDialog).to(CookAboutDialog).inSingletonScope();
 });

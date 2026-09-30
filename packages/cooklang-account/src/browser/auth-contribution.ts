@@ -50,6 +50,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
     protected readonly commandService: CommandService;
 
     private _authState: AuthState = { status: 'logged-out' };
+    private _authStateKnown = false;
     private pollTimer: ReturnType<typeof setTimeout> | undefined;
 
     private readonly onDidChangeAuthEmitter = new Emitter<AuthState>();
@@ -57,6 +58,11 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
 
     get authState(): AuthState {
         return this._authState;
+    }
+
+    /** False until the first auth check has finished (either way); `authState` is only a default before that. */
+    get authStateKnown(): boolean {
+        return this._authStateKnown;
     }
 
     @postConstruct()
@@ -70,7 +76,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
 
     registerCommands(registry: CommandRegistry): void {
         registry.registerCommand(CookmdLoginCommand, {
-            execute: () => this.doLogin(),
+            execute: (from?: string) => this.doLogin(typeof from === 'string' ? from : undefined),
         });
         registry.registerCommand(CookmdLogoutCommand, {
             execute: () => this.doLogout(),
@@ -81,12 +87,21 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
     }
 
     private async refreshAuthState(): Promise<void> {
+        const previous = this._authState;
+        const wasKnown = this._authStateKnown;
         try {
             this._authState = await this.authService.getAuthState();
         } catch {
             this._authState = { status: 'logged-out' };
         }
+        this._authStateKnown = true;
         this.updateStatusBar();
+        // Widgets that read authState before this resolved would otherwise
+        // stay on the startup default (logged-out) until the next change.
+        // Also fire the first time it becomes known, even if still logged out.
+        if (!wasKnown || this._authState.status !== previous.status || this._authState.email !== previous.email) {
+            this.onDidChangeAuthEmitter.fire(this._authState);
+        }
     }
 
     private updateStatusBar(): void {
@@ -111,9 +126,9 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         }
     }
 
-    private async doLogin(): Promise<void> {
+    private async doLogin(from?: string): Promise<void> {
         try {
-            const result = await this.authService.login();
+            const result = await this.authService.login(from);
             this.windowService.openNewWindow(result.authUrl, { external: true });
             this.startAuthPolling();
         } catch (err) {
@@ -125,6 +140,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
         try {
             await this.authService.logout();
             this._authState = { status: 'logged-out' };
+            this._authStateKnown = true;
             this.updateStatusBar();
             this.onDidChangeAuthEmitter.fire(this._authState);
         } catch (err) {
@@ -145,6 +161,7 @@ export class AuthContribution implements FrontendApplicationContribution, Comman
                 const state = await this.authService.getAuthState();
                 if (state.status !== this._authState.status) {
                     this._authState = state;
+                    this._authStateKnown = true;
                     this.updateStatusBar();
                     this.onDidChangeAuthEmitter.fire(this._authState);
                     this.stopAuthPolling();

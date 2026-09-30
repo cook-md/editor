@@ -40,7 +40,8 @@ export interface LoginResult {
  * inject `AuthServiceBackend` instead.
  */
 export interface AuthService {
-    login(): Promise<LoginResult>;
+    /** @param from where the sign-in started, e.g. `cookbot_trial`; sent to cook.md for attribution. */
+    login(from?: string): Promise<LoginResult>;
     logout(): Promise<void>;
     getAuthState(): Promise<AuthState>;
     getToken(): Promise<string | undefined>;

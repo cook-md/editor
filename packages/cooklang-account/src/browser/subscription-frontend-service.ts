@@ -23,7 +23,7 @@ export interface SubscriptionFrontendService {
     readonly subscription: SubscriptionState | undefined;
     hasFeature(name: string): Promise<boolean>;
     refresh(): Promise<void>;
-    startUpgradeFlow(): Promise<string>;
+    startUpgradeFlow(from?: string): Promise<string>;
     awaitUpgradeCallback(): Promise<UpgradeCallbackResult>;
 }
 
@@ -78,8 +78,8 @@ export class SubscriptionFrontendServiceImpl implements SubscriptionFrontendServ
         this.onDidChangeSubscriptionEmitter.fire(sub);
     }
 
-    startUpgradeFlow(): Promise<string> {
-        return this.subscriptionService.startUpgradeFlow();
+    startUpgradeFlow(from?: string): Promise<string> {
+        return this.subscriptionService.startUpgradeFlow(from);
     }
 
     awaitUpgradeCallback(): Promise<UpgradeCallbackResult> {

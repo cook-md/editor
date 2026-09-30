@@ -72,7 +72,7 @@ function textContent(node: React.ReactNode): string {
     return '';
 }
 
-function makeSubscription(features: string[]): SubscriptionState {
+function makeSubscription(features: string[], overrides: Partial<SubscriptionState> = {}): SubscriptionState {
     return {
         status: 'active',
         hasAccess: true,
@@ -80,6 +80,8 @@ function makeSubscription(features: string[]): SubscriptionState {
         planName: 'Cook Pro',
         aiCreditsRemaining: 100,
         billingPeriodEnd: undefined,
+        trialEligible: true,
+        ...overrides,
     };
 }
 
@@ -153,10 +155,12 @@ describe('AccountWidget upgrade flow reuse', () => {
 
     class FakeSubscriptionFrontendService {
         startUpgradeFlowCalls = 0;
+        startUpgradeFlowFroms: Array<string | undefined> = [];
         refreshCalls = 0;
         awaitResult: { status: 'ok' | 'cancelled' } = { status: 'ok' };
-        async startUpgradeFlow(): Promise<string> {
+        async startUpgradeFlow(from?: string): Promise<string> {
             this.startUpgradeFlowCalls++;
+            this.startUpgradeFlowFroms.push(from);
             return 'https://cook.md/pricing?callback=...';
         }
         async awaitUpgradeCallback(): Promise<{ status: 'ok' | 'cancelled' }> {
@@ -280,5 +284,47 @@ describe('AccountWidget upgrade flow reuse', () => {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (widget as any).stopSyncPolling();
         }
+    });
+});
+
+describe('AccountWidget upgrade block', () => {
+
+    function renderUpgrade(widget: AccountWidget, subscription: SubscriptionState): React.ReactNode {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (widget as any).renderSubscriptionUpgrade(subscription);
+    }
+
+    it('offers the 7-day trial to a trial-eligible free account', () => {
+        const widget = createWidget(IDLE_STATUS);
+        const text = textContent(renderUpgrade(widget, makeSubscription([], { hasAccess: false, trialEligible: true })));
+        expect(text).to.contain('Start your 7-day free trial of Cook Pro');
+        expect(text).to.contain('Card required');
+    });
+
+    it('offers a plain upgrade once the trial is used', () => {
+        const widget = createWidget(IDLE_STATUS);
+        const text = textContent(renderUpgrade(widget, makeSubscription([], { hasAccess: false, trialEligible: false })));
+        expect(text).to.contain('Upgrade to Cook Pro');
+        expect(text).to.not.contain('7-day free trial');
+    });
+
+    it('starts the upgrade flow with from=editor_account when the button is clicked', async () => {
+        const widget = createWidget(IDLE_STATUS);
+        const calls: Array<string | undefined> = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (widget as any).subscriptionFrontendService = {
+            startUpgradeFlow: async (from?: string) => { calls.push(from); return 'https://cook.md/pricing'; },
+            awaitUpgradeCallback: async () => ({ status: 'cancelled' }),
+            refresh: async () => undefined,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (widget as any).windowService = { openNewWindow: () => undefined };
+
+        const tree = renderUpgrade(widget, makeSubscription([], { hasAccess: false, trialEligible: true }));
+        const [button] = collect(tree, el => el.type === 'button' && String(el.props.className).includes('theia-account-upgrade-button'));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (button.props as any).onClick();
+
+        expect(calls).to.deep.equal(['editor_account']);
     });
 });

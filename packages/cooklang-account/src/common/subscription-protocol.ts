@@ -21,6 +21,8 @@ export interface SubscriptionState {
     planName: string | undefined;
     aiCreditsRemaining: number;
     billingPeriodEnd: string | undefined;
+    /** One free Cook Pro trial per account, ever. Missing from older servers → true. */
+    trialEligible: boolean;
 }
 
 export interface UpgradeCallbackResult {
@@ -43,8 +45,9 @@ export interface SubscriptionService {
      * `status=ok|cancelled` and matching `state`.
      *
      * Frontends should call `awaitUpgradeCallback()` after opening the URL.
+     * `from` becomes `?from=` on the pricing URL (a paywall trigger, e.g. `editor_cookbot`).
      */
-    startUpgradeFlow(): Promise<string>;
+    startUpgradeFlow(from?: string): Promise<string>;
 
     /**
      * Resolves when the callback server receives a valid redirect (matching

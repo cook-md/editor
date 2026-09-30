@@ -23,6 +23,7 @@ import { SubscriptionFrontendService } from './subscription-frontend-service';
 import { SubscriptionState } from '../common/subscription-protocol';
 import { SyncService, SyncStatus } from '../common/sync-protocol';
 import { AuthContribution, CookmdLoginCommand, CookmdLogoutCommand } from './auth-contribution';
+import { proOfferCopy } from '../common/pro-offer-copy';
 
 const DEFAULT_WEB_BASE_URL = 'https://cook.md';
 
@@ -353,20 +354,20 @@ export class AccountWidget extends ReactWidget {
     }
 
     protected renderSubscriptionUpgrade(subscription: SubscriptionState): React.ReactNode {
+        const offer = proOfferCopy(subscription.trialEligible);
         const statusLabel = this.syncStatus.status.charAt(0).toUpperCase() + this.syncStatus.status.slice(1);
         return (
             <React.Fragment>
                 <div className='theia-account-section-header'>{nls.localize('theia/cooklang-account/subscriptionHeader', 'Subscription')}</div>
                 <div className='theia-account-upgrade-section'>
-                    <div className='theia-account-upgrade-message'>
-                        {nls.localize('theia/cooklang-account/upgradeMessage', 'Upgrade to unlock AI assistance and more features.')}
-                    </div>
+                    <div className='theia-account-upgrade-message'>{offer.headline}</div>
                     <button
                         className='theia-button main theia-account-upgrade-button'
                         onClick={this.handleUpgrade}
                     >
-                        {nls.localize('theia/cooklang-account/upgradeButton', 'Upgrade to Pro')}
+                        {offer.button}
                     </button>
+                    <div className='theia-account-upgrade-note'>{offer.note}</div>
                 </div>
                 {this.renderSyncSection(subscription, statusLabel)}
                 <div className='theia-account-divider' />
@@ -434,7 +435,7 @@ export class AccountWidget extends ReactWidget {
     private handleUpgrade = async (): Promise<void> => {
         let url: string;
         try {
-            url = await this.subscriptionFrontendService.startUpgradeFlow();
+            url = await this.subscriptionFrontendService.startUpgradeFlow('editor_account');
         } catch (err) {
             console.warn('Failed to start upgrade flow, falling back to pricing page:', err);
             this.windowService.openNewWindow(`${this.webBaseUrl}/pricing`, { external: true });

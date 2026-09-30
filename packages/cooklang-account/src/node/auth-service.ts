@@ -20,6 +20,7 @@ import * as path from 'path';
 import { injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Emitter, Event } from '@theia/core/lib/common';
 import { AuthService, AuthData, AuthState, LoginResult } from '../common/auth-protocol';
+import { buildAuthUrl } from '../common/url-builders';
 
 const CALLBACK_PORT_START = 19285;
 const CALLBACK_PORT_RETRIES = 10;
@@ -68,13 +69,13 @@ export class AuthServiceImpl implements AuthServiceBackend {
         this.startRenewalTimer();
     }
 
-    async login(): Promise<LoginResult> {
+    async login(from?: string): Promise<LoginResult> {
         this.cleanupCallbackServer();
 
         const state = crypto.randomUUID();
         const port = await this.startCallbackServer(state);
         const webBaseUrl = process.env.WEB_BASE_URL || 'https://cook.md';
-        const authUrl = `${webBaseUrl}/auth/desktops?callback=http://localhost:${port}/callback&state=${state}&app=editor`;
+        const authUrl = buildAuthUrl(webBaseUrl, port, state, from);
 
         return { authUrl };
     }
