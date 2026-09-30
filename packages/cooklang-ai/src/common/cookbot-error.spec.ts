@@ -186,6 +186,8 @@ describe('CookbotError', () => {
             expect(CookbotError.isLoginRequired(new Error(friendly.message))).to.be.true;
             expect(CookbotError.isLoginRequired(grpcError(16, 'UNAUTHENTICATED', 'x'))).to.be.true;
             expect(CookbotError.isLoginRequired(new Error('plain failure'))).to.be.false;
+            // A backend in another locale sends its localized text; the English default must still match.
+            expect(CookbotError.isLoginRequired(new Error(CookbotError.LOGIN_REQUIRED_DEFAULT))).to.be.true;
             expect(CookbotError.isLoginRequired(grpcError(14, 'UNAVAILABLE', 'nope'))).to.be.false;
         });
 

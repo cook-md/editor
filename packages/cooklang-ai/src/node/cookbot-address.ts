@@ -25,6 +25,8 @@ export interface PackagedAppInputs {
     defaultApp: boolean | undefined;
     /** Directory the backend code runs from (`__dirname`). */
     backendDir: string;
+    /** Path flavour to compare with; defaults to the host's. Injectable for tests. */
+    pathModule?: typeof path.posix;
 }
 
 /**
@@ -35,13 +37,18 @@ export interface PackagedAppInputs {
  * unpackaged `npm run start:electron` looked packaged. In a packaged app the
  * backend code lives inside `resourcesPath` (app.asar); in dev
  * `resourcesPath` is Electron's own folder under node_modules, far from it.
+ *
+ * Requires `backendDir` to be the real on-disk location, i.e. `__dirname` must
+ * not be rewritten by webpack (`node: { __dirname: false }`, as app/webpack.config.js sets).
  */
 export function isPackagedApp(inputs: PackagedAppInputs): boolean {
     if (!inputs.resourcesPath || inputs.defaultApp) {
         return false;
     }
-    const relative = path.relative(path.resolve(inputs.resourcesPath), path.resolve(inputs.backendDir));
-    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+    const p = inputs.pathModule ?? path;
+    const relative = p.relative(p.resolve(inputs.resourcesPath), p.resolve(inputs.backendDir));
+    const outside = relative === '..' || relative.startsWith('..' + p.sep) || p.isAbsolute(relative);
+    return relative !== '' && !outside;
 }
 
 export interface CookbotAddressResult {

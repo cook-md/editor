@@ -258,6 +258,37 @@ describe('CookbotLanguageModel session expiry', () => {
         expect(grpcClient.sendMessageCalls).to.equal(0);
     });
 
+    it('does not report an expected Initialize failure to the error reporter', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.initializeError = Object.assign(new Error('16 UNAUTHENTICATED: bad token'), { code: 16 });
+        const reporter = new FakeErrorReporter();
+        const model = createModel(grpcClient, reporter);
+
+        try {
+            await collect(model);
+        } catch {
+            // expected
+        }
+
+        expect(reporter.reported).to.have.length(0);
+    });
+
+    it('passes a non-gRPC Initialize failure through unchanged', async () => {
+        const grpcClient = new FakeGrpcClient();
+        const original = new Error('disk exploded');
+        grpcClient.initializeError = original;
+        const model = createModel(grpcClient, new FakeErrorReporter());
+
+        let thrown: unknown;
+        try {
+            await collect(model);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).to.equal(original);
+    });
+
     it('does not retry when content was already streamed', async () => {
         const grpcClient = new FakeGrpcClient();
         grpcClient.streams = [

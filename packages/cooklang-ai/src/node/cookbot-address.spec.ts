@@ -45,6 +45,63 @@ describe('isPackagedApp', () => {
         expect(isPackagedApp({ resourcesPath: resources, defaultApp: true, backendDir: path.join(resources, 'app') })).to.be.false;
     });
 
+    describe('Windows paths', () => {
+        const win = path.win32;
+        const base = { defaultApp: undefined as boolean | undefined, pathModule: win };
+
+        it('is true for a backslash path inside resourcesPath', () => {
+            expect(isPackagedApp({
+                ...base,
+                resourcesPath: 'C:\\Users\\a\\AppData\\Local\\Programs\\Cook Editor\\resources',
+                backendDir: 'C:\\Users\\a\\AppData\\Local\\Programs\\Cook Editor\\resources\\app.asar\\lib\\backend',
+            })).to.be.true;
+        });
+
+        it('ignores drive-letter and directory casing', () => {
+            expect(isPackagedApp({
+                ...base,
+                resourcesPath: 'C:\\Program Files\\Cook Editor\\resources',
+                backendDir: 'c:\\program files\\cook editor\\RESOURCES\\app.asar\\lib\\backend',
+            })).to.be.true;
+        });
+
+        it('is false on a different drive (dev)', () => {
+            expect(isPackagedApp({
+                ...base,
+                resourcesPath: 'C:\\repo\\node_modules\\electron\\dist\\resources',
+                backendDir: 'D:\\repo\\app\\lib\\backend',
+            })).to.be.false;
+        });
+    });
+
+    it('is true for code unpacked from the asar', () => {
+        expect(isPackagedApp({
+            resourcesPath: resources,
+            defaultApp: undefined,
+            backendDir: path.join(resources, 'app.asar.unpacked', 'lib', 'backend'),
+        })).to.be.true;
+    });
+
+    it('tolerates a trailing slash on resourcesPath', () => {
+        expect(isPackagedApp({
+            resourcesPath: resources + '/',
+            defaultApp: undefined,
+            backendDir: path.join(resources, 'app.asar', 'lib', 'backend'),
+        })).to.be.true;
+    });
+
+    it('counts a child directory whose name merely starts with two dots as inside', () => {
+        expect(isPackagedApp({
+            resourcesPath: resources,
+            defaultApp: undefined,
+            backendDir: path.join(resources, '..foo', 'backend'),
+        })).to.be.true;
+    });
+
+    it('is false for the parent of resourcesPath', () => {
+        expect(isPackagedApp({ resourcesPath: resources, defaultApp: undefined, backendDir: path.dirname(resources) })).to.be.false;
+    });
+
     it('does not mistake a sibling directory with the same prefix for resourcesPath', () => {
         expect(isPackagedApp({
             resourcesPath: '/opt/app/Resources',

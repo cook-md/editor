@@ -53,7 +53,6 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
     }
 
     protected override handleError(request: MutableChatRequestModel, error: Error): void {
-        super.handleError(request, error);
         if (CookbotError.isLoginRequired(error)) {
             // `from` attributes the sign-in to the re-auth prompt, like the other login entry points.
             request.response.response.addContent(new CommandChatResponseContentImpl(
@@ -62,5 +61,7 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
                 ['cookbot_reauth']
             ));
         }
+        // After the button: super marks the response as errored, and content must not be added to it afterwards.
+        super.handleError(request, error);
     }
 }
