@@ -51,6 +51,7 @@ export interface ScrubbableFrame {
 }
 
 export interface ScrubbableException {
+    type?: string;
     value?: string;
     stacktrace?: { frames?: ScrubbableFrame[] };
 }

@@ -39,6 +39,7 @@ import { RecipeNavigator } from './recipe-navigator';
 import { IMAGE_VIEWER_WIDGET_ID, ImageViewerWidget } from './image-viewer-widget';
 import { ImageViewerContribution } from './image-viewer-contribution';
 import { BinaryFileOpenHandler } from './binary-file-open-handler';
+import { DirectoryOpenHandler } from './directory-open-handler';
 import { CookUrlOpenHandler } from './cook-url-open-handler';
 import { TimerChime } from './timer-chime';
 import { TimerAlarmService } from './timer-alarm-service';
@@ -148,6 +149,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(OpenHandler).toService(ImageViewerContribution);
     bind(BinaryFileOpenHandler).toSelf().inSingletonScope();
     bind(OpenHandler).toService(BinaryFileOpenHandler);
+    bind(DirectoryOpenHandler).toSelf().inSingletonScope();
+    bind(OpenHandler).toService(DirectoryOpenHandler);
 
     // cook:// and cooklang:// links forwarded from the OS by Electron's open-url.
     bind(CookUrlOpenHandler).toSelf().inSingletonScope();

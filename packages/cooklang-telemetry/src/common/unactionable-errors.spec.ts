@@ -34,6 +34,25 @@ describe('isUnactionableError', () => {
         expect(isUnactionableError(withException('Failed to write EIO handler config'))).to.be.false;
     });
 
+    it('drops a binary or oversized file the user declined to open as text', () => {
+        expect(isUnactionableError(withException('File seems to be binary and cannot be opened as text'))).to.be.true;
+        expect(isUnactionableError(withException(
+            "Unable to read file 'chrome.rpm' (Error: Unable to read file 'chrome.rpm' that is too large to open)"
+        ))).to.be.true;
+    });
+
+    it('keeps other read failures', () => {
+        expect(isUnactionableError(withException("Unable to read file 'a.cook' (Error: EACCES: permission denied)"))).to.be.false;
+    });
+
+    it('drops an uncaught cancellation', () => {
+        expect(isUnactionableError({ exception: { values: [{ type: 'Canceled', value: 'Canceled' }] } })).to.be.true;
+    });
+
+    it('keeps a non-cancellation error that merely says Canceled', () => {
+        expect(isUnactionableError({ exception: { values: [{ type: 'Error', value: 'Canceled' }] } })).to.be.false;
+    });
+
     it('keeps an event with no exception', () => {
         expect(isUnactionableError({})).to.be.false;
         expect(isUnactionableError({ exception: { values: [] } })).to.be.false;

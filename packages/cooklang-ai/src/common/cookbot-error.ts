@@ -18,6 +18,7 @@ import { nls } from '@theia/core/lib/common/nls';
  * Mirrors `grpc.status` from `@grpc/grpc-js`.
  */
 export enum CookbotGrpcStatus {
+    Cancelled = 1,
     PermissionDenied = 7,
     ResourceExhausted = 8,
     Unavailable = 14,
@@ -242,6 +243,8 @@ export namespace CookbotError {
             return true;
         }
         switch (statusCode(error)) {
+            // The user stopped the request, or the chat was closed mid-stream.
+            case CookbotGrpcStatus.Cancelled:
             case CookbotGrpcStatus.Unavailable:
             case CookbotGrpcStatus.Unauthenticated:
             case CookbotGrpcStatus.ResourceExhausted:

@@ -144,6 +144,10 @@ describe('CookbotError', () => {
             expect(CookbotError.isExpected(grpcError(16, 'UNAUTHENTICATED', 'expired session'))).to.be.true;
         });
 
+        it('treats a request the client cancelled as expected', () => {
+            expect(CookbotError.isExpected(grpcError(1, 'CANCELLED', 'Cancelled on client'))).to.be.true;
+        });
+
         it('treats a context window overflow as expected', () => {
             expect(CookbotError.isExpected(new Error('prompt is too long: 210000 tokens > 200000 maximum'))).to.be.true;
         });
