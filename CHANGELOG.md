@@ -13,6 +13,19 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.50](https://github.com/cook-md/editor/compare/v0.1.0-alpha.49...v0.1.0-alpha.50) (2026-09-30)
+
+
+### Features
+
+* first run — welcome checklist, CookBot trial gate, usage events ([#159](https://github.com/cook-md/editor/issues/159)) ([0995dac](https://github.com/cook-md/editor/commit/0995dac56810b4d8905bcb99ada8fbecd40d3bfd))
+
+
+### Bug Fixes
+
+* **cookbot:** friendly session-expired message; dev builds use the local CookBot ([#161](https://github.com/cook-md/editor/issues/161)) ([370071d](https://github.com/cook-md/editor/commit/370071dbe0ddc46e88766700f94bfa0f68a2a773))
+* Sentry issues seen on alpha.43–alpha.47 ([#162](https://github.com/cook-md/editor/issues/162)) ([acf9528](https://github.com/cook-md/editor/commit/acf952869a99e51863cde6263578834077587db4))
+
 ## [0.1.0-alpha.49](https://github.com/cook-md/editor/compare/v0.1.0-alpha.48...v0.1.0-alpha.49) (2026-09-27)
 
 
