@@ -29,6 +29,26 @@ import { ScrubbableEvent } from './scrub';
 const BROKEN_PIPE_WRITE = /^write E(IO|PIPE)$/;
 
 /**
+ * The user asked to open a binary or oversized file, was asked whether to open
+ * it as text anyway, and said no. `FileResource` rethrows the original read
+ * error so the editor open fails, and because tree and drop opens are
+ * fire-and-forget it surfaces as an unhandled rejection. The user already saw
+ * the prompt; there is nothing further to report.
+ */
+const DECLINED_OPEN_AS_TEXT = [
+    /^File seems to be binary and cannot be opened as text$/,
+    /^Unable to read file '[^']*' \(Error: Unable to read file '[^']*' that is too large to open\)$/,
+];
+
+/**
+ * A Monaco/VS Code `CancellationError` that nobody caught. VS Code's own
+ * unexpected-error handler ignores these; they mean an operation was
+ * superseded, not that it failed.
+ */
+const isCancellation = (type: string | undefined, value: string | undefined): boolean =>
+    type === 'Canceled' && value === 'Canceled';
+
+/**
  * Whether `event` describes something no change to the app could prevent, and
  * so should never reach Sentry.
  *
@@ -40,5 +60,9 @@ export function isUnactionableError(event: ScrubbableEvent): boolean {
     if (!values) {
         return false;
     }
-    return values.some(({ value }) => value !== undefined && BROKEN_PIPE_WRITE.test(value));
+    return values.some(({ type, value }) => value !== undefined && (
+        BROKEN_PIPE_WRITE.test(value)
+        || DECLINED_OPEN_AS_TEXT.some(pattern => pattern.test(value))
+        || isCancellation(type, value)
+    ));
 }

@@ -185,7 +185,11 @@ export class PreferencesContribution extends AbstractViewContribution<Preference
             preferenceId = opener;
             const currentPreferenceValue = this.preferenceService.inspect(preferenceId, uri);
             const valueInCurrentScope = Preference.getValueInScope(currentPreferenceValue, scopeID) ?? currentPreferenceValue?.defaultValue;
-            this.preferenceService.set(preferenceId, valueInCurrentScope, scopeID, uri);
+            try {
+                await this.preferenceService.set(preferenceId, valueInCurrentScope, scopeID, uri);
+            } catch (e) {
+                console.warn(`Could not write '${preferenceId}' before opening settings.json`, e);
+            }
         }
 
         let jsonEditorWidget: EditorWidget;
@@ -195,9 +199,11 @@ export class PreferencesContribution extends AbstractViewContribution<Preference
 
             if (preferenceId) {
                 const text = jsonEditorWidget.editor.document.getText();
-                if (preferenceId) {
-                    const { index } = text.match(preferenceId)!;
-                    const numReturns = text.slice(0, index).match(new RegExp('\n', 'g'))!.length;
+                // The key can be missing: a preference with no value and no default is written as
+                // `undefined`, which removes it. Then just open the file.
+                const index = text.indexOf(`"${preferenceId}"`);
+                if (index !== -1) {
+                    const numReturns = text.slice(0, index).split('\n').length - 1;
                     jsonEditorWidget.editor.cursor = { line: numReturns, character: 4 + preferenceId.length + 4 };
                 }
             }

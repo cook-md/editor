@@ -294,7 +294,11 @@ export class TheiaMainApi implements ElectronMainApplicationContribution {
             }
             if (dto.handlerId) {
                 result.click = () => {
-                    sender.send(CHANNEL_INVOKE_MENU, menuId, dto.handlerId);
+                    // A native menu can outlive its window: macOS keeps the application menu
+                    // after the window that set it closed, and a click then would throw.
+                    if (!sender.isDestroyed()) {
+                        sender.send(CHANNEL_INVOKE_MENU, menuId, dto.handlerId);
+                    }
                 };
             }
             return result;
