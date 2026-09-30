@@ -105,6 +105,27 @@ export namespace CookbotError {
     }
 
     /**
+     * Shown when Cookbot rejects the stored cook.md token (UNAUTHENTICATED).
+     * The chat pairs it with a login action; see `isLoginRequired`.
+     */
+    export function loginRequiredMessage(): string {
+        return nls.localize(
+            'theia/cooklang-ai/error/loginRequired',
+            'Your cook.md session has expired. Log in again to keep using CookBot.'
+        );
+    }
+
+    /**
+     * Whether an error means the user has to log in again: either the raw
+     * UNAUTHENTICATED failure, or the friendly message it was turned into.
+     * The second form matters on the frontend, where only the message
+     * survives the RPC hop.
+     */
+    export function isLoginRequired(error: unknown): boolean {
+        return isSessionExpired(error) || messageOf(error) === loginRequiredMessage();
+    }
+
+    /**
      * A dropped connection rather than a real failure: idle gRPC connections
      * get closed upstream and the next call fails with UNAVAILABLE (typically
      * `read ECONNRESET`). Retrying on a fresh channel usually succeeds.
@@ -176,10 +197,7 @@ export namespace CookbotError {
                     'Lost the connection to Cookbot. Please check your internet connection and try again.'
                 ));
             case CookbotGrpcStatus.Unauthenticated:
-                return new Error(nls.localize(
-                    'theia/cooklang-ai/error/sessionExpired',
-                    'Your Cookbot session has expired. Please try again, and sign in again if the problem persists.'
-                ));
+                return new Error(loginRequiredMessage());
             case CookbotGrpcStatus.ResourceExhausted:
                 return withDetail(nls.localize(
                     'theia/cooklang-ai/error/resourceExhausted',

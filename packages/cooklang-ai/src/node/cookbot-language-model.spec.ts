@@ -239,6 +239,25 @@ describe('CookbotLanguageModel session expiry', () => {
         expect(grpcClient.sendMessageCalls).to.equal(2);
     });
 
+    it('turns an UNAUTHENTICATED failure of Initialize into the friendly login message', async () => {
+        const grpcClient = new FakeGrpcClient();
+        grpcClient.initializeError = Object.assign(
+            new Error('16 UNAUTHENTICATED: Authentication failed: Invalid or expired token'), { code: 16 }
+        );
+        const model = createModel(grpcClient);
+
+        let thrown: Error | undefined;
+        try {
+            await collect(model);
+        } catch (error) {
+            thrown = error as Error;
+        }
+
+        expect(thrown?.message).to.not.contain('UNAUTHENTICATED');
+        expect(thrown?.message).to.contain('Log in again');
+        expect(grpcClient.sendMessageCalls).to.equal(0);
+    });
+
     it('does not retry when content was already streamed', async () => {
         const grpcClient = new FakeGrpcClient();
         grpcClient.streams = [

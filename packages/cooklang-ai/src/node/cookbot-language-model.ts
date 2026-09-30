@@ -98,7 +98,15 @@ export class CookbotLanguageModel implements LanguageModel {
     protected maxToolRounds = 30;
 
     async request(request: UserRequest, cancellationToken?: CancellationToken): Promise<LanguageModelResponse> {
-        await this.sessionInitializer.ensureInitialized();
+        try {
+            await this.sessionInitializer.ensureInitialized();
+        } catch (error) {
+            // Initialize is the first call of every chat and the one that
+            // sends the stored token, so a bad token surfaces here.
+            console.error('[CookbotLM] Session initialization failed:', error);
+            this.reportIfUnexpected(error);
+            throw CookbotError.toUserFacing(error);
+        }
         return this.handleStreamingRequest(request, cancellationToken);
     }
 
