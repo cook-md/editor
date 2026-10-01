@@ -33,7 +33,7 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           # A PAT (RELEASE_TOKEN) lets the Release PR's checks run; falls back to
@@ -81,7 +81,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # cooklang-language-server is referenced from packages/cooklang-native/Cargo.toml
       # as a sibling path (../../../cooklang-language-server). Place it next to the
@@ -94,7 +94,7 @@ jobs:
             "${{ github.workspace }}/../cooklang-language-server"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -107,7 +107,7 @@ jobs:
         run: rustup target add ${{ matrix.rust_target }}
 
       - name: Cache Rust
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -120,7 +120,7 @@ jobs:
 
       - name: Cache node_modules
         id: node-modules-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             node_modules
@@ -163,7 +163,7 @@ jobs:
         run: npx lerna run afterInstall
 
       - name: Cache TypeScript build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             packages/*/lib
@@ -175,7 +175,7 @@ jobs:
             ${{ runner.os }}-tsc-v1-
 
       - name: Cache electron-builder downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/Library/Caches/electron
@@ -196,7 +196,7 @@ jobs:
       # Keyed on project.yml, which carries the pinned cooklang-rs version.
       - name: Cache Quick Look cooklang-rs package (macOS)
         if: runner.os == 'macOS'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: macos/QuickLookExtension/build/cooklang-rs
           key: ${{ runner.os }}-ql-cooklang-rs-${{ hashFiles('macos/QuickLookExtension/project.yml') }}
@@ -399,14 +399,14 @@ jobs:
       # artifact of its own, so that job does not have to pull ~600 MB of dmg/zip.
       - name: Upload macOS update manifest
         if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: latest-mac-${{ matrix.platform }}
           path: app/dist/latest-mac.yml
           if-no-files-found: error
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Cook-Editor-${{ matrix.platform }}
           path: |
@@ -443,7 +443,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             app/scripts
@@ -451,12 +451,12 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Use Node.js 22.x
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22.x'
 
       - name: Download the per-architecture manifests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: latest-mac-*
           path: manifests
