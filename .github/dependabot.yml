@@ -31,6 +31,7 @@ updates:
       # Pinned to the versions @theia/core 1.70 was built against; newer ones
       # break compilation (types/API changes) or the perfect-scrollbar override.
       - dependency-name: "perfect-scrollbar"
+      - dependency-name: "@vscode/ripgrep"
       - dependency-name: "@vscode/proxy-agent"
       - dependency-name: "vscode-languageserver-protocol"
       - dependency-name: "vscode-uri"
