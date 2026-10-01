@@ -46,7 +46,7 @@
     "mkdirp": "^0.5.0",
     "nan": "2.25.0",
     "node-abi": "^4.26.0",
-    "node-gyp": "^11.5.0",
+    "node-gyp": "^13.0.2",
     "nyc": "^17.1.0",
     "puppeteer": "23.1.0",
     "puppeteer-core": "23.1.0",
