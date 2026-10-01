@@ -3,17 +3,25 @@
   "version": "1.70.0",
   "description": "Cook Editor error reporting",
   "dependencies": {
-    "@theia/core": "1.70.0",
-    "@sentry/electron": "^7.16.0",
+    "@sentry/electron": "^7.20.0",
     "@sentry/node": "10.67.0",
+    "@theia/core": "1.70.0",
     "tslib": "^2.6.2"
   },
   "main": "lib/common",
   "theiaExtensions": [
-    { "electronMain": "lib/electron-main/cooklang-telemetry-electron-main-module" },
-    { "preload": "lib/preload/cooklang-telemetry-preload" },
-    { "frontend": "lib/browser/cooklang-telemetry-frontend-module" },
-    { "backend": "lib/node/cooklang-telemetry-backend-module" }
+    {
+      "electronMain": "lib/electron-main/cooklang-telemetry-electron-main-module"
+    },
+    {
+      "preload": "lib/preload/cooklang-telemetry-preload"
+    },
+    {
+      "frontend": "lib/browser/cooklang-telemetry-frontend-module"
+    },
+    {
+      "backend": "lib/node/cooklang-telemetry-backend-module"
+    }
   ],
   "keywords": [
     "theia-extension"

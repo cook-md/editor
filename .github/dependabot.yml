@@ -25,6 +25,19 @@ updates:
       interval: cron
       cronjob: "0 9 1,15 * *"
     open-pull-requests-limit: 5
+    ignore:
+      # 4.1.5+ requires eslint ^9 || ^10; the repo is on eslint 8.
+      - dependency-name: "eslint-plugin-no-unsanitized"
+      # Pinned to the versions @theia/core 1.70 was built against; newer ones
+      # break compilation (types/API changes) or the perfect-scrollbar override.
+      - dependency-name: "perfect-scrollbar"
+      - dependency-name: "@vscode/ripgrep"
+      - dependency-name: "@vscode/proxy-agent"
+      - dependency-name: "vscode-languageserver-protocol"
+      - dependency-name: "vscode-uri"
+      - dependency-name: "@lumino/widgets"
+      # 3.2.1+ ships its own types, which clash with @types/tar-stream.
+      - dependency-name: "tar-stream"
     groups:
       npm-dependencies:
         patterns:

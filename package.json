@@ -7,12 +7,13 @@
   },
   "overrides": {
     "perfect-scrollbar": "1.5.5",
-    "@types/express": "^4.17.21"
+    "@types/express": "^4.17.21",
+    "tar-stream": "3.2.0"
   },
   "devDependencies": {
     "@eclipse-dash/nodejs-wrapper": "^0.0.1",
     "@types/chai": "4.3.0",
-    "@types/chai-spies": "1.0.3",
+    "@types/chai-spies": "1.0.6",
     "@types/chai-string": "^1.4.0",
     "@types/glob": "^8.1.0",
     "@types/jsdom": "^21.1.7",
@@ -25,7 +26,7 @@
     "@vscode/vsce": "^4.0.0",
     "archiver": "^5.3.1",
     "chai": "4.3.10",
-    "chai-spies": "1.0.0",
+    "chai-spies": "1.1.0",
     "chai-string": "^1.4.0",
     "chalk": "4.0.0",
     "concurrently": "^10.0.5",
@@ -44,7 +45,7 @@
     "lerna": "^9.0.0",
     "minimatch": "^10.0.3",
     "mkdirp": "^0.5.0",
-    "nan": "2.25.0",
+    "nan": "2.29.0",
     "node-abi": "^4.26.0",
     "node-gyp": "^13.0.2",
     "nyc": "^17.1.0",
@@ -55,7 +56,7 @@
     "sinon": "^12.0.0",
     "temp": "^0.9.1",
     "tslint": "^5.12.0",
-    "typedoc": "0.28.13",
+    "typedoc": "0.28.20",
     "typescript": "~5.9.3",
     "yargs": "^15.3.1"
   },
