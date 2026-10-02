@@ -10,6 +10,10 @@ language for recipes. It gives you syntax highlighting, ingredient and cookware
 autocomplete, a recipe view, shopping lists generated straight from your
 menus, pantry tracking, and AI assistance for drafting and editing recipes.
 
+Sign in with a cook.md account to sync recipes with your phone and CookCLI
+through [Cook Cloud sync](https://cook.md/) (Cook Basic), and to use the CookBot
+AI assistant (Cook Pro).
+
 It's built on [Eclipse Theia](https://theia-ide.org/), which means it inherits
 a familiar, VS Code-like editing experience and a battle-tested extension
 system.
