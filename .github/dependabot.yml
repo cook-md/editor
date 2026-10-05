@@ -26,10 +26,20 @@ updates:
       cronjob: "0 9 1,15 * *"
     open-pull-requests-limit: 5
     ignore:
+      # Hard fork of Theia: the workspace @theia/* packages are the source of
+      # truth, never the upstream releases on npm.
+      - dependency-name: "@theia/*"
       # 4.1.5+ requires eslint ^9 || ^10; the repo is on eslint 8.
       - dependency-name: "eslint-plugin-no-unsanitized"
-      # Pinned to the versions @theia/core 1.70 was built against; newer ones
+      # Express 5 rejects the '*.ext' routes in backend-application.ts at
+      # runtime; migrate deliberately rather than via a bump PR.
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/express"
+        update-types: ["version-update:semver-major"]
+      # Pinned to the versions the fork's code was written against; newer ones
       # break compilation (types/API changes) or the perfect-scrollbar override.
+      # Upgrade these deliberately (we own the code now), not via bump PRs.
       - dependency-name: "perfect-scrollbar"
       - dependency-name: "@vscode/ripgrep"
       - dependency-name: "@vscode/proxy-agent"
