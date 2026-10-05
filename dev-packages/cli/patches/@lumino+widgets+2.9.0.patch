@@ -1,0 +1,413 @@
+diff --git a/node_modules/@lumino/widgets/dist/index.es6.js b/node_modules/@lumino/widgets/dist/index.es6.js
+index 3b39948..597f454 100644
+--- a/node_modules/@lumino/widgets/dist/index.es6.js
++++ b/node_modules/@lumino/widgets/dist/index.es6.js
+@@ -6561,28 +6561,28 @@ class Menu extends Widget {
+         }
+     }
+     /**
+-     * A message handler invoked on a `'before-attach'` message.
++     * A message handler invoked on a `'after-attach'` message.
+      */
+-    onBeforeAttach(msg) {
++    onAfterAttach(msg) {
+         this.node.addEventListener('keydown', this);
+         this.node.addEventListener('pointerup', this);
+         this.node.addEventListener('pointermove', this);
+         this.node.addEventListener('pointerenter', this);
+         this.node.addEventListener('pointerleave', this);
+         this.node.addEventListener('contextmenu', this);
+-        document.addEventListener('pointerdown', this, true);
++        this.node.ownerDocument.addEventListener('pointerdown', this, true);
+     }
+     /**
+-     * A message handler invoked on an `'after-detach'` message.
++     * A message handler invoked on an `'before-detach'` message.
+      */
+-    onAfterDetach(msg) {
++    onBeforeDetach(msg) {
+         this.node.removeEventListener('keydown', this);
+         this.node.removeEventListener('pointerup', this);
+         this.node.removeEventListener('pointermove', this);
+         this.node.removeEventListener('pointerenter', this);
+         this.node.removeEventListener('pointerleave', this);
+         this.node.removeEventListener('contextmenu', this);
+-        document.removeEventListener('pointerdown', this, true);
++        this.node.ownerDocument.removeEventListener('pointerdown', this, true);
+     }
+     /**
+      * A message handler invoked on an `'activate-request'` message.
+@@ -7166,15 +7166,8 @@ var Private$9;
+      * The horizontal pixel overlap for an open submenu.
+      */
+     Private.SUBMENU_OVERLAP = 3;
+-    let transientWindowDataCache = null;
+-    let transientCacheCounter = 0;
+-    function getWindowData() {
+-        // if transient cache is in use, take one from it
+-        if (transientCacheCounter > 0) {
+-            transientCacheCounter--;
+-            return transientWindowDataCache;
+-        }
+-        return _getWindowData();
++    function getWindowData(element) {
++        return _getWindowData(element);
+     }
+     /**
+      * Store window data in transient cache.
+@@ -7186,8 +7179,6 @@ var Private$9;
+      * Note: should be called before any DOM modifications.
+      */
+     function saveWindowData() {
+-        transientWindowDataCache = _getWindowData();
+-        transientCacheCounter++;
+     }
+     Private.saveWindowData = saveWindowData;
+     /**
+@@ -7282,12 +7273,13 @@ var Private$9;
+         return result;
+     }
+     Private.computeCollapsed = computeCollapsed;
+-    function _getWindowData() {
++    function _getWindowData(element) {
++        var _a, _b;
+         return {
+-            pageXOffset: window.pageXOffset,
+-            pageYOffset: window.pageYOffset,
+-            clientWidth: document.documentElement.clientWidth,
+-            clientHeight: document.documentElement.clientHeight
++            pageXOffset: ((_a = element.ownerDocument.defaultView) === null || _a === void 0 ? void 0 : _a.window.scrollX) || 0,
++            pageYOffset: ((_b = element.ownerDocument.defaultView) === null || _b === void 0 ? void 0 : _b.window.scrollY) || 0,
++            clientWidth: element.ownerDocument.documentElement.clientWidth,
++            clientHeight: element.ownerDocument.documentElement.clientHeight
+         };
+     }
+     /**
+@@ -7295,7 +7287,7 @@ var Private$9;
+      */
+     function openRootMenu(menu, x, y, forceX, forceY, horizontalAlignment, host, ref) {
+         // Get the current position and size of the main viewport.
+-        const windowData = getWindowData();
++        const windowData = getWindowData(host || menu.node);
+         let px = windowData.pageXOffset;
+         let py = windowData.pageYOffset;
+         let cw = windowData.clientWidth;
+@@ -7307,6 +7299,8 @@ var Private$9;
+         // Fetch common variables.
+         let node = menu.node;
+         let style = node.style;
++        style.top = '0';
++        style.left = '0';
+         // Clear the menu geometry and prepare it for measuring.
+         style.opacity = '0';
+         style.maxHeight = `${maxHeight}px`;
+@@ -7342,7 +7336,7 @@ var Private$9;
+      */
+     function openSubmenu(submenu, itemNode) {
+         // Get the current position and size of the main viewport.
+-        const windowData = getWindowData();
++        const windowData = getWindowData(itemNode);
+         let px = windowData.pageXOffset;
+         let py = windowData.pageYOffset;
+         let cw = windowData.clientWidth;
+@@ -7358,7 +7352,7 @@ var Private$9;
+         style.opacity = '0';
+         style.maxHeight = `${maxHeight}px`;
+         // Attach the menu to the document.
+-        Widget.attach(submenu, document.body);
++        Widget.attach(submenu, itemNode.ownerDocument.body);
+         // Measure the size of the menu.
+         let { width, height } = node.getBoundingClientRect();
+         // Compute the box sizing for the menu.
+@@ -7377,6 +7371,8 @@ var Private$9;
+         if (y + height > py + ch) {
+             y = itemRect.bottom + box.borderBottom + box.paddingBottom - height;
+         }
++        style.top = '0';
++        style.left = '0';
+         // Update the position of the menu to the computed position.
+         style.transform = `translate(${Math.max(0, x)}px, ${Math.max(0, y)}px`;
+         // Finally, make the menu visible on the screen.
+diff --git a/node_modules/@lumino/widgets/dist/index.js b/node_modules/@lumino/widgets/dist/index.js
+index 0600c2e..03f34e4 100644
+--- a/node_modules/@lumino/widgets/dist/index.js
++++ b/node_modules/@lumino/widgets/dist/index.js
+@@ -6555,28 +6555,28 @@
+             }
+         }
+         /**
+-         * A message handler invoked on a `'before-attach'` message.
++         * A message handler invoked on a `'after-attach'` message.
+          */
+-        onBeforeAttach(msg) {
++        onAfterAttach(msg) {
+             this.node.addEventListener('keydown', this);
+             this.node.addEventListener('pointerup', this);
+             this.node.addEventListener('pointermove', this);
+             this.node.addEventListener('pointerenter', this);
+             this.node.addEventListener('pointerleave', this);
+             this.node.addEventListener('contextmenu', this);
+-            document.addEventListener('pointerdown', this, true);
++            this.node.ownerDocument.addEventListener('pointerdown', this, true);
+         }
+         /**
+-         * A message handler invoked on an `'after-detach'` message.
++         * A message handler invoked on an `'before-detach'` message.
+          */
+-        onAfterDetach(msg) {
++        onBeforeDetach(msg) {
+             this.node.removeEventListener('keydown', this);
+             this.node.removeEventListener('pointerup', this);
+             this.node.removeEventListener('pointermove', this);
+             this.node.removeEventListener('pointerenter', this);
+             this.node.removeEventListener('pointerleave', this);
+             this.node.removeEventListener('contextmenu', this);
+-            document.removeEventListener('pointerdown', this, true);
++            this.node.ownerDocument.removeEventListener('pointerdown', this, true);
+         }
+         /**
+          * A message handler invoked on an `'activate-request'` message.
+@@ -7160,15 +7160,8 @@
+          * The horizontal pixel overlap for an open submenu.
+          */
+         Private.SUBMENU_OVERLAP = 3;
+-        let transientWindowDataCache = null;
+-        let transientCacheCounter = 0;
+-        function getWindowData() {
+-            // if transient cache is in use, take one from it
+-            if (transientCacheCounter > 0) {
+-                transientCacheCounter--;
+-                return transientWindowDataCache;
+-            }
+-            return _getWindowData();
++        function getWindowData(element) {
++            return _getWindowData(element);
+         }
+         /**
+          * Store window data in transient cache.
+@@ -7180,8 +7173,6 @@
+          * Note: should be called before any DOM modifications.
+          */
+         function saveWindowData() {
+-            transientWindowDataCache = _getWindowData();
+-            transientCacheCounter++;
+         }
+         Private.saveWindowData = saveWindowData;
+         /**
+@@ -7276,12 +7267,13 @@
+             return result;
+         }
+         Private.computeCollapsed = computeCollapsed;
+-        function _getWindowData() {
++        function _getWindowData(element) {
++            var _a, _b;
+             return {
+-                pageXOffset: window.pageXOffset,
+-                pageYOffset: window.pageYOffset,
+-                clientWidth: document.documentElement.clientWidth,
+-                clientHeight: document.documentElement.clientHeight
++                pageXOffset: ((_a = element.ownerDocument.defaultView) === null || _a === void 0 ? void 0 : _a.window.scrollX) || 0,
++                pageYOffset: ((_b = element.ownerDocument.defaultView) === null || _b === void 0 ? void 0 : _b.window.scrollY) || 0,
++                clientWidth: element.ownerDocument.documentElement.clientWidth,
++                clientHeight: element.ownerDocument.documentElement.clientHeight
+             };
+         }
+         /**
+@@ -7289,7 +7281,7 @@
+          */
+         function openRootMenu(menu, x, y, forceX, forceY, horizontalAlignment, host, ref) {
+             // Get the current position and size of the main viewport.
+-            const windowData = getWindowData();
++            const windowData = getWindowData(host || menu.node);
+             let px = windowData.pageXOffset;
+             let py = windowData.pageYOffset;
+             let cw = windowData.clientWidth;
+@@ -7301,6 +7293,8 @@
+             // Fetch common variables.
+             let node = menu.node;
+             let style = node.style;
++            style.top = '0';
++            style.left = '0';
+             // Clear the menu geometry and prepare it for measuring.
+             style.opacity = '0';
+             style.maxHeight = `${maxHeight}px`;
+@@ -7336,7 +7330,7 @@
+          */
+         function openSubmenu(submenu, itemNode) {
+             // Get the current position and size of the main viewport.
+-            const windowData = getWindowData();
++            const windowData = getWindowData(itemNode);
+             let px = windowData.pageXOffset;
+             let py = windowData.pageYOffset;
+             let cw = windowData.clientWidth;
+@@ -7352,7 +7346,7 @@
+             style.opacity = '0';
+             style.maxHeight = `${maxHeight}px`;
+             // Attach the menu to the document.
+-            Widget.attach(submenu, document.body);
++            Widget.attach(submenu, itemNode.ownerDocument.body);
+             // Measure the size of the menu.
+             let { width, height } = node.getBoundingClientRect();
+             // Compute the box sizing for the menu.
+@@ -7371,6 +7365,8 @@
+             if (y + height > py + ch) {
+                 y = itemRect.bottom + box.borderBottom + box.paddingBottom - height;
+             }
++            style.top = '0';
++            style.left = '0';
+             // Update the position of the menu to the computed position.
+             style.transform = `translate(${Math.max(0, x)}px, ${Math.max(0, y)}px`;
+             // Finally, make the menu visible on the screen.
+diff --git a/node_modules/@lumino/widgets/src/menu.ts b/node_modules/@lumino/widgets/src/menu.ts
+index 7c37c02..c7672b1 100644
+--- a/node_modules/@lumino/widgets/src/menu.ts
++++ b/node_modules/@lumino/widgets/src/menu.ts
+@@ -527,29 +527,29 @@ export class Menu extends Widget {
+   }
+ 
+   /**
+-   * A message handler invoked on a `'before-attach'` message.
++   * A message handler invoked on a `'after-attach'` message.
+    */
+-  protected onBeforeAttach(msg: Message): void {
++  protected onAfterAttach(msg: Message): void {
+     this.node.addEventListener('keydown', this);
+     this.node.addEventListener('pointerup', this);
+     this.node.addEventListener('pointermove', this);
+     this.node.addEventListener('pointerenter', this);
+     this.node.addEventListener('pointerleave', this);
+     this.node.addEventListener('contextmenu', this);
+-    document.addEventListener('pointerdown', this, true);
++    this.node.ownerDocument.addEventListener('pointerdown', this, true);
+   }
+ 
+   /**
+-   * A message handler invoked on an `'after-detach'` message.
++   * A message handler invoked on an `'before-detach'` message.
+    */
+-  protected onAfterDetach(msg: Message): void {
++  protected onBeforeDetach(msg: Message): void {
+     this.node.removeEventListener('keydown', this);
+     this.node.removeEventListener('pointerup', this);
+     this.node.removeEventListener('pointermove', this);
+     this.node.removeEventListener('pointerenter', this);
+     this.node.removeEventListener('pointerleave', this);
+     this.node.removeEventListener('contextmenu', this);
+-    document.removeEventListener('pointerdown', this, true);
++    this.node.ownerDocument.removeEventListener('pointerdown', this, true);
+   }
+ 
+   /**
+@@ -1444,16 +1444,9 @@ namespace Private {
+    */
+   export const SUBMENU_OVERLAP = 3;
+ 
+-  let transientWindowDataCache: IWindowData | null = null;
+-  let transientCacheCounter: number = 0;
++  function getWindowData(element: HTMLElement): IWindowData {
+ 
+-  function getWindowData(): IWindowData {
+-    // if transient cache is in use, take one from it
+-    if (transientCacheCounter > 0) {
+-      transientCacheCounter--;
+-      return transientWindowDataCache!;
+-    }
+-    return _getWindowData();
++    return _getWindowData(element);
+   }
+ 
+   /**
+@@ -1466,8 +1459,6 @@ namespace Private {
+    * Note: should be called before any DOM modifications.
+    */
+   export function saveWindowData(): void {
+-    transientWindowDataCache = _getWindowData();
+-    transientCacheCounter++;
+   }
+ 
+   /**
+@@ -1569,12 +1560,12 @@ namespace Private {
+     return result;
+   }
+ 
+-  function _getWindowData(): IWindowData {
++  function _getWindowData(element: HTMLElement): IWindowData {
+     return {
+-      pageXOffset: window.pageXOffset,
+-      pageYOffset: window.pageYOffset,
+-      clientWidth: document.documentElement.clientWidth,
+-      clientHeight: document.documentElement.clientHeight
++      pageXOffset: element.ownerDocument.defaultView?.window.scrollX || 0,
++      pageYOffset: element.ownerDocument.defaultView?.window.scrollY || 0,
++      clientWidth: element.ownerDocument.documentElement.clientWidth,
++      clientHeight: element.ownerDocument.documentElement.clientHeight
+     };
+   }
+ 
+@@ -1592,7 +1583,7 @@ namespace Private {
+     ref: HTMLElement | null
+   ): void {
+     // Get the current position and size of the main viewport.
+-    const windowData = getWindowData();
++    const windowData = getWindowData(host || menu.node);
+     let px = windowData.pageXOffset;
+     let py = windowData.pageYOffset;
+     let cw = windowData.clientWidth;
+@@ -1607,6 +1598,8 @@ namespace Private {
+     // Fetch common variables.
+     let node = menu.node;
+     let style = node.style;
++    style.top = '0';
++    style.left = '0';
+ 
+     // Clear the menu geometry and prepare it for measuring.
+     style.opacity = '0';
+@@ -1649,7 +1642,7 @@ namespace Private {
+    */
+   export function openSubmenu(submenu: Menu, itemNode: HTMLElement): void {
+     // Get the current position and size of the main viewport.
+-    const windowData = getWindowData();
++    const windowData = getWindowData(itemNode);
+     let px = windowData.pageXOffset;
+     let py = windowData.pageYOffset;
+     let cw = windowData.clientWidth;
+@@ -1670,7 +1663,7 @@ namespace Private {
+     style.maxHeight = `${maxHeight}px`;
+ 
+     // Attach the menu to the document.
+-    Widget.attach(submenu, document.body);
++    Widget.attach(submenu, itemNode.ownerDocument.body);
+ 
+     // Measure the size of the menu.
+     let { width, height } = node.getBoundingClientRect();
+@@ -1697,6 +1690,8 @@ namespace Private {
+       y = itemRect.bottom + box.borderBottom + box.paddingBottom - height;
+     }
+ 
++    style.top = '0';
++    style.left = '0';
+     // Update the position of the menu to the computed position.
+     style.transform = `translate(${Math.max(0, x)}px, ${Math.max(0, y)}px`;
+ 
+diff --git a/node_modules/@lumino/widgets/types/menu.d.ts b/node_modules/@lumino/widgets/types/menu.d.ts
+index d37e4b3..e4e749f 100644
+--- a/node_modules/@lumino/widgets/types/menu.d.ts
++++ b/node_modules/@lumino/widgets/types/menu.d.ts
+@@ -216,13 +216,13 @@ export declare class Menu extends Widget {
+      */
+     handleEvent(event: Event): void;
+     /**
+-     * A message handler invoked on a `'before-attach'` message.
++     * A message handler invoked on a `'after-attach'` message.
+      */
+-    protected onBeforeAttach(msg: Message): void;
++    protected onAfterAttach(msg: Message): void;
+     /**
+-     * A message handler invoked on an `'after-detach'` message.
++     * A message handler invoked on an `'before-detach'` message.
+      */
+-    protected onAfterDetach(msg: Message): void;
++    protected onBeforeDetach(msg: Message): void;
+     /**
+      * A message handler invoked on an `'activate-request'` message.
+      */

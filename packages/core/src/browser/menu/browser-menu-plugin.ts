@@ -15,7 +15,7 @@
 // *****************************************************************************
 
 import { injectable, inject } from 'inversify';
-import { Menu, MenuBar, Menu as MenuWidget, Widget } from '@lumino/widgets';
+import { MenuBar, Menu as MenuWidget, Widget } from '@lumino/widgets';
 import { CommandRegistry as LuminoCommandRegistry } from '@lumino/commands';
 import {
     environment, DisposableCollection,
@@ -28,10 +28,9 @@ import { FrontendApplication } from '../frontend-application';
 import { FrontendApplicationContribution } from '../frontend-application-contribution';
 import { ContextKeyService, ContextMatcher } from '../context-key-service';
 import { ContextMenuContext } from './context-menu-context';
-import { Message, waitForRevealed } from '../widgets';
+import { waitForRevealed } from '../widgets';
 import { ApplicationShell } from '../shell';
 import { CorePreferences } from '../../common/core-preferences';
-import { ElementExt } from '@lumino/domutils';
 import { CommandMenu, CompoundMenuNode, MAIN_MENU_BAR, MenuNode, MenuPath, RenderedMenuNode, Submenu } from '../../common/menu/menu-types';
 import { MenuModelRegistry } from '../../common/menu/menu-model-registry';
 
@@ -243,48 +242,6 @@ export class DynamicMenuWidget extends MenuWidget {
             }
         }
         this.updateSubMenus(this.effectiveMenuPath, this, this.menu, this.options.commands, this.contextMatcher, this.options.context);
-    }
-
-    protected override onAfterAttach(msg: Message): void {
-        super.onAfterAttach(msg);
-        this.node.ownerDocument.addEventListener('pointerdown', this, true);
-    }
-
-    protected override onBeforeDetach(msg: Message): void {
-        this.node.ownerDocument.removeEventListener('pointerdown', this, true);
-        super.onBeforeDetach(msg);
-    }
-
-    override handleEvent(event: Event): void {
-        if (event.type === 'pointerdown') {
-            this.handlePointerDown(event as PointerEvent);
-        }
-        super.handleEvent(event);
-    }
-
-    handlePointerDown(event: PointerEvent): void {
-        // this code is copied from the superclass because we cannot use the hit
-        // test from the "Private" implementation namespace
-        if (this['_parentMenu']) {
-            return;
-        }
-
-        // The mouse button which is pressed is irrelevant. If the press
-        // is not on a menu, the entire hierarchy is closed and the event
-        // is allowed to propagate. This allows other code to act on the
-        // event, such as focusing the clicked element.
-        if (!this.hitTestMenus(this, event.clientX, event.clientY)) {
-            this.close();
-        }
-    }
-
-    private hitTestMenus(menu: Menu, x: number, y: number): boolean {
-        for (let temp: Menu | null = menu; temp; temp = temp.childMenu) {
-            if (ElementExt.hitTest(temp.node, x, y)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public aboutToShow({ previousFocusedElement }: { previousFocusedElement: HTMLElement | undefined }): void {

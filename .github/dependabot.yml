@@ -37,17 +37,13 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@types/express"
         update-types: ["version-update:semver-major"]
-      # Pinned to the versions the fork's code was written against; newer ones
-      # break compilation (types/API changes) or the perfect-scrollbar override.
-      # Upgrade these deliberately (we own the code now), not via bump PRs.
-      - dependency-name: "perfect-scrollbar"
-      - dependency-name: "@vscode/ripgrep"
-      - dependency-name: "@vscode/proxy-agent"
-      - dependency-name: "vscode-languageserver-protocol"
-      - dependency-name: "vscode-uri"
+      # dev-packages/cli/patches/@lumino+widgets+<version>.patch is tied to the
+      # exact version; port the patch when upgrading.
       - dependency-name: "@lumino/widgets"
-      # 3.2.1+ ships its own types, which clash with @types/tar-stream.
-      - dependency-name: "tar-stream"
+      # 3.18 is exports-only and needs moduleResolution node16/bundler (base
+      # tsconfig uses "Node") plus the vscode-jsonrpc 9 migration.
+      - dependency-name: "vscode-languageserver-protocol"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:

@@ -18,49 +18,52 @@ import * as http from 'http';
 import * as https from 'https';
 import * as tls from 'tls';
 
-import { createHttpPatch, createProxyResolver, createTlsPatch, ProxySupportSetting } from '@vscode/proxy-agent';
+import {
+    createHttpPatch, createProxyResolver, createTlsPatch, loadSystemCertificates, LogLevel, ProxyAgentParams, ProxySupportSetting
+} from '@vscode/proxy-agent';
 import { PreferenceRegistryExtImpl } from '../../plugin/preference-registry';
 import { WorkspaceExtImpl } from '../../plugin/workspace';
 
+const noopLog: ProxyAgentParams['log'] = {
+    trace: () => { },
+    debug: () => { },
+    info: () => { },
+    warn: () => { },
+    error: () => { },
+};
+
 export function connectProxyResolver(workspaceExt: WorkspaceExtImpl, configProvider: PreferenceRegistryExtImpl): void {
-    const resolveProxy = createProxyResolver({
+    const httpConfig = () => configProvider.getConfiguration('http');
+    const params: ProxyAgentParams = {
         resolveProxy: async url => workspaceExt.resolveProxy(url),
-        getHttpProxySetting: () => configProvider.getConfiguration('http').get('proxy'),
-        log: () => { },
-        getLogLevel: () => 0,
+        getProxyURL: () => httpConfig().get<string>('proxy') || undefined,
+        getProxySupport: () => httpConfig().get<ProxySupportSetting>('proxySupport') || 'override',
+        getNoProxyConfig: () => httpConfig().get<string[]>('noProxy') || [],
+        // Only http, https and tls are patched (see createPatchedModules), as before the 0.45 upgrade.
+        isAdditionalFetchSupportEnabled: () => false,
+        isWebSocketPatchEnabled: () => false,
+        addCertificatesV1: () => !!httpConfig().get<boolean>('systemCertificates'),
+        addCertificatesV2: () => false,
+        loadSystemCertificatesFromNode: () => false,
+        loadAdditionalCertificates: () => loadSystemCertificates({ loadSystemCertificatesFromNode: () => false, log: noopLog }),
+        log: noopLog,
+        getLogLevel: () => LogLevel.Off,
         proxyResolveTelemetry: () => { },
-        useHostProxy: true,
+        isUseHostProxyEnabled: () => true,
         env: process.env,
+    };
+    const { resolveProxyWithRequest } = createProxyResolver(params);
+    configureModuleLoading({
+        http: Object.assign(http, createHttpPatch(params, http, resolveProxyWithRequest)),
+        https: Object.assign(https, createHttpPatch(params, https, resolveProxyWithRequest)),
+        tls: Object.assign(tls, createTlsPatch(params, tls))
     });
-    const lookup = createPatchedModules(configProvider, resolveProxy);
-    configureModuleLoading(lookup);
 }
 
 interface PatchedModules {
     http: typeof http;
     https: typeof https;
     tls: typeof tls;
-}
-
-function createPatchedModules(configProvider: PreferenceRegistryExtImpl, resolveProxy: ReturnType<typeof createProxyResolver>): PatchedModules {
-    const defaultConfig = 'override' as ProxySupportSetting;
-    const proxySetting = {
-        config: defaultConfig
-    };
-    const certSetting = {
-        config: false
-    };
-    configProvider.onDidChangeConfiguration(() => {
-        const httpConfig = configProvider.getConfiguration('http');
-        proxySetting.config = httpConfig?.get<ProxySupportSetting>('proxySupport') || defaultConfig;
-        certSetting.config = !!httpConfig?.get<boolean>('systemCertificates');
-    });
-
-    return {
-        http: Object.assign(http, createHttpPatch(http, resolveProxy, proxySetting, certSetting, true)),
-        https: Object.assign(https, createHttpPatch(https, resolveProxy, proxySetting, certSetting, true)),
-        tls: Object.assign(tls, createTlsPatch(tls))
-    };
 }
 
 function configureModuleLoading(lookup: PatchedModules): void {

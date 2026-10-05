@@ -306,7 +306,7 @@ export class FileDownloadServiceImpl implements FileDownloadService {
                     }
 
                     cleanup();
-                    entry.end();
+                    entry.end(undefined); // streamx types require an argument; it is optional at runtime
                     resolve();
                 };
 
@@ -364,7 +364,7 @@ export class FileDownloadServiceImpl implements FileDownloadService {
                     type: 'directory',
                 });
 
-                entry.end();
+                entry.end(undefined);
             } catch (error) {
                 this.logger.error(
                     `Failed to add directory ${dirPath}:`,

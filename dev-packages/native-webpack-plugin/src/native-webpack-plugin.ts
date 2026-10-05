@@ -100,7 +100,12 @@ export class NativeWebpackPlugin {
 
     protected async copyRipgrep(issuer: string, compiler: Compiler): Promise<void> {
         const suffix = process.platform === 'win32' ? '.exe' : '';
-        const sourceFile = require.resolve(`@vscode/ripgrep/bin/rg${suffix}`, { paths: [issuer] });
+        // Since 1.18 @vscode/ripgrep ships `rg` in per-platform optional packages. The package itself is
+        // ESM-only and can't be required here (webpack-cli's v8-compile-cache breaks require(esm)), so
+        // resolve the binary from it the same way its lib/index.js does.
+        const ripgrepDir = path.dirname(require.resolve('@vscode/ripgrep', { paths: [issuer] }));
+        const arch = process.env.npm_config_arch || process.arch;
+        const sourceFile = require.resolve(`@vscode/ripgrep-${process.platform}-${arch}/bin/rg${suffix}`, { paths: [ripgrepDir] });
         const targetFile = path.join(compiler.outputPath, this.options.out, `rg${suffix}`);
         await this.copyExecutable(sourceFile, targetFile);
     }
