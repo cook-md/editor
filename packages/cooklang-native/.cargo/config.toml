@@ -1,0 +1,9 @@
+# Link the MSVC C runtime statically so the addon does not import VCRUNTIME140.dll.
+# Electron does not ship the Visual C++ Redistributable, so on Windows machines
+# without it the .node fails to load ("The specified module could not be found.")
+# and every native feature (preview, shopping list, LSP) silently breaks.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
