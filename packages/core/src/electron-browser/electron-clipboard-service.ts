@@ -21,12 +21,12 @@ import { ClipboardService } from '../browser/clipboard-service';
 @injectable()
 export class ElectronClipboardService implements ClipboardService {
 
-    readText(): string {
+    readText(): Promise<string> {
         return window.electronTheiaCore.readClipboard();
     }
 
-    writeText(value: string): void {
-        window.electronTheiaCore.writeClipboard(value);
+    writeText(value: string): Promise<void> {
+        return window.electronTheiaCore.writeClipboard(value);
     }
 
 }

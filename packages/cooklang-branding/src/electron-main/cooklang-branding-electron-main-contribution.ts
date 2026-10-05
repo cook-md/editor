@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { app } from '@theia/core/electron-shared/electron';
+import { app, nativeImage } from '@theia/core/electron-shared/electron';
 import { ElectronMainApplication, ElectronMainApplicationContribution } from '@theia/core/lib/electron-main/electron-main-application';
 import { ElectronMainApplicationGlobals } from '@theia/core/lib/electron-main/electron-main-constants';
 import { isOSX } from '@theia/core/lib/common';
@@ -37,7 +37,9 @@ export class CooklangBrandingElectronMainContribution implements ElectronMainApp
             const icnsPath = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, path.dirname(iconPath), 'icon.icns');
             const resolvedIcon = path.resolve(this.globals.THEIA_APP_PROJECT_PATH, iconPath);
             try {
-                app.dock.setIcon(fs.existsSync(icnsPath) ? icnsPath : resolvedIcon);
+                // Electron 44's nativeImage can no longer decode .icns; fall back to the PNG.
+                const icns = fs.existsSync(icnsPath) ? nativeImage.createFromPath(icnsPath) : undefined;
+                app.dock.setIcon(icns && !icns.isEmpty() ? icns : resolvedIcon);
             } catch (err) {
                 console.warn('Failed to set dock icon:', err);
             }

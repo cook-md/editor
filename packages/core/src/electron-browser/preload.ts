@@ -229,12 +229,12 @@ const api: TheiaCoreAPI = {
         ipcRenderer.send(CHANNEL_APP_STATE_CHANGED, state);
     },
 
-    readClipboard(): string {
-        return ipcRenderer.sendSync(CHANNEL_READ_CLIPBOARD);
+    readClipboard(): Promise<string> {
+        return ipcRenderer.invoke(CHANNEL_READ_CLIPBOARD);
     },
 
-    writeClipboard(text): void {
-        ipcRenderer.send(CHANNEL_WRITE_CLIPBOARD, text);
+    writeClipboard(text): Promise<void> {
+        return ipcRenderer.invoke(CHANNEL_WRITE_CLIPBOARD, text);
     },
 
     onKeyboardLayoutChanged(handler): Disposable {
