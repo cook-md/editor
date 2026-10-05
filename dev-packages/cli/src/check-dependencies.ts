@@ -16,14 +16,26 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { glob } from 'glob';
-import { create as logUpdater } from 'log-update';
 import * as chalk from 'chalk';
 
 const NODE_MODULES = 'node_modules';
 const PACKAGE_JSON = 'package.json';
 
-const logUpdate = logUpdater(process.stdout);
+let hasStatusLine = false;
+
+/**
+ * Prints a status message that replaces the in-progress line printed before it.
+ */
+function logUpdate(message: string): void {
+    if (hasStatusLine && process.stdout.isTTY) {
+        readline.moveCursor(process.stdout, 0, -1);
+        readline.clearLine(process.stdout, 0);
+    }
+    console.log(message);
+    hasStatusLine = true;
+}
 
 interface CheckDependenciesOptions {
     workspaces: string[] | undefined,
