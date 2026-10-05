@@ -5,7 +5,7 @@
   "dependencies": {
     "@theia/core": "1.70.0",
     "@types/body-parser": "^1.17.0",
-    "@types/multer": "^2.2.0",
+    "@types/multer": "^2.3.0",
     "@types/tar-fs": "^1.16.1",
     "async-mutex": "^0.5.0",
     "body-parser": "^1.18.3",
