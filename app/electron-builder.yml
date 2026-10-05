@@ -176,6 +176,9 @@ nsis:
 linux:
   icon: resources/icon-256.png
   category: Utility
+  # electron-builder 26.15 rejects the executable name it derives from the
+  # scoped npm name ("@cook-mdeditor-app") and fails the AppImage build.
+  executableName: cook-editor
   # Names the tar.gz, the one Linux target without an artifactName of its own
   # (AppImage and deb set the same pattern below). Left to the default it became
   # "${name}-${version}.tar.gz", and the npm name is scoped: the file was
