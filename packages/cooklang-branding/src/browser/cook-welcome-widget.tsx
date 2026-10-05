@@ -28,7 +28,7 @@ import { AIChatContribution } from '@theia/ai-chat-ui/lib/browser/ai-chat-ui-con
 import { UsageEventsFrontend } from '@theia/cooklang-account/lib/browser/usage-events-frontend';
 import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
 import {
-    childPath, computeChecklist, ChecklistStep, ChecklistStepId, findFirstRecipe, isRecipePath, reconcileReportedSteps, showTrialLine
+    childPath, computeChecklist, ChecklistStep, ChecklistStepId, findFirstRecipe, isRecipePath, reconcileReportedSteps, showCookbotBanner
 } from './welcome-checklist';
 import { FirstRunState, RENDER_REPORT_COMMAND_ID } from './first-run-state';
 import { CooklangChatViewWidget } from './cooklang-chat-view-widget';
@@ -42,8 +42,9 @@ const RESCAN_DEBOUNCE_MS = 500;
 type ChecklistResult = ReturnType<typeof computeChecklist>;
 
 /**
- * The Cooklang welcome page: a four-step checklist leading to CookBot, above the Recent section.
- * Steps are ticked from real app state (see computeChecklist); this class is only glue.
+ * The Cooklang welcome page: a three-step checklist above the Recent section, and a dismissible
+ * CookBot trial banner at the bottom. Steps are ticked from real app state (see computeChecklist);
+ * this class is only glue.
  */
 @injectable()
 export class CookWelcomeWidget extends GettingStartedWidget {
@@ -168,7 +169,6 @@ export class CookWelcomeWidget extends GettingStartedWidget {
         return computeChecklist({
             folderOpen: this.workspaceService.opened,
             hasRecipes: this.firstRecipe !== undefined || this.openRecipe() !== undefined,
-            cookbotUsed: this.firstRunState.flags.cookbotUsed,
             reportRendered: this.firstRunState.flags.reportRendered,
         });
     }
@@ -223,6 +223,7 @@ export class CookWelcomeWidget extends GettingStartedWidget {
                 {!allDone && <div className='flex-grid'><div className='col'>{this.renderChecklist(steps)}</div></div>}
                 <div className='flex-grid'><div className='col'>{this.renderRecentWorkspaces()}</div></div>
                 <div className='flex-grid'><div className='col'>{this.renderVersion()}</div></div>
+                {this.renderCookbotBanner()}
             </div>
             <div className='gs-preference-container'>{this.renderPreferences()}</div>
         </div>;
@@ -230,9 +231,6 @@ export class CookWelcomeWidget extends GettingStartedWidget {
 
     protected renderChecklist(steps: ChecklistStep[]): React.ReactNode {
         const step = (id: ChecklistStepId): ChecklistStep => steps.find(s => s.id === id)!;
-        const trialLine = showTrialLine(this.subscriptions.subscription)
-            ? nls.localize('theia/cooklang-branding/welcome/trialLine', 'Cook Pro, 7 days free')
-            : undefined;
         return <div className='gs-section cook-checklist'>
             <h3 className='gs-section-header'><i className={codicon('checklist')}></i>
                 {nls.localize('theia/cooklang-branding/welcome/getStarted', 'Get started')}</h3>
@@ -242,9 +240,6 @@ export class CookWelcomeWidget extends GettingStartedWidget {
                 [[nls.localize('theia/cooklang-branding/welcome/import', 'Import from a URL or photo'), 'import', this.doImport],
                 [nls.localize('theia/cooklang-branding/welcome/kickstart', 'Get a starter collection'), 'kickstart', this.doKickstart]],
                 nls.localize('theia/cooklang-branding/welcome/kickstartHint', 'Kickstart downloads a ZIP: unzip it, then open the folder here.'))}
-            {this.renderStep(step('cookbot'), nls.localize('theia/cooklang-branding/welcome/cookbot', 'Plan my week with CookBot'),
-                [[nls.localize('theia/cooklang-branding/welcome/askCookbot', 'Ask CookBot'), 'cookbot', this.doCookbot]],
-                step('cookbot').enabled ? trialLine : nls.localize('theia/cooklang-branding/welcome/addFirst', 'Add a few recipes first'))}
             {this.renderStep(step('report'), nls.localize('theia/cooklang-branding/welcome/report', 'Analyse with a report template'),
                 [[nls.localize('theia/cooklang-branding/welcome/shoppingList', 'Make a shopping list'), 'report', this.doReport]])}
         </div>;
@@ -264,6 +259,35 @@ export class CookWelcomeWidget extends GettingStartedWidget {
             </div>
         </div>;
     }
+
+    protected renderCookbotBanner(): React.ReactNode {
+        if (!showCookbotBanner(this.subscriptions.subscription, this.firstRunState.flags.cookbotBannerDismissed)) {
+            return undefined;
+        }
+        return <div className='cook-cookbot-banner'>
+            <i className={codicon('sparkle')}></i>
+            <div className='cook-cookbot-banner-body'>
+                {nls.localize('theia/cooklang-branding/welcome/cookbotBanner',
+                    'Try CookBot to organise your recipes and plan your meals, free for 7 days.')}
+                {' '}
+                <a role='button' tabIndex={0} onClick={this.doCookbotBanner} onKeyDown={e => this.isEnterKey(e) && this.doCookbotBanner()}>
+                    {nls.localize('theia/cooklang-branding/welcome/tryCookbot', 'Try CookBot')}</a>
+            </div>
+            <i className={`${codicon('close')} cook-cookbot-banner-dismiss`} role='button' tabIndex={0}
+                title={nls.localizeByDefault('Dismiss')} aria-label={nls.localizeByDefault('Dismiss')}
+                onClick={this.doDismissCookbotBanner} onKeyDown={e => this.isEnterKey(e) && this.doDismissCookbotBanner()}></i>
+        </div>;
+    }
+
+    protected doCookbotBanner = (): void => {
+        this.usageEvents.track('editor_cookbot_banner_clicked', {});
+        this.doCookbot().catch(err => console.warn('Welcome page: opening CookBot failed', err));
+    };
+
+    protected doDismissCookbotBanner = (): void => {
+        this.usageEvents.track('editor_cookbot_banner_dismissed', {});
+        this.firstRunState.dismissCookbotBanner();
+    };
 
     protected runAction(step: string, run: () => void | Promise<void>): void {
         this.usageEvents.track('editor_checklist_clicked', { step });

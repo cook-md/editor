@@ -13,28 +13,27 @@
 
 import { expect } from 'chai';
 import {
-    computeChecklist, findFirstRecipe, isRecipePath, newlyCompleted, reconcileReportedSteps, showTrialLine, DirReader
+    computeChecklist, findFirstRecipe, isRecipePath, newlyCompleted, reconcileReportedSteps, showCookbotBanner, DirReader
 } from './welcome-checklist';
 
-const none = { folderOpen: false, hasRecipes: false, cookbotUsed: false, reportRendered: false };
+const none = { folderOpen: false, hasRecipes: false, reportRendered: false };
 
 describe('computeChecklist', () => {
     it('only lets a new user pick a folder', () => {
         const { steps, allDone } = computeChecklist(none);
         expect(steps.map(s => [s.id, s.done, s.enabled])).to.deep.equal([
-            ['folder', false, true], ['recipes', false, false], ['cookbot', false, false], ['report', false, false],
+            ['folder', false, true], ['recipes', false, false], ['report', false, false],
         ]);
         expect(allDone).to.equal(false);
     });
 
-    it('unlocks CookBot and reports once there are recipes', () => {
+    it('unlocks reports once there are recipes', () => {
         const { steps } = computeChecklist({ ...none, folderOpen: true, hasRecipes: true });
-        expect(steps.find(s => s.id === 'cookbot')!.enabled).to.equal(true);
         expect(steps.find(s => s.id === 'report')!.enabled).to.equal(true);
     });
 
-    it('is done when all four facts hold', () => {
-        expect(computeChecklist({ folderOpen: true, hasRecipes: true, cookbotUsed: true, reportRendered: true }).allDone).to.equal(true);
+    it('is done when all three facts hold', () => {
+        expect(computeChecklist({ folderOpen: true, hasRecipes: true, reportRendered: true }).allDone).to.equal(true);
     });
 });
 
@@ -179,21 +178,25 @@ describe('reconcileReportedSteps', () => {
         expect(retick.report).to.deep.equal([]);
     });
 
-    it('ignores unknown ids in storage', () => {
-        const r = reconcileReportedSteps(['bogus', 'folder'], new Set(['folder', 'cookbot']));
-        expect(r.report).to.deep.equal(['cookbot']);
-        expect([...r.store].sort()).to.deep.equal(['cookbot', 'folder']);
+    it('ignores unknown ids in storage, including the retired cookbot step', () => {
+        const r = reconcileReportedSteps(['bogus', 'cookbot', 'folder'], new Set(['folder', 'report']));
+        expect(r.report).to.deep.equal(['report']);
+        expect([...r.store].sort()).to.deep.equal(['folder', 'report']);
     });
 });
 
-describe('showTrialLine', () => {
+describe('showCookbotBanner', () => {
     it('shows for signed-out users and eligible accounts without AI', () => {
-        expect(showTrialLine(undefined)).to.equal(true);
-        expect(showTrialLine({ features: [], trialEligible: true })).to.equal(true);
+        expect(showCookbotBanner(undefined, false)).to.equal(true);
+        expect(showCookbotBanner({ features: [], trialEligible: true }, false)).to.equal(true);
     });
 
     it('hides once the account has AI or has used its trial', () => {
-        expect(showTrialLine({ features: ['ai'], trialEligible: true })).to.equal(false);
-        expect(showTrialLine({ features: [], trialEligible: false })).to.equal(false);
+        expect(showCookbotBanner({ features: ['ai'], trialEligible: true }, false)).to.equal(false);
+        expect(showCookbotBanner({ features: [], trialEligible: false }, false)).to.equal(false);
+    });
+
+    it('hides once dismissed', () => {
+        expect(showCookbotBanner(undefined, true)).to.equal(false);
     });
 });

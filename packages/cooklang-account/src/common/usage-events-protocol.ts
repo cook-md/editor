@@ -18,6 +18,8 @@ export const USAGE_EVENT_NAMES = [
     'editor_welcome_shown',
     'editor_checklist_clicked',
     'editor_checklist_completed',
+    'editor_cookbot_banner_clicked',
+    'editor_cookbot_banner_dismissed',
     'cookbot_gate_shown',
     'cookbot_gate_clicked',
     'editor_cookbot_first_message',
