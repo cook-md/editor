@@ -20,3 +20,15 @@
 .cook-checklist .cook-step-actions { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px; }
 .cook-checklist .cook-step-actions a { cursor: pointer; }
 .cook-checklist .cook-step-hint { margin-top: 4px; color: var(--theia-descriptionForeground); font-size: var(--theia-ui-font-size0); }
+
+.cook-cookbot-banner {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin-top: 24px; padding: 12px 14px; border-radius: 6px;
+    background: var(--theia-textBlockQuote-background, var(--theia-editorWidget-background));
+    border: 1px solid var(--theia-focusBorder);
+}
+.cook-cookbot-banner > .codicon { font-size: 18px; margin-top: 2px; color: var(--theia-focusBorder); }
+.cook-cookbot-banner-body { flex: 1; font-size: var(--theia-ui-font-size1); line-height: 1.5; }
+.cook-cookbot-banner-body a { cursor: pointer; white-space: nowrap; }
+.cook-cookbot-banner .cook-cookbot-banner-dismiss { cursor: pointer; color: var(--theia-descriptionForeground); font-size: 16px; }
+.cook-cookbot-banner .cook-cookbot-banner-dismiss:hover { color: var(--theia-foreground); }

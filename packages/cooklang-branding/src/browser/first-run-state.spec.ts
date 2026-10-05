@@ -33,6 +33,13 @@ describe('FirstRunFlags', () => {
         const flags = new FirstRunFlags(memoryStorage());
         expect(flags.cookbotUsed).to.equal(false);
         expect(flags.reportRendered).to.equal(false);
+        expect(flags.cookbotBannerDismissed).to.equal(false);
+    });
+
+    it('persists the CookBot banner dismissal', () => {
+        const storage = memoryStorage();
+        expect(new FirstRunFlags(storage).dismissCookbotBanner()).to.equal(true);
+        expect(new FirstRunFlags(storage).cookbotBannerDismissed).to.equal(true);
     });
 
     it('reports whether a mark was the first one', () => {
@@ -126,6 +133,14 @@ describe('FirstRunState', () => {
         expect(state.markCookbotUsed()).to.equal(true);
         expect(state.markCookbotUsed()).to.equal(false);
         expect(fired()).to.equal(1);
+    });
+
+    it('fires onDidChange when the CookBot banner is first dismissed', () => {
+        const { state, fired } = setup();
+        state.dismissCookbotBanner();
+        state.dismissCookbotBanner();
+        expect(fired()).to.equal(1);
+        expect(state.flags.cookbotBannerDismissed).to.equal(true);
     });
 
     it('survives storage that throws and keeps flags in memory', () => {

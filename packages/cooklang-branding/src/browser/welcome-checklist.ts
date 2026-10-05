@@ -11,12 +11,11 @@
 // See LICENSE-AGPL for the full license text.
 // *****************************************************************************
 
-export type ChecklistStepId = 'folder' | 'recipes' | 'cookbot' | 'report';
+export type ChecklistStepId = 'folder' | 'recipes' | 'report';
 
 export interface ChecklistFacts {
     folderOpen: boolean;
     hasRecipes: boolean;
-    cookbotUsed: boolean;
     reportRendered: boolean;
 }
 
@@ -30,13 +29,13 @@ export function computeChecklist(f: ChecklistFacts): { steps: ChecklistStep[]; a
     const steps: ChecklistStep[] = [
         { id: 'folder', done: f.folderOpen, enabled: true },
         { id: 'recipes', done: f.hasRecipes, enabled: f.folderOpen },
-        { id: 'cookbot', done: f.cookbotUsed, enabled: f.hasRecipes },
         { id: 'report', done: f.reportRendered, enabled: f.hasRecipes },
     ];
     return { steps, allDone: steps.every(s => s.done) };
 }
 
-const STEP_ORDER: ChecklistStepId[] = ['folder', 'recipes', 'cookbot', 'report'];
+/** Installs from before CookBot moved to the banner may still have 'cookbot' stored; it is ignored. */
+const STEP_ORDER: ChecklistStepId[] = ['folder', 'recipes', 'report'];
 
 /**
  * Steps that went from not done to done, in checklist order. `previous` is undefined until the
@@ -68,9 +67,12 @@ export function reconcileReportedSteps(
     return { report, store: new Set([...previous, ...report]) };
 }
 
-/** "Cook Pro, 7 days free" is shown unless the account already has AI or has used its one trial. */
-export function showTrialLine(subscription: { features: string[]; trialEligible?: boolean } | undefined): boolean {
-    return !subscription?.features.includes('ai') && subscription?.trialEligible !== false;
+/**
+ * The "try CookBot free for 7 days" banner is shown until dismissed, unless the account already
+ * has AI or has used its one trial. Signed-out users (no subscription) see it.
+ */
+export function showCookbotBanner(subscription: { features: string[]; trialEligible?: boolean } | undefined, dismissed: boolean): boolean {
+    return !dismissed && !subscription?.features.includes('ai') && subscription?.trialEligible !== false;
 }
 
 /** True for a `.cook` file path (extension matched case-insensitively). */

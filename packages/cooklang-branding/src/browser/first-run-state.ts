@@ -32,6 +32,7 @@ const KEYS = {
     reportRendered: 'cook.firstRun.reportRendered',
     welcomeSeen: 'cook.firstRun.welcomeSeen',
     reportedSteps: 'cook.firstRun.reportedSteps',
+    cookbotBannerDismissed: 'cook.firstRun.cookbotBannerDismissed',
 } as const;
 
 type FlagStorage = Pick<Storage, 'getItem' | 'setItem'>;
@@ -47,10 +48,12 @@ export class FirstRunFlags {
 
     get cookbotUsed(): boolean { return this.get(KEYS.cookbotUsed) === '1'; }
     get reportRendered(): boolean { return this.get(KEYS.reportRendered) === '1'; }
+    get cookbotBannerDismissed(): boolean { return this.get(KEYS.cookbotBannerDismissed) === '1'; }
 
     /** @returns true if this was the first CookBot message ever. */
     markCookbotUsed(): boolean { return this.mark(KEYS.cookbotUsed); }
     markReportRendered(): boolean { return this.mark(KEYS.reportRendered); }
+    dismissCookbotBanner(): boolean { return this.mark(KEYS.cookbotBannerDismissed); }
     /** @returns true the first time the welcome page is ever shown. */
     takeFirstWelcome(): boolean { return this.mark(KEYS.welcomeSeen); }
 
@@ -163,5 +166,11 @@ export class FirstRunState implements FrontendApplicationContribution, Disposabl
             this.onDidChangeEmitter.fire();
         }
         return first;
+    }
+
+    dismissCookbotBanner(): void {
+        if (this.flags.dismissCookbotBanner()) {
+            this.onDidChangeEmitter.fire();
+        }
     }
 }
