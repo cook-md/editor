@@ -21,9 +21,3 @@
   border-color: var(--theia-editorHoverWidget-border) !important;
   white-space: pre-wrap !important;
 }
-
-/* Hide tooltip arrow */
-.theia-tooltip::before,
-.theia-tooltip::after {
-  border: none !important;
-}
