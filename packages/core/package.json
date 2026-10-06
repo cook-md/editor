@@ -70,7 +70,7 @@
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
     "tslib": "^2.6.2",
-    "uuid": "^9.0.1",
+    "uuid": "^14.0.2",
     "vscode-languageserver-protocol": "3.17.5",
     "vscode-uri": "3.2.0",
     "ws": "^8.22.0",
