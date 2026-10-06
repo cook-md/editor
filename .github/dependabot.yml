@@ -44,6 +44,10 @@ updates:
       # tsconfig uses "Node") plus the vscode-jsonrpc 9 migration.
       - dependency-name: "vscode-languageserver-protocol"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # 0.4 is ESM-only with an import-only exports map; @theia/process
+      # require()s it synchronously (ERR_PACKAGE_PATH_NOT_EXPORTED).
+      - dependency-name: "string-argv"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
