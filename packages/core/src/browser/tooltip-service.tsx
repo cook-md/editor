@@ -16,7 +16,7 @@
 
 import { injectable, inject, optional, postConstruct } from 'inversify';
 import * as React from 'react';
-import ReactTooltip from 'react-tooltip';
+import { Tooltip } from 'react-tooltip';
 import { ReactRenderer, RendererHost } from './widgets/react-renderer';
 import { generateUuid } from '../common/uuid';
 import { CorePreferences } from '../common/core-preferences';
@@ -31,17 +31,17 @@ export interface TooltipService {
 
 /**
  * Attributes to be added to an HTML element to enable
- * rich HTML tooltip rendering
+ * tooltip rendering
  */
 export interface TooltipAttributes {
     /**
-     * HTML to render in the tooltip.
+     * Text to render in the tooltip.
      */
-    'data-tip': string;
+    'data-tooltip-content': string;
     /**
-     * The ID of the tooltip renderer. Should be TOOLTIP_ID.
+     * The ID of the tooltip renderer. Should be `TooltipService.tooltipId`.
      */
-    'data-for': string;
+    'data-tooltip-id': string;
 }
 
 const DELAY_PREFERENCE = 'workbench.hover.delay';
@@ -80,13 +80,11 @@ export class TooltipServiceImpl extends ReactRenderer implements TooltipService 
             this.render();
             this.rendered = true;
         }
-
-        ReactTooltip.rebuild();
     }
 
     protected override doRender(): React.ReactNode {
         const hoverDelay = this.corePreferences.get(DELAY_PREFERENCE);
-        return <ReactTooltip id={this.tooltipId} className='theia-tooltip' html={true} delayShow={hoverDelay} />;
+        return <Tooltip id={this.tooltipId} className='theia-tooltip' noArrow delayShow={hoverDelay} />;
     }
 
     public override dispose(): void {
