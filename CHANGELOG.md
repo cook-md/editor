@@ -13,6 +13,20 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.51](https://github.com/cook-md/editor/compare/v0.1.0-alpha.50...v0.1.0-alpha.51) (2026-10-06)
+
+
+### Features
+
+* **welcome:** replace CookBot checklist step with a dismissible trial banner ([#180](https://github.com/cook-md/editor/issues/180)) ([31f4539](https://github.com/cook-md/editor/commit/31f45393b7b977420dacb99e190dc1bcd3afc699))
+
+
+### Bug Fixes
+
+* **build:** set Linux executableName so electron-builder 26.15 can build the AppImage ([#185](https://github.com/cook-md/editor/issues/185)) ([466738f](https://github.com/cook-md/editor/commit/466738fa7167b5eed2a5073403dbdf7d4d96f9fc))
+* **native:** link the MSVC CRT statically on Windows ([#186](https://github.com/cook-md/editor/issues/186)) ([65d7fd9](https://github.com/cook-md/editor/commit/65d7fd95e8bf276334fc99f9397835440f521559))
+* **plugin-ext:** asRelativePath returned '.' for every file on Windows ([#192](https://github.com/cook-md/editor/issues/192)) ([02e853c](https://github.com/cook-md/editor/commit/02e853c46e152da5c102f3d747af3813dcd8289c))
+
 ## [0.1.0-alpha.50](https://github.com/cook-md/editor/compare/v0.1.0-alpha.49...v0.1.0-alpha.50) (2026-09-30)
 
 
