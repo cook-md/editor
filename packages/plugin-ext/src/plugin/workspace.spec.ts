@@ -17,6 +17,9 @@
 import * as chai from 'chai';
 import { Emitter, Event } from '@theia/core/lib/common/event';
 import { DisposableCollection } from '@theia/core/lib/common/disposable';
+import * as theia from '@theia/plugin';
+import { URI } from './types-impl';
+import { WorkspaceExtImpl } from './workspace';
 
 const expect = chai.expect;
 
@@ -150,5 +153,39 @@ describe('WorkspaceExtImpl trust change logic', () => {
 
         handler.$onWorkspaceTrustChanged(undefined);
         expect(handler.trusted).to.equal(false); // undefined coerced to false
+    });
+});
+
+describe('WorkspaceExtImpl#getRelativePath', () => {
+    /** A file URI whose `fsPath` uses Windows separators, as it does on Windows. */
+    function windowsUri(path: string): theia.Uri {
+        const uri = URI.file(path);
+        return Object.create(uri, { fsPath: { value: path.replace(/\//g, '\\') } });
+    }
+
+    function workspace(...folders: theia.Uri[]): WorkspaceExtImpl {
+        const ext = new WorkspaceExtImpl();
+        (ext as unknown as { folders: theia.WorkspaceFolder[] }).folders = folders.map((uri, index) => ({ uri, index, name: `folder${index}` }));
+        return ext;
+    }
+
+    it('returns the workspace-relative path of a file in a Windows workspace', () => {
+        const ext = workspace(windowsUri('c:/Users/a/Recipes'));
+        expect(ext.getRelativePath(windowsUri('c:/Users/a/Recipes/Breakfast/Gravy.cook'), false)).to.equal('Breakfast/Gravy.cook');
+    });
+
+    it('returns the workspace-relative path of a file in a POSIX workspace', () => {
+        const ext = workspace(URI.file('/home/a/Recipes'));
+        expect(ext.getRelativePath(URI.file('/home/a/Recipes/Gravy.cook'), false)).to.equal('Gravy.cook');
+    });
+
+    it('prefixes the folder name in a multi-root workspace', () => {
+        const ext = workspace(URI.file('/home/a/Recipes'), URI.file('/home/a/Other'));
+        expect(ext.getRelativePath(URI.file('/home/a/Other/Soup.cook'))).to.equal('folder1/Soup.cook');
+    });
+
+    it('returns a path outside the workspace unchanged', () => {
+        const ext = workspace(URI.file('/home/a/Recipes'));
+        expect(ext.getRelativePath('/tmp/Soup.cook')).to.equal('/tmp/Soup.cook');
     });
 });

@@ -37,7 +37,6 @@ import { WorkspaceRootsChangeEvent, SearchInWorkspaceResult, Range } from '../co
 import { EditorsAndDocumentsExtImpl } from './editors-and-documents';
 import { Disposable, URI } from './types-impl';
 import { normalize } from '@theia/core/lib/common/paths';
-import { relative } from '../common/paths-util';
 import { Schemes, UriComponents } from '../common/uri-components';
 import { toWorkspaceFolder } from './type-converters';
 import { MessageRegistryExt } from './message-registry';
@@ -378,10 +377,8 @@ export class WorkspaceExtImpl implements WorkspaceExt {
             return path;
         }
 
-        const folder = this.getWorkspaceFolder(
-            typeof pathOrUri === 'string' ? URI.file(pathOrUri) : pathOrUri,
-            true
-        ) as theia.WorkspaceFolder;
+        const uri = typeof pathOrUri === 'string' ? URI.file(pathOrUri) : pathOrUri;
+        const folder = this.getWorkspaceFolder(uri, true) as theia.WorkspaceFolder;
 
         if (!folder) {
             return path;
@@ -391,7 +388,9 @@ export class WorkspaceExtImpl implements WorkspaceExt {
             includeWorkspace = this.folders!.length > 1;
         }
 
-        let result = relative(folder.uri.fsPath, path);
+        // Relate the URI paths, which always use '/'. On Windows `fsPath` uses '\', which the
+        // '/'-only `relative` from paths-util can't split, so every file came out as '.'.
+        let result = paths.posix.relative(folder.uri.path, uri.path);
         if (includeWorkspace) {
             result = `${folder.name}/${result}`;
         }
