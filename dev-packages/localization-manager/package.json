@@ -30,11 +30,11 @@
   },
   "dependencies": {
     "@types/bent": "^7.0.1",
-    "@types/fs-extra": "^4.0.2",
+    "@types/fs-extra": "^11.0.4",
     "bent": "^7.1.0",
     "chalk": "4.0.0",
     "deepmerge": "^4.2.2",
-    "fs-extra": "^4.0.2",
+    "fs-extra": "^11.4.1",
     "glob": "^7.2.0",
     "limiter": "^2.1.0",
     "tslib": "^2.6.2",
