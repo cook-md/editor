@@ -215,6 +215,9 @@ export class ApplicationPackageManager {
         if (!theiaElectron.electronVersion || !semver.satisfies(theiaElectron.electronVersion, currentRange)) {
             throw new AbortError('Dependencies are out of sync, please run "install" again');
         }
+        // Since Electron 42 the npm package no longer downloads its binary on install;
+        // requiring it from Node downloads it on first use. The ffmpeg steps read `electron/dist`.
+        require(require.resolve('electron'));
         const ffmpeg = await import('@theia/ffmpeg');
         await ffmpeg.replaceFfmpeg();
         await ffmpeg.checkFfmpeg();

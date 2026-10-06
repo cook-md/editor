@@ -96,8 +96,8 @@ export interface TheiaCoreAPI {
 
     applicationStateChanged(state: FrontendApplicationState): void;
 
-    readClipboard(): string;
-    writeClipboard(text: string): void;
+    readClipboard(): Promise<string>;
+    writeClipboard(text: string): Promise<void>;
 
     onKeyboardLayoutChanged(handler: (newLayout: NativeKeyboardLayout) => void): Disposable;
 
