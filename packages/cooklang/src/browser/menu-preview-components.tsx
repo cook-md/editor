@@ -30,6 +30,8 @@ import {
 } from '../common/menu-types';
 import { CooklangActionBar } from './cooklang-action-bar';
 import { OutletItem } from './cooklang-outlet-service';
+import { PreviewBadge } from '../common/cooklang-outlet-context';
+import { PreviewBadgeView } from './preview-badge';
 
 // ---------------------------------------------------------------------------
 // MenuMetadataPills
@@ -196,6 +198,10 @@ export interface MenuViewProps {
     onRunToolbarItem: (id: string) => void;
     onNavigateToRecipe?: (referencePath: string) => void;
     onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
+    /** Plugin badges for the header; rendered only when both detail handlers are given. */
+    badges?: readonly PreviewBadge[];
+    onShowBadgeDetails?: (badge: PreviewBadge, target: HTMLElement, immediate: boolean) => void;
+    onHideBadgeDetails?: () => void;
 }
 
 export const MenuView = ({
@@ -207,6 +213,9 @@ export const MenuView = ({
     onRunToolbarItem,
     onNavigateToRecipe,
     onRecipeContextMenu,
+    badges,
+    onShowBadgeDetails,
+    onHideBadgeDetails,
 }: MenuViewProps): React.ReactElement => {
     const meta = menuResult.metadata;
     const title = fileName.replace(/\.menu$/i, '');
@@ -237,6 +246,10 @@ export const MenuView = ({
                             title='Scale factor'
                         />
                     </div>
+                    {onShowBadgeDetails && onHideBadgeDetails && badges?.map((badge, index) => (
+                        <PreviewBadgeView key={`${badge.kind}-${index}`} badge={badge}
+                            onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
+                    ))}
                     <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
                 </div>
             </div>
