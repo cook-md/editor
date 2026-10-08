@@ -42,6 +42,14 @@ export namespace CooklangOutlets {
      * user's subscription, or the contributed commands/menus change.
      */
     export const RECIPE_PREVIEW_BADGE: MenuPath = ['cooklang/recipePreview/badge'];
+    /**
+     * Badges in the menu preview header. Same contract as
+     * {@link RECIPE_PREVIEW_BADGE}: a `PreviewOutletContext` in, a
+     * `PreviewBadge` (or nothing) out, 10 s timeout, visible previews only.
+     * Re-runs when the menu text, the scale, the user's subscription, or the
+     * contributed commands/menus change.
+     */
+    export const MENU_PREVIEW_BADGE: MenuPath = ['cooklang/menuPreview/badge'];
     /** Icon buttons in the menu preview header. Context: `PreviewOutletContext`. */
     export const MENU_PREVIEW_TOOLBAR: MenuPath = ['cooklang/menuPreview/toolbar'];
     /** Right-click on an ingredient in the recipe preview. Context: `IngredientOutletContext`. */
