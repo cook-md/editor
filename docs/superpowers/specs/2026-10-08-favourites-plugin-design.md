@@ -201,6 +201,9 @@ Menus:
 
 Behaviour:
 
+- Notifications with an action never auto-dismiss in Theia, so the toast
+  stays until closed (or Undo is pressed). Accepted for v1; dropping Undo
+  would make it auto-dismiss.
 - `add`/`remove`/`toggle` first check the store has a workspace (else
   "Open a recipe folder to use favourites."), resolve the target (2.4), call
   the store, then show a toast: "Added to Favourites" or "Removed from
@@ -262,7 +265,9 @@ Mocha, like the other plugins (`npm test` = `tsc && mocha out/**/*.spec.js`):
 - `favourites-store.spec.ts`: with a fake `fs` (readFile/writeFile/stat) —
   missing file, read-modify-write keeps external edits, change events only on
   real changes, no workspace.
-- `favourites-tree.spec.ts`: sorting, description, missing-file marker.
+- `favourites-view-model.spec.ts`: sorting, name and folder description. The
+  missing-file marker lives in the `vscode`-dependent tree provider and is
+  checked manually (a bogus `.bookmarks` line shows the warning icon).
 
 Manual check in the editor: heart toggles and re-renders in an open preview,
 Explorer menu entries switch, view lists and opens, Undo works, hand-editing
