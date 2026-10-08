@@ -118,8 +118,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     protected resolvedImageUris: ReadonlySet<string> = new Set<string>();
     /**
      * Context keys scoped to this preview's DOM node. Outlet `when` clauses are
-     * evaluated against the node, so `cooklangPreviewScheme` applies to this
-     * preview's toolbar and context menus only.
+     * evaluated against the node, so `cooklangPreviewScheme` and
+     * `cooklangPreviewPath` apply to this preview's toolbar and context menus only.
      */
     protected scopedContextKeys: ScopedValueStore | undefined;
     /** The recipe text last parsed. A non-`file` recipe takes its images from it. */
@@ -212,6 +212,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     setUri(uri: URI): void {
         this.uri = uri;
         this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY, uri.scheme);
+        this.scopedContextKeys?.setContext(CooklangOutlets.PREVIEW_PATH_CONTEXT_KEY, this.outlets.describe(uri).path);
         this.id = createRecipePreviewWidgetId(uri);
         this.recipeTitle = undefined;
         // A reused widget must not keep showing a previous recipe's grade, nor

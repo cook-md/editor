@@ -31,6 +31,17 @@ export namespace CooklangOutlets {
      * preview sets it; elsewhere it is undefined.
      */
     export const PREVIEW_SCHEME_CONTEXT_KEY = 'cooklangPreviewScheme';
+
+    /**
+     * Context key set on the recipe preview element to the recipe's
+     * workspace-relative path with `/` separators (the same string as
+     * `PreviewOutletContext.path`), or `''` for a recipe outside the
+     * workspace or with a non-`file` scheme. Lets a plugin that publishes a
+     * list of paths with `setContext` pick a toolbar command per recipe, e.g.
+     * `"when": "cooklangPreviewPath in myPlugin.markedPaths"`. Only the recipe
+     * preview sets it; elsewhere it is undefined.
+     */
+    export const PREVIEW_PATH_CONTEXT_KEY = 'cooklangPreviewPath';
     /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
     export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];
     /**

@@ -240,6 +240,23 @@ describe('RecipePreviewWidget context key and outlets', () => {
         expect(harness.contextValues.get(CooklangOutlets.PREVIEW_SCHEME_CONTEXT_KEY)).to.equal('file');
     });
 
+    it('sets cooklangPreviewPath on the preview element to the workspace-relative path', async () => {
+        const local = new PreviewHarness();
+        await local.open(LOCAL);
+        expect(local.contextValues.get(CooklangOutlets.PREVIEW_PATH_CONTEXT_KEY)).to.equal('Breakfast/Pancakes.cook');
+
+        const hub = new PreviewHarness();
+        await hub.open(HUB);
+        expect(hub.contextValues.get('cooklangPreviewPath')).to.equal('');
+    });
+
+    it('updates cooklangPreviewPath when the preview is re-bound to another URI', async () => {
+        const harness = new PreviewHarness();
+        await harness.open(LOCAL);
+        harness.widget.setUri(HUB);
+        expect(harness.contextValues.get(CooklangOutlets.PREVIEW_PATH_CONTEXT_KEY)).to.equal('');
+    });
+
     it('evaluates toolbar outlets against the preview element', async () => {
         const harness = new PreviewHarness();
         await harness.open(HUB);
