@@ -138,9 +138,12 @@ On activation and on every `onDidChange`:
 
 - `setContext('cooklang.favourites.paths', store.paths())` — for the preview
   toolbar `when` clauses (`cooklangPreviewPath in cooklang.favourites.paths`).
-- `setContext('cooklang.favourites.fsPaths', paths.map(p =>
-  Uri.joinPath(root, p).fsPath))` — for the Explorer context menu, which can
-  only see the built-in `resourcePath` key (an absolute file-system path).
+- `setContext('cooklang.favourites.uris', paths.map(p =>
+  Uri.joinPath(root, ...p.split('/')).toString()))` — for the Explorer context
+  menu, which can only see the built-in resource keys; `resource` holds the
+  selected file's URI string, and both sides build it with the same
+  `vscode-uri` encoding, so string equality holds on every OS (`resourcePath`
+  would not: Theia and `vscode-uri` disagree on the Windows drive-letter case).
 - then `cooklang.api.refreshBadges` (ignored when the editor predates it, as
   in `corevitals`), so open previews re-render their toolbar.
 
@@ -178,9 +181,9 @@ Menus:
   `remove` when `cooklangPreviewScheme == file && cooklangPreviewPath in
   cooklang.favourites.paths`.
 - `explorer/context`, group `navigation@80`:
-  `add` when `resourceExtname =~ /^\.cook$/i && resourcePath not in
-  cooklang.favourites.fsPaths`; `remove` when `resourceExtname =~ /^\.cook$/i
-  && resourcePath in cooklang.favourites.fsPaths`.
+  `add` when `resourceExtname =~ /^\.cook$/i && resource not in
+  cooklang.favourites.uris`; `remove` when `resourceExtname =~ /^\.cook$/i
+  && resource in cooklang.favourites.uris`.
 - `view/item/context` on `cooklang.favourites.view` items with
   `viewItem == favourite`: `remove`, group `inline`.
 - `commandPalette`: `toggle` always; `add` and `remove` when
