@@ -63,13 +63,17 @@ async function until(condition: () => boolean): Promise<void> {
     expect(condition(), 'condition never became true').to.be.true;
 }
 
+const harnesses: MenuHarness[] = [];
+
 /** A real menu preview widget over stubbed services. */
 class MenuHarness {
     readonly subscriptionChanged = new Emitter<void>();
     hoverCancelCount = 0;
+    menuJson = JSON.stringify(MENU);
     readonly widget: MenuPreviewWidget;
 
     constructor() {
+        harnesses.push(this);
         const never = new Emitter<unknown>().event;
         const outlets = new CooklangOutletService();
         Object.assign(outlets, {
@@ -83,7 +87,7 @@ class MenuHarness {
         // `isVisible` derives from DOM attachment, which a widget built by `new` never has.
         Object.defineProperty(widget, 'isVisible', { value: true, writable: true, configurable: true });
         Object.assign(widget, {
-            service: { parseMenu: async () => JSON.stringify(MENU) },
+            service: { parseMenu: async () => this.menuJson },
             monacoWorkspace: { onDidChangeTextDocument: never, onDidOpenTextDocument: never, getTextDocument: () => undefined },
             fileService: { read: async () => ({ value: '= Day 1 =\n\nBreakfast:\n\n@./pancakes{1}\n' }) },
             editorManager: {},
@@ -115,6 +119,26 @@ class MenuHarness {
 }
 
 describe('MenuPreviewWidget badges', () => {
+
+    afterEach(() => {
+        for (const harness of harnesses.splice(0)) {
+            harness.widget.dispose();
+        }
+    });
+
+    it('asks plugins for nothing when the menu has no sections', async () => {
+        const harness = new MenuHarness();
+        harness.menuJson = JSON.stringify({ ...MENU, sections: [] });
+        harness.internals.badgeController.debounceMs = 1;
+        let calls = 0;
+        harness.internals.outlets.collectBadges = async () => {
+            calls++;
+            return [];
+        };
+        await harness.open(MENU_URI);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(calls).to.equal(0);
+    });
 
     it('collects badges from the menu badge outlet with the preview context once a menu is parsed', async () => {
         const harness = new MenuHarness();
@@ -148,11 +172,15 @@ describe('MenuPreviewWidget badges', () => {
         await until(() => contexts.length === 1);
 
         harness.internals.handleScaleChange(2);
-        await until(() => contexts.length === 2);
+        await until(() => contexts.length >= 2);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(contexts).to.have.lengthOf(2);
         expect(contexts[1].scale).to.equal(2);
 
         harness.subscriptionChanged.fire();
-        await until(() => contexts.length === 3);
+        await until(() => contexts.length >= 3);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        expect(contexts).to.have.lengthOf(3);
     });
 
     it('forgets badges when re-bound to another menu', async () => {

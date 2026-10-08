@@ -99,7 +99,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
         this.badgeController = new PreviewBadgeController(this.outlets, this.hoverService, {
             outlet: CooklangOutlets.MENU_PREVIEW_BADGE,
             element: this.node,
-            context: () => this.menuResult ? this.previewContext() : undefined,
+            context: () => this.menuResult && this.menuResult.sections.length > 0 ? this.previewContext() : undefined,
             isVisible: () => this.isVisible,
             onDidChangeBadges: () => this.update(),
         });
