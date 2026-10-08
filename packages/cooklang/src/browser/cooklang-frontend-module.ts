@@ -26,6 +26,8 @@ import { TabBarToolbarContribution } from '@theia/core/lib/browser/shell/tab-bar
 import { LanguageGrammarDefinitionContribution } from '@theia/monaco/lib/browser/textmate';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';
 import URI from '@theia/core/lib/common/uri';
+import { MonacoMimeService } from '@theia/monaco/lib/browser/monaco-mime-service';
+import { CooklangMimeService } from './cooklang-mime-service';
 import { CooklangGrammarContribution } from './cooklang-grammar-contribution';
 import { CooklangLanguageClientContribution } from './cooklang-language-client-contribution';
 import { CooklangLanguageService, CooklangLanguageServicePath } from '../common/cooklang-language-service';
@@ -94,6 +96,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // Obsidian-style `.md` + `recipe: true` → Cooklang language id.
     bind(MarkdownRecipeLanguageContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(MarkdownRecipeLanguageContribution);
+
+    // `.cook` and `.menu` always resolve to the cooklang language (the bundled XML plugin claims `.menu`).
+    rebind(MonacoMimeService).to(CooklangMimeService).inSingletonScope();
 
     // `New File...` proposes `Untitled.cook` rather than upstream's `Untitled.txt`.
     rebind(WorkspaceCommandContribution).to(CooklangWorkspaceCommandContribution).inSingletonScope();
