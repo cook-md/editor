@@ -19,6 +19,8 @@ import {
 } from '@theia/core/lib/browser';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { MenuContribution } from '@theia/core/lib/common/menu';
+import { ShellLayoutRestorer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
+import { CooklangShellLayoutRestorer } from './cooklang-shell-layout-restorer';
 import { KeybindingContribution } from '@theia/core/lib/browser/keybinding';
 import { OpenHandler } from '@theia/core/lib/browser/opener-service';
 import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
@@ -102,6 +104,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     // `New File...` proposes `Untitled.cook` rather than upstream's `Untitled.txt`.
     rebind(WorkspaceCommandContribution).to(CooklangWorkspaceCommandContribution).inSingletonScope();
+
+    // Report tabs restored from an old layout must not carry a stored config (token).
+    rebind(ShellLayoutRestorer).to(CooklangShellLayoutRestorer).inSingletonScope();
 
     // Explorer with `alt`/`option` click opening the source of a recipe.
     rebind(FileNavigatorWidget).toDynamicValue(ctx => createCooklangFileNavigatorWidget(ctx.container));

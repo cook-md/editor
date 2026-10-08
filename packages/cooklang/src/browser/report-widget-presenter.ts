@@ -39,7 +39,7 @@ export class ReportWidgetPresenter implements ReportPresenter {
      * Returns an existing report widget for (uri, template) — looked up by its
      * widget id — otherwise creates one via the widget factory. A fresh
      * `setOptions` re-render is triggered on reuse so the report reflects the
-     * latest config/template.
+     * latest template and scale (the render config is rebuilt on every render).
      */
     protected async getOrCreateReport(options: ReportWidgetOptions): Promise<ReportWidget> {
         const widgetId = createReportWidgetId(new URI(options.uri), options.templateId);
