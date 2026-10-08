@@ -36,7 +36,8 @@
               "cooklang.nutriscore",
               "cooklang.allergens",
               "cooklang.recipe-hub",
-              "cooklang.meal-journal"
+              "cooklang.meal-journal",
+              "cooklang.corevitals"
             ]
           },
           "extensions.ignoreRecommendations": true

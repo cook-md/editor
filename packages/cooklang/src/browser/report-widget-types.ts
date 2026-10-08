@@ -36,8 +36,14 @@ export interface ReportWidgetOptions {
      * (inline templates have no filename to infer from).
      */
     outputFormat?: ReportOutputFormat;
-    /** Render config (scale + URI-string paths), passed through to the RPC. */
-    configJson: string;
+    /**
+     * Recipe/menu scale the report renders at; default 1. The render config
+     * (which embeds the nutrition token) is rebuilt on every render rather
+     * than stored here, because construction options are persisted in layout
+     * storage. A layout saved by an older version may still carry a
+     * `configJson` field; it is ignored.
+     */
+    scale?: number;
 }
 
 /**

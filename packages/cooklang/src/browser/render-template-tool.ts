@@ -242,7 +242,7 @@ export class RenderTemplateTool implements ToolProvider {
                         templateUri: template.templateUri,
                         inlineTemplateContent: template.inlineTemplateContent,
                         outputFormat: args.outputFormat ?? template.defaultOutputFormat,
-                        configJson,
+                        scale: args.scale ?? 1,
                     });
                 } catch (e) {
                     console.warn('[cooklang] renderTemplate: failed to show report tab:', e);

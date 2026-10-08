@@ -449,7 +449,7 @@ describe('CooklangPluginApiContribution — openReport', () => {
             templateLabel: 'Core Vitals',
             inlineTemplateContent: '{{ 1 }}',
             outputFormat: 'markdown',
-            configJson: JSON.stringify({ scale: 1, uri: 'file:///ws/week.menu' }),
+            scale: 1,
         }]);
     });
 
@@ -458,7 +458,7 @@ describe('CooklangPluginApiContribution — openReport', () => {
         fixture.create();
         await fixture.run(OPEN_REPORT, { uri: 'cooklang-hub:/x/Soup.cook', template: '<b>x</b>', label: 'Vitals', outputFormat: 'html', scale: 2 });
         expect(fixture.shown[0].outputFormat).to.equal('html');
-        expect(fixture.shown[0].configJson).to.equal(JSON.stringify({ scale: 2, uri: 'cooklang-hub:/x/Soup.cook' }));
+        expect(fixture.shown[0].scale).to.equal(2);
     });
 
     it('rejects bad URIs, templates, labels, formats and scales', async () => {

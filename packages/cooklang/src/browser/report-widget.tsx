@@ -24,6 +24,7 @@ import URI from '@theia/core/lib/common/uri';
 import * as React from '@theia/core/shared/react';
 import * as DOMPurify from '@theia/core/shared/dompurify';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID, ReportOutputFormat, ReportTemplates } from '../common';
+import { ReportConfigService } from './report-config-service';
 import { ReportWidgetOptions, createReportWidgetId } from './report-widget-types';
 import { buildReportExportDocument } from './report-export-document';
 import { MermaidRenderer, themeTypeToMermaidTheme } from './mermaid-renderer';
@@ -69,6 +70,9 @@ export class ReportWidget extends ReactWidget implements Navigatable {
 
     @inject(CooklangOutletService)
     protected readonly outlets: CooklangOutletService;
+
+    @inject(ReportConfigService)
+    protected readonly reportConfigService: ReportConfigService;
 
     protected uri: URI;
     protected options: ReportWidgetOptions;
@@ -181,7 +185,8 @@ export class ReportWidget extends ReactWidget implements Navigatable {
         try {
             const recipe = await this.readRecipeContent();
             const template = await this.readTemplateContent();
-            const resultJson = await this.service.renderReport(recipe, template, this.options.configJson);
+            const configJson = await this.reportConfigService.buildConfigJson(this.options.scale ?? 1, this.uri);
+            const resultJson = await this.service.renderReport(recipe, template, configJson);
             const result = JSON.parse(resultJson) as { output?: string; error?: string };
             output = result.output;
             errorMessage = result.error;

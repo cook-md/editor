@@ -357,7 +357,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             templateLabel: label,
             inlineTemplateContent: template,
             outputFormat: outputFormat as ReportOutputFormat,
-            configJson: await this.reportConfigService.buildConfigJson(scale, uri),
+            scale,
         });
     }
 
