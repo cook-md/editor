@@ -24,6 +24,7 @@ try {
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
+import { ReportWidgetOptions } from './report-widget-types';
 import { CooklangPluginApi, CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
 
 interface Handler { execute: (...args: unknown[]) => unknown }
@@ -53,6 +54,7 @@ class Fixture {
     features = new Set<string>(['nutrition_api']);
     reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
     refreshes = 0;
+    shown: ReportWidgetOptions[] = [];
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -92,6 +94,10 @@ class Fixture {
                 if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(arg) || arg.startsWith('/')) { return new URI(arg).normalizePath(); }
                 return this.root ? this.root.resolve(arg).normalizePath() : undefined;
             },
+            buildConfigJson: async (scale: number, uri?: URI) => JSON.stringify({ scale, uri: uri?.toString() }),
+        };
+        (contribution as any).reportPresenter = {
+            show: async (options: ReportWidgetOptions) => { this.shown.push(options); },
         };
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
         (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
@@ -409,6 +415,14 @@ describe('CooklangPluginApiContribution — hasFeature and renderReport', () => 
         }
         expect(fixture.reportCalls).to.deep.equal([]);
     });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        fixture.hasProvider = scheme => scheme === 'file';
+        expect(await fixture.error(RENDER_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}' })).to.match(/^Invalid arguments/);
+        expect(fixture.reportCalls).to.deep.equal([]);
+    });
 });
 
 describe('CooklangPluginApiContribution — refreshBadges', () => {
@@ -419,5 +433,59 @@ describe('CooklangPluginApiContribution — refreshBadges', () => {
         fixture.create();
         expect(await fixture.run(REFRESH_BADGES)).to.equal(undefined);
         expect(fixture.refreshes).to.equal(1);
+    });
+});
+
+describe('CooklangPluginApiContribution — openReport', () => {
+    const { OPEN_REPORT } = CooklangPluginApi.Commands;
+
+    it('opens a report tab with the inline template, defaulting to markdown at scale 1', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(OPEN_REPORT, { uri: 'file:///ws/week.menu', template: '{{ 1 }}', label: 'Core Vitals' })).to.equal(undefined);
+        expect(fixture.shown).to.deep.equal([{
+            uri: 'file:///ws/week.menu',
+            templateId: 'inline:plugin:Core Vitals',
+            templateLabel: 'Core Vitals',
+            inlineTemplateContent: '{{ 1 }}',
+            outputFormat: 'markdown',
+            configJson: JSON.stringify({ scale: 1, uri: 'file:///ws/week.menu' }),
+        }]);
+    });
+
+    it('passes outputFormat and scale through, for any recipe or menu scheme', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(OPEN_REPORT, { uri: 'cooklang-hub:/x/Soup.cook', template: '<b>x</b>', label: 'Vitals', outputFormat: 'html', scale: 2 });
+        expect(fixture.shown[0].outputFormat).to.equal('html');
+        expect(fixture.shown[0].configJson).to.equal(JSON.stringify({ scale: 2, uri: 'cooklang-hub:/x/Soup.cook' }));
+    });
+
+    it('rejects bad URIs, templates, labels, formats and scales', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            { uri: 'file:///ws/notes.md', template: '{{ 1 }}', label: 'x' },
+            { uri: 'a.cook', template: '{{ 1 }}', label: 'x' },
+            { uri: 'file:///ws/a.cook', template: '', label: 'x' },
+            { uri: 'file:///ws/a.cook', template: 'x'.repeat(64 * 1024 + 1), label: 'x' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', label: '  ' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', label: 'x'.repeat(61) },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', label: 'a\u0000b' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', label: 'x', outputFormat: 'pdf' },
+            { uri: 'file:///ws/a.cook', template: '{{ 1 }}', label: 'x', scale: 0 },
+        ]) {
+            expect(await fixture.error(OPEN_REPORT, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.shown).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        fixture.hasProvider = scheme => scheme === 'file';
+        expect(await fixture.error(OPEN_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}', label: 'x' })).to.match(/^Invalid arguments/);
+        expect(fixture.shown).to.deep.equal([]);
     });
 });
