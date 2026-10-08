@@ -26,7 +26,10 @@ import { MenuView } from './menu-preview-components';
 import { RecipeNavigator } from './recipe-navigator';
 import { CooklangOutletService } from './cooklang-outlet-service';
 import { CooklangOutlets } from './cooklang-outlets';
-import { MenuRecipeOutletInfo, PreviewOutletContext } from '../common/cooklang-outlet-context';
+import { HoverService } from '@theia/core/lib/browser/hover-service';
+import { SubscriptionFrontendService } from '@theia/cooklang-account/lib/browser/subscription-frontend-service';
+import { MenuRecipeOutletInfo, PreviewBadge, PreviewOutletContext } from '../common/cooklang-outlet-context';
+import { PreviewBadgeController } from './preview-badge-controller';
 
 import '../../src/browser/style/menu-preview.css';
 
@@ -68,12 +71,21 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     @inject(CooklangOutletService)
     protected readonly outlets: CooklangOutletService;
 
+    @inject(HoverService)
+    protected readonly hoverService: HoverService;
+
+    @inject(SubscriptionFrontendService)
+    protected readonly subscriptions: SubscriptionFrontendService;
+
     protected uri: URI;
     protected menuResult: MenuParseResult | undefined;
     protected parseErrors: string[] = [];
     protected debounceTimer: ReturnType<typeof setTimeout> | undefined;
     protected scale = 1;
     protected parseSequence = 0;
+
+    /** Created in `init`, once `outlets` and `hoverService` are injected. */
+    protected badgeController: PreviewBadgeController;
 
     @postConstruct()
     protected init(): void {
@@ -84,12 +96,40 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             minScrollbarLength: 35,
         };
         this.listenToDocumentChanges();
-        this.toDispose.push(this.outlets.onDidChange(() => this.update()));
+        this.badgeController = new PreviewBadgeController(this.outlets, this.hoverService, {
+            outlet: CooklangOutlets.MENU_PREVIEW_BADGE,
+            element: this.node,
+            context: () => this.menuResult ? this.previewContext() : undefined,
+            isVisible: () => this.isVisible,
+            onDidChangeBadges: () => this.update(),
+        });
+        this.toDispose.push(this.badgeController);
+        this.toDispose.push(this.outlets.onDidChange(() => {
+            this.update();
+            this.badgeController.schedule();
+        }));
+        this.toDispose.push(this.subscriptions.onDidChangeSubscription(() => this.badgeController.schedule()));
     }
 
     protected override onActivateRequest(msg: Message): void {
         super.onActivateRequest(msg);
         this.node.focus();
+    }
+
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        this.badgeController.flushStale();
+    }
+
+    /** See `RecipePreviewWidget.onAfterAttach`: the first tab in an empty area gets no `after-show`. */
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.badgeController.flushStale();
+    }
+
+    protected override onBeforeHide(msg: Message): void {
+        super.onBeforeHide(msg);
+        this.badgeController.hideHover();
     }
 
     /**
@@ -98,6 +138,9 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     setUri(uri: URI): void {
         this.uri = uri;
         this.id = createMenuPreviewWidgetId(uri);
+        // A reused widget must not keep showing a previous menu's badges, nor
+        // let a badge refresh for the old menu land after this switch.
+        this.badgeController.reset();
         this.title.label = `Preview: ${uri.path.base}`;
         this.title.caption = `Menu preview for ${uri.toString()}`;
         this.title.closable = true;
@@ -189,14 +232,19 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             } catch (e) {
                 this.menuResult = undefined;
                 this.parseErrors = [`Failed to parse response: ${e}`];
+                this.badgeController.reset();
+                this.update();
+                return;
             }
             this.update();
+            this.badgeController.schedule();
         }).catch(e => {
             if (this.isDisposed || sequence !== this.parseSequence) {
                 return;
             }
             this.menuResult = undefined;
             this.parseErrors = [`Parse request failed: ${e}`];
+            this.badgeController.reset();
             this.update();
         });
     }
@@ -213,7 +261,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     protected handleRunToolbarItem = (id: string): void => {
         const context = this.previewContext();
         if (context) {
-            this.outlets.run(CooklangOutlets.MENU_PREVIEW_TOOLBAR, id, context);
+            this.outlets.run(CooklangOutlets.MENU_PREVIEW_TOOLBAR, id, context, this.node);
         }
     };
 
@@ -241,16 +289,25 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     protected handleScaleChange = (newScale: number): void => {
         this.scale = newScale;
         this.parseCurrentContent();
+        this.badgeController.schedule();
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {
         this.navigator.navigate(referencePath);
     };
 
+    protected handleShowBadgeDetails = (badge: PreviewBadge, target: HTMLElement, immediate: boolean): void => {
+        this.badgeController.showDetails(badge, target, immediate);
+    };
+
+    protected handleHideBadgeDetails = (): void => {
+        this.badgeController.hideDetails();
+    };
+
     protected render(): React.ReactNode {
         if (this.menuResult && this.menuResult.sections.length > 0) {
             const context = this.previewContext();
-            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.MENU_PREVIEW_TOOLBAR, context) : [];
+            const toolbarItems = context ? this.outlets.getItems(CooklangOutlets.MENU_PREVIEW_TOOLBAR, context, this.node) : [];
             return (
                 <MenuView
                     menuResult={this.menuResult}
@@ -261,6 +318,9 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
                     onRunToolbarItem={this.handleRunToolbarItem}
                     onRecipeContextMenu={this.handleRecipeContextMenu}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
+                    badges={this.badgeController.badges}
+                    onShowBadgeDetails={this.handleShowBadgeDetails}
+                    onHideBadgeDetails={this.handleHideBadgeDetails}
                 />
             );
         }
