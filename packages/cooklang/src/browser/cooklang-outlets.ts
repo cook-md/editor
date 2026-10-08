@@ -38,10 +38,12 @@ export namespace CooklangOutlets {
      * `PreviewOutletContext.path`), or `''` for a recipe outside the
      * workspace or with a non-`file` scheme. Lets a plugin that publishes a
      * list of paths with `setContext` pick a toolbar command per recipe, e.g.
-     * `"when": "cooklangPreviewPath in myPlugin.markedPaths"`. Only the recipe
-     * preview sets it; elsewhere it is undefined.
+     * `"when": "cooklangPreviewPath in myPlugin.markedPaths"`. `''` is falsy,
+     * so `"when": "cooklangPreviewPath"` alone means "a file inside the
+     * workspace". Only the recipe preview sets it; elsewhere it is undefined.
      */
     export const PREVIEW_PATH_CONTEXT_KEY = 'cooklangPreviewPath';
+
     /** Icon buttons in the recipe preview header. Context: `PreviewOutletContext`. */
     export const RECIPE_PREVIEW_TOOLBAR: MenuPath = ['cooklang/recipePreview/toolbar'];
     /**
