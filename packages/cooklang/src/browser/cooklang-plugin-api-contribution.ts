@@ -38,6 +38,8 @@ import { RecipeReferenceResolver, ResolvedRecipeReference } from './recipe-refer
 import { ReportConfigService } from './report-config-service';
 import { RecipePreviewContribution } from './recipe-preview-contribution';
 import { PluginReportService } from './plugin-report-service';
+import { ReportPresenter } from './report-presenter';
+import { ReportOutputFormat } from '../common/report-templates';
 import { CooklangOutletService } from './cooklang-outlet-service';
 
 /**
@@ -91,10 +93,22 @@ export namespace CooklangPluginApi {
          * badge provider's settings changed. Refreshes are debounced, so calling it often is cheap.
          */
         REFRESH_BADGES: 'cooklang.api.refreshBadges',
+        /**
+         * `{ uri, template, label, outputFormat?, scale? }` → `undefined`: opens a report tab
+         * rendering `template` (same limits as {@link RENDER_REPORT}) against the `.cook` or
+         * `.menu` at `uri`, titled `label` (≤ {@link MAX_REPORT_LABEL_LENGTH} characters, no
+         * control characters). `outputFormat` is `markdown` (default), `html` or `text`;
+         * `scale` defaults to 1. Calling it again with the same `uri` and `label` focuses the
+         * existing tab. The tab re-renders on edits and exports like any other report.
+         */
+        OPEN_REPORT: 'cooklang.api.openReport',
     } as const;
 
     /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
     export const MAX_TEMPLATE_LENGTH = 64 * 1024;
+
+    /** Maximum `cooklang.api.openReport` label length, in characters. */
+    export const MAX_REPORT_LABEL_LENGTH = 60;
 }
 
 /**
@@ -137,6 +151,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(CooklangOutletService)
     protected readonly outlets: CooklangOutletService;
 
+    @inject(ReportPresenter)
+    protected readonly reportPresenter: ReportPresenter;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -157,6 +174,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.HAS_FEATURE }, { execute: (args: unknown) => this.hasFeature(args) });
         registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
         registry.registerCommand({ id: Commands.REFRESH_BADGES }, { execute: () => this.outlets.refresh() });
+        registry.registerCommand({ id: Commands.OPEN_REPORT }, { execute: (args: unknown) => this.openReport(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -303,6 +321,39 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             throw this.invalid('`scale` must be a positive number.');
         }
         return this.pluginReports.render(uri, template, scale);
+    }
+
+    protected async openReport(args: unknown): Promise<void> {
+        const request = this.object(args);
+        const raw = this.string(request.uri, '`uri`');
+        const uri = new URI(raw);
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
+            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
+        }
+        const template = this.text(request.template, '`template`');
+        if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
+            throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
+        }
+        const label = this.string(request.label, '`label`');
+        if (label.length > CooklangPluginApi.MAX_REPORT_LABEL_LENGTH) {
+            throw this.invalid(`\`label\` must be at most ${CooklangPluginApi.MAX_REPORT_LABEL_LENGTH} characters.`);
+        }
+        const outputFormat = request.outputFormat === undefined ? 'markdown' : request.outputFormat;
+        if (outputFormat !== 'markdown' && outputFormat !== 'html' && outputFormat !== 'text') {
+            throw this.invalid('`outputFormat` must be "markdown", "html" or "text".');
+        }
+        const scale = request.scale === undefined ? 1 : request.scale;
+        if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+            throw this.invalid('`scale` must be a positive number.');
+        }
+        await this.reportPresenter.show({
+            uri: uri.toString(),
+            templateId: `inline:plugin:${label}`,
+            templateLabel: label,
+            inlineTemplateContent: template,
+            outputFormat: outputFormat as ReportOutputFormat,
+            configJson: await this.reportConfigService.buildConfigJson(scale, uri),
+        });
     }
 
     protected pantryEdit(value: unknown): PantryEdit {
