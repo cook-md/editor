@@ -289,7 +289,6 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
     protected handleScaleChange = (newScale: number): void => {
         this.scale = newScale;
         this.parseCurrentContent();
-        this.badgeController.schedule();
     };
 
     protected handleNavigateToRecipe = (referencePath: string): void => {

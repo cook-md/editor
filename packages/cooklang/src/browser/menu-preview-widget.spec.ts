@@ -195,7 +195,7 @@ describe('MenuPreviewWidget badges', () => {
         expect(harness.internals.badgeController.badges).to.deep.equal([]);
     });
 
-    it('cancels its own hover on dispose only', async () => {
+    it('does not cancel another widget\'s hover on dispose', async () => {
         const harness = new MenuHarness();
         await harness.open(MENU_URI);
         harness.widget.dispose();

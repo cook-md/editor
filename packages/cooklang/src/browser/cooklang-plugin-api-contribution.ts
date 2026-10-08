@@ -85,7 +85,8 @@ export namespace CooklangPluginApi {
          * template and scale; the cache is dropped on login/logout and on any `cooklang.*`
          * preference change. Templates call the nutrition service with the signed-in user's
          * token, so any installed plugin can make authenticated nutrition-service calls on the
-         * user's behalf (counting against their quota) without ever seeing the token. Rejects a `uri` whose scheme has no file system provider.
+         * user's behalf (counting against their quota) without ever seeing the token. Rejects a
+         * `uri` whose scheme has no file system provider.
          */
         RENDER_REPORT: 'cooklang.api.renderReport',
         /**
@@ -101,6 +102,7 @@ export namespace CooklangPluginApi {
          * `scale` defaults to 1. Calling it again with the same `uri` and `label` reuses the
          * existing tab and refreshes it with the new template, format and scale; plugins sharing
          * a label share a tab. The tab re-renders on edits and exports like any other report.
+         * Rejects a `uri` whose scheme has no file system provider.
          */
         OPEN_REPORT: 'cooklang.api.openReport',
     } as const;
@@ -306,8 +308,13 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         }
     }
 
-    protected async renderReport(args: unknown): Promise<PluginReportResult> {
-        const request = this.object(args);
+    /**
+     * The validated `uri`, `template` and `scale` shared by `renderReport` and
+     * `openReport`: an absolute `.cook`/`.menu` URI whose scheme has a file
+     * system provider, a non-empty template within the length limit, and a
+     * positive scale (default 1).
+     */
+    protected reportRequest(request: Record<string, unknown>): { uri: URI; template: string; scale: number } {
         const raw = this.string(request.uri, '`uri`');
         const uri = new URI(raw);
         if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
@@ -325,24 +332,17 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
             throw this.invalid('`scale` must be a positive number.');
         }
+        return { uri, template, scale };
+    }
+
+    protected async renderReport(args: unknown): Promise<PluginReportResult> {
+        const { uri, template, scale } = this.reportRequest(this.object(args));
         return this.pluginReports.render(uri, template, scale);
     }
 
     protected async openReport(args: unknown): Promise<void> {
         const request = this.object(args);
-        const raw = this.string(request.uri, '`uri`');
-        const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
-        }
-        // Fail closed: FileService.activateProvider() never settles for an unregistered scheme.
-        if (!this.fileService.hasProvider(uri.scheme)) {
-            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
-        }
-        const template = this.text(request.template, '`template`');
-        if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
-            throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
-        }
+        const { uri, template, scale } = this.reportRequest(request);
         const label = this.string(request.label, '`label`');
         if (label.length > CooklangPluginApi.MAX_REPORT_LABEL_LENGTH) {
             throw this.invalid(`\`label\` must be at most ${CooklangPluginApi.MAX_REPORT_LABEL_LENGTH} characters.`);
@@ -350,10 +350,6 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         const outputFormat = request.outputFormat === undefined ? 'markdown' : request.outputFormat;
         if (outputFormat !== 'markdown' && outputFormat !== 'html' && outputFormat !== 'text') {
             throw this.invalid('`outputFormat` must be "markdown", "html" or "text".');
-        }
-        const scale = request.scale === undefined ? 1 : request.scale;
-        if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
-            throw this.invalid('`scale` must be a positive number.');
         }
         await this.reportPresenter.show({
             uri: uri.toString(),
