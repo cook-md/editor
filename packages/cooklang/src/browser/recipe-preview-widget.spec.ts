@@ -415,23 +415,24 @@ describe('RecipePreviewWidget badges', () => {
         expect(internals.badgeController.badges).to.deep.equal([badge]);
     });
 
-    it('coalesces several scheduleBadges calls in one window into a single collectBadges call', async () => {
+    it('coalesces several scale changes in one window into a single collectBadges call', async () => {
         const harness = new PreviewHarness();
         const internals = harness.widget as unknown as BadgeInternals;
         internals.badgeController.debounceMs = 1;
         await harness.open(LOCAL);
 
-        let calls = 0;
-        internals.outlets.collectBadges = async () => {
-            calls++;
+        const contexts: object[] = [];
+        internals.outlets.collectBadges = async (_menuPath, context) => {
+            contexts.push(context);
             return [];
         };
-        internals.badgeController.schedule();
-        internals.badgeController.schedule();
-        internals.badgeController.schedule();
+        harness.widget.setScale(2);
+        harness.widget.setScale(3);
+        harness.widget.setScale(4);
         await new Promise(resolve => setTimeout(resolve, 20));
 
-        expect(calls).to.equal(1);
+        expect(contexts).to.have.lengthOf(1);
+        expect(contexts[0]).to.have.property('scale', 4);
     });
 
     it('drops a badge refresh in flight when setUri switches to another recipe', async () => {
@@ -507,37 +508,38 @@ describe('RecipePreviewWidget badges', () => {
         expect(internals.badgeController.stale).to.equal(false);
     });
 
-    it('drops a stale badge refresh that resolves after a newer one', async () => {
+    it('clears the badges and drops a refresh in flight when a parse fails', async () => {
         const harness = new PreviewHarness();
         const internals = harness.widget as unknown as BadgeInternals;
-        // Debounced so the automatic refresh the parse triggers does not leave a
-        // pending timer running past the end of this test.
         internals.badgeController.debounceMs = 1;
+        const pill: PreviewBadge = { kind: 'pill', text: 'x', tone: 'neutral', tooltipMarkdown: '' };
+        internals.outlets.collectBadges = async () => [pill];
         await harness.open(LOCAL);
+        await until(() => internals.badgeController.badges.length > 0);
 
-        const stale: PreviewBadge = { kind: 'pill', text: 'stale', tone: 'neutral', tooltipMarkdown: '' };
-        const fresh: PreviewBadge = { kind: 'pill', text: 'fresh', tone: 'neutral', tooltipMarkdown: '' };
-        let resolveStale!: (badges: PreviewBadge[]) => void;
-        let calls = 0;
-        internals.outlets.collectBadges = async () => {
-            calls++;
-            if (calls === 1) {
-                // Never resolves until the test does it explicitly, below.
-                return new Promise<PreviewBadge[]>(resolve => { resolveStale = resolve; });
-            }
-            return [fresh];
-        };
+        let resolveOld!: (badges: PreviewBadge[]) => void;
+        internals.outlets.collectBadges = async () => new Promise<PreviewBadge[]>(resolve => { resolveOld = resolve; });
+        const inFlight = internals.badgeController.refresh();
 
-        // Two refreshes in flight; the second (higher sequence number) settles first.
-        const firstRefresh = internals.badgeController.refresh();
-        const secondRefresh = internals.badgeController.refresh();
-        await secondRefresh;
-        expect(internals.badgeController.badges).to.deep.equal([fresh]);
+        Object.assign(harness.widget, {
+            service: {
+                parse: async () => { throw new Error('boom'); },
+                recipeImages: async (path: string) => {
+                    harness.nativeImageLookups.push(path);
+                    return JSON.stringify({ title: harness.localImage ?? null, steps: {} });
+                },
+                recipeImagesFromContent: async (content: string) => {
+                    harness.contentImageLookups.push(content);
+                    return JSON.stringify({ title: harness.contentImage ?? null, steps: {} });
+                },
+            },
+        });
+        (harness.widget as unknown as { parseCurrentContent(): void }).parseCurrentContent();
+        await until(() => internals.badgeController.badges.length === 0);
 
-        // The stale first refresh settles later and must not overwrite the newer result.
-        resolveStale([stale]);
-        await firstRefresh;
-        expect(internals.badgeController.badges).to.deep.equal([fresh]);
+        resolveOld([pill]);
+        await inFlight;
+        expect(internals.badgeController.badges).to.deep.equal([]);
     });
 });
 
