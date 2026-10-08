@@ -85,7 +85,7 @@ export namespace CooklangPluginApi {
          * template and scale; the cache is dropped on login/logout and on any `cooklang.*`
          * preference change. Templates call the nutrition service with the signed-in user's
          * token, so any installed plugin can make authenticated nutrition-service calls on the
-         * user's behalf (counting against their quota) without ever seeing the token.
+         * user's behalf (counting against their quota) without ever seeing the token. Rejects a `uri` whose scheme has no file system provider.
          */
         RENDER_REPORT: 'cooklang.api.renderReport',
         /**
@@ -98,8 +98,9 @@ export namespace CooklangPluginApi {
          * rendering `template` (same limits as {@link RENDER_REPORT}) against the `.cook` or
          * `.menu` at `uri`, titled `label` (≤ {@link MAX_REPORT_LABEL_LENGTH} characters, no
          * control characters). `outputFormat` is `markdown` (default), `html` or `text`;
-         * `scale` defaults to 1. Calling it again with the same `uri` and `label` focuses the
-         * existing tab. The tab re-renders on edits and exports like any other report.
+         * `scale` defaults to 1. Calling it again with the same `uri` and `label` reuses the
+         * existing tab and refreshes it with the new template, format and scale; plugins sharing
+         * a label share a tab. The tab re-renders on edits and exports like any other report.
          */
         OPEN_REPORT: 'cooklang.api.openReport',
     } as const;
@@ -312,6 +313,10 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
             throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
         }
+        // Fail closed: FileService.activateProvider() never settles for an unregistered scheme.
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
+        }
         const template = this.text(request.template, '`template`');
         if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
             throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
@@ -329,6 +334,10 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         const uri = new URI(raw);
         if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
             throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
+        }
+        // Fail closed: FileService.activateProvider() never settles for an unregistered scheme.
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
         }
         const template = this.text(request.template, '`template`');
         if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {

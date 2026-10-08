@@ -415,6 +415,14 @@ describe('CooklangPluginApiContribution — hasFeature and renderReport', () => 
         }
         expect(fixture.reportCalls).to.deep.equal([]);
     });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        fixture.hasProvider = scheme => scheme === 'file';
+        expect(await fixture.error(RENDER_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}' })).to.match(/^Invalid arguments/);
+        expect(fixture.reportCalls).to.deep.equal([]);
+    });
 });
 
 describe('CooklangPluginApiContribution — refreshBadges', () => {
@@ -470,6 +478,14 @@ describe('CooklangPluginApiContribution — openReport', () => {
         ]) {
             expect(await fixture.error(OPEN_REPORT, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
         }
+        expect(fixture.shown).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        fixture.hasProvider = scheme => scheme === 'file';
+        expect(await fixture.error(OPEN_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}', label: 'x' })).to.match(/^Invalid arguments/);
         expect(fixture.shown).to.deep.equal([]);
     });
 });
