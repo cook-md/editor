@@ -521,19 +521,9 @@ describe('RecipePreviewWidget badges', () => {
         internals.outlets.collectBadges = async () => new Promise<PreviewBadge[]>(resolve => { resolveOld = resolve; });
         const inFlight = internals.badgeController.refresh();
 
-        Object.assign(harness.widget, {
-            service: {
-                parse: async () => { throw new Error('boom'); },
-                recipeImages: async (path: string) => {
-                    harness.nativeImageLookups.push(path);
-                    return JSON.stringify({ title: harness.localImage ?? null, steps: {} });
-                },
-                recipeImagesFromContent: async (content: string) => {
-                    harness.contentImageLookups.push(content);
-                    return JSON.stringify({ title: harness.contentImage ?? null, steps: {} });
-                },
-            },
-        });
+        const service = (harness.widget as unknown as { service: { parse(content: string): Promise<string> } }).service;
+        service.parse = async () => { throw new Error('boom'); };
+        // The harness's document events are inert, so re-parse through the widget's own entry point.
         (harness.widget as unknown as { parseCurrentContent(): void }).parseCurrentContent();
         await until(() => internals.badgeController.badges.length === 0);
 
