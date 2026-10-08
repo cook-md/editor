@@ -146,12 +146,18 @@ On activation and on every `onDidChange`:
   would not: Theia and `vscode-uri` disagree on the Windows drive-letter case).
 - then `cooklang.api.refreshBadges` (ignored when the editor predates it, as
   in `corevitals`), so open previews re-render their toolbar.
+- The store fires no change event when the loaded list equals the initial
+  empty list, so `activate` also syncs once explicitly after binding the
+  workspace.
 
 ### 2.4 Resolving the target recipe — `src/recipe-target.ts`
 
 Pure. `recipeTarget(argument, root: Uri | undefined, activeEditorUri: Uri |
-undefined): { uri: Uri; path: string } | undefined`, where `path` is the
-normalised workspace-relative path:
+undefined): { uri: string; path: string } | undefined`, where `uri` is the
+URI string (plain JSON, like the tree items) and `path` is the normalised
+workspace-relative path. Paths are compared after lower-casing a leading
+Windows drive letter, because `vscode-uri` yields `/C:/…` from `Uri.file()`
+but `/c:/…` from `Uri.parse()`:
 
 - `PreviewOutletContext` (toolbar, has `version`/`uri`/`path`): uses `path`
   when non-empty and the URI scheme is `file`.
@@ -176,10 +182,13 @@ Commands (category "Favourites"):
 Menus:
 
 - `cooklang/recipePreview/toolbar`, both at `navigation@1`:
-  `add` when `cooklangPreviewScheme == file && cooklangPreviewPath != '' &&
-  cooklangPreviewPath not in cooklang.favourites.paths`;
-  `remove` when `cooklangPreviewScheme == file && cooklangPreviewPath in
-  cooklang.favourites.paths`.
+  `add` when `cooklangPreviewScheme == file && cooklangPreviewPath =~
+  /\.cook$/i && cooklangPreviewPath not in cooklang.favourites.paths`;
+  `remove` when `cooklangPreviewScheme == file && cooklangPreviewPath =~
+  /\.cook$/i && cooklangPreviewPath in cooklang.favourites.paths`. The
+  `.cook` match also excludes the Markdown recipes (`.md` with
+  `recipe: true`) the recipe preview can show, and an empty path (outside
+  the workspace).
 - `explorer/context`, group `navigation@80`:
   `add` when `resourceExtname =~ /^\.cook$/i && resource not in
   cooklang.favourites.uris`; `remove` when `resourceExtname =~ /^\.cook$/i
@@ -192,9 +201,12 @@ Menus:
 
 Behaviour:
 
-- `add`/`remove`/`toggle` resolve the target (2.4), call the store, then show
-  a toast: "Added to Favourites" or "Removed from Favourites" with an **Undo**
-  action that applies the inverse operation. Toasts use
+- `add`/`remove`/`toggle` first check the store has a workspace (else
+  "Open a recipe folder to use favourites."), resolve the target (2.4), call
+  the store, then show a toast: "Added to Favourites" or "Removed from
+  Favourites" with an **Undo** action that applies the inverse operation.
+  `add` on a recipe that is already a favourite shows "Already in Favourites"
+  (no Undo); `remove` on one that is not shows "Not in Favourites". Toasts use
   `window.showInformationMessage`, which the editor renders as a notification.
 - Store failures (write errors) surface as
   `window.showErrorMessage("Could not update .bookmarks: <reason>")` and are
@@ -203,7 +215,8 @@ Behaviour:
 ### 2.6 Favourites view — `src/favourites-tree.ts`
 
 `contributes.views.explorer`: `{ "id": "cooklang.favourites.view", "name":
-"Favourites", "visibility": "collapsed" }`. A `TreeDataProvider<FavouriteItem>`
+"Favourites", "visibility": "collapsed" }` (`visibility` is a VS Code hint;
+Theia ignores it and restores whatever state the container had). A `TreeDataProvider<FavouriteItem>`
 registered with `window.createTreeView`, `showCollapseAll: false`.
 
 - One flat level. Items sorted by recipe name (file name without `.cook`),
