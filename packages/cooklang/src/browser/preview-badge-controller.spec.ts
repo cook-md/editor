@@ -169,6 +169,7 @@ describe('PreviewBadgeController', () => {
         expect(harness.controller.badges).to.deep.equal([]);
         harness.controller.schedule();
         await new Promise(resolve => setTimeout(resolve, 20));
+        await harness.controller.refresh();
         expect(harness.calls).to.have.lengthOf(1);
     });
 

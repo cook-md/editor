@@ -85,7 +85,8 @@ export class PreviewBadgeController implements Disposable {
 
     /**
      * The preview switched to another source: forget the old badges and let no
-     * refresh for the old source land after this.
+     * refresh for the old source land after this. Does not call
+     * `onDidChangeBadges`; the caller re-renders.
      */
     reset(): void {
         this.badges = [];
@@ -93,7 +94,12 @@ export class PreviewBadgeController implements Disposable {
         this.clearTimer();
     }
 
+    /** Queries the outlet now (unless disposed) and re-renders the host when the badges changed; a pending debounce is dropped. */
     async refresh(): Promise<void> {
+        if (this.disposed) {
+            return;
+        }
+        this.clearTimer();
         const sequence = ++this.sequence;
         const context = this.host.context();
         const badges = context ? await this.outlets.collectBadges(this.host.outlet, context, this.host.element) : [];
@@ -126,6 +132,7 @@ export class PreviewBadgeController implements Disposable {
         this.hoverShown = true;
     }
 
+    /** The badge lost focus: close the hover and give up ownership. */
     hideDetails(): void {
         this.hoverShown = false;
         this.hoverService.cancelHover();
