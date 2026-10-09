@@ -40,6 +40,10 @@ files:
   - proto
   - resources/icon-256.png
   - resources/cooked-logo.svg
+  # Splash screen (`splashScreenOptions.content` in package.json) and the images it loads.
+  - resources/splash.html
+  - resources/SplashScreen.png
+  - resources/SplashScreen@2x.png
   - "!node_modules/**/@theia/**/src/**"
   - "!node_modules/**/@theia/**/lib/**/*.spec.*"
   - "!node_modules/**/@theia/cooklang-native/target/**"
