@@ -110,7 +110,7 @@
     "tamasfe.even-better-toml": "https://open-vsx.org/api/tamasfe/even-better-toml/0.21.2/file/tamasfe.even-better-toml-0.21.2.vsix",
     "samuelcolvin.jinjahtml": "https://open-vsx.org/api/samuelcolvin/jinjahtml/0.20.0/file/samuelcolvin.jinjahtml-0.20.0.vsix",
     "cooklang.shopping-list": "https://plugins.cook.md/api/cooklang/shopping-list/0.1.2/file/cooklang.shopping-list-0.1.2.vsix",
-    "cooklang.favourites": "https://plugins.cook.md/api/cooklang/favourites/0.1.1/file/cooklang.favourites-0.1.1.vsix"
+    "cooklang.favourites": "https://plugins.cook.md/api/cooklang/favourites/0.1.2/file/cooklang.favourites-0.1.2.vsix"
   },
   "theiaPluginsExcludeIds": [
     "ms-vscode.js-debug-companion",
