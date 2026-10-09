@@ -3,7 +3,7 @@
 **Date:** 2026-10-08
 **Status:** Approved (brainstorming)
 **Repos touched:** `editor` (one context key, one `theiaPlugins` entry), `plugins` (new `favourites` package)
-**Design reference:** Cooklang iOS Figma, "Favourites" page (node 5183-28212): outline heart → filled orange heart, "Added to Favourites" toast with Undo, a Favourites tab listing recipes.
+**Design reference:** Cooklang iOS Figma, "Favourites" page (node 5183-28212): outline heart → filled orange heart, a Favourites tab listing recipes. (The iOS toast with Undo was dropped for the editor.)
 
 ## Goal
 
@@ -33,7 +33,7 @@ plugins.cook.md, listed in the editor's `theiaPlugins` like `shopping-list`.
 
 1. Editor: `cooklangPreviewPath` context key on the recipe preview element.
 2. Plugin `cooklang.favourites` in `../plugins/favourites`: file format, store,
-   commands, toolbar hearts, Explorer context menu, Favourites view, toasts,
+   commands, toolbar hearts, Explorer context menu, Favourites view,
    rename/delete tracking, tests, README, CI matrix row.
 3. Publish 0.1.0 to plugins.cook.md (user runs `publish:marketplace` with the
    PAT) and add the `theiaPlugins` entry in the editor's root `package.json`.
@@ -201,16 +201,12 @@ Menus:
 
 Behaviour:
 
-- Notifications with an action never auto-dismiss in Theia, so the toast
-  stays until closed (or Undo is pressed). Accepted for v1; dropping Undo
-  would make it auto-dismiss.
 - `add`/`remove`/`toggle` first check the store has a workspace (else
-  "Open a recipe folder to use favourites."), resolve the target (2.4), call
-  the store, then show a toast: "Added to Favourites" or "Removed from
-  Favourites" with an **Undo** action that applies the inverse operation.
-  `add` on a recipe that is already a favourite shows "Already in Favourites"
-  (no Undo); `remove` on one that is not shows "Not in Favourites". Toasts use
-  `window.showInformationMessage`, which the editor renders as a notification.
+  "Open a recipe folder to use favourites."), resolve the target (2.4) and
+  call the store. No confirmation toast (decided 2026-10-09: Theia keeps a
+  notification with an action open until dismissed, which was noisy); the
+  heart and the Favourites view show the new state. `add` on an existing
+  favourite and `remove` on a non-favourite are silent no-ops.
 - Store failures (write errors) surface as
   `window.showErrorMessage("Could not update .bookmarks: <reason>")` and are
   logged to an output channel "Favourites".
@@ -270,7 +266,7 @@ Mocha, like the other plugins (`npm test` = `tsc && mocha out/**/*.spec.js`):
   checked manually (a bogus `.bookmarks` line shows the warning icon).
 
 Manual check in the editor: heart toggles and re-renders in an open preview,
-Explorer menu entries switch, view lists and opens, Undo works, hand-editing
+Explorer menu entries switch, view lists and opens, hand-editing
 `.bookmarks` updates the heart and the view.
 
 ### 2.9 Docs and CI
