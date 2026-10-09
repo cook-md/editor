@@ -13,6 +13,21 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.52](https://github.com/cook-md/editor/compare/v0.1.0-alpha.51...v0.1.0-alpha.52) (2026-10-09)
+
+
+### Features
+
+* **cooklang:** Favourites plugin, cooklangPreviewPath context key and bundled cooklang.favourites ([#208](https://github.com/cook-md/editor/issues/208)) ([167e415](https://github.com/cook-md/editor/commit/167e415ab0269bf2f04bb4e5c3bab58e070c333c))
+* **cooklang:** menu preview badges and cooklang.api.openReport for the Core Vitals plugin ([#204](https://github.com/cook-md/editor/issues/204)) ([9f078f7](https://github.com/cook-md/editor/commit/9f078f77712d1070b1378c9ecd9e8032946ac80a))
+
+
+### Bug Fixes
+
+* **cooklang:** menus always use the cooklang language; report tabs stop persisting the nutrition token ([#206](https://github.com/cook-md/editor/issues/206)) ([366717e](https://github.com/cook-md/editor/commit/366717e3f6fe9a6e3374bf7effc6394827a745fa))
+* remove claude ([c49bb94](https://github.com/cook-md/editor/commit/c49bb9416828681e9ef4505cfc978a03eb6604c9))
+* Sentry issues seen on alpha.42–alpha.50 ([#211](https://github.com/cook-md/editor/issues/211)) ([d889eb9](https://github.com/cook-md/editor/commit/d889eb9a6c295598739a8ddc7abee4c38b184bbd))
+
 ## [0.1.0-alpha.51](https://github.com/cook-md/editor/compare/v0.1.0-alpha.50...v0.1.0-alpha.51) (2026-10-06)
 
 
