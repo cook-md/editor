@@ -34,6 +34,12 @@ jobs:
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1.0.240
+        env:
+          # Run subagents in the foreground: the action ends the run at the
+          # first result, so a backgrounded one is killed before it reports.
+          # Remove once the action waits for background tasks:
+          # https://github.com/anthropics/claude-code-action/issues/1852
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Lets Claude read CI results on pull requests. Without a `prompt`,
