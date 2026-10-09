@@ -348,7 +348,8 @@ export abstract class AbstractDialog<T> extends BaseWidget {
         const token = this.acceptCancellationSource.token;
         const value = this.value;
         const error = await this.isValid(value, 'open');
-        if (token.isCancellationRequested) {
+        // The dialog may have been closed (and `resolve` cleared) while validation was pending.
+        if (token.isCancellationRequested || !this.resolve) {
             return;
         }
         if (!DialogError.getResult(error)) {

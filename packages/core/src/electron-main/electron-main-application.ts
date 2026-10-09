@@ -532,14 +532,20 @@ export class ElectronMainApplication {
     async openDefaultWindow(params?: WindowSearchParams): Promise<BrowserWindow> {
         const options = this.getDefaultTheiaWindowOptions();
         const [uri, electronWindow] = await Promise.all([this.createWindowUri(params), this.reuseOrCreateWindow(options)]);
-        electronWindow.loadURL(uri.withFragment(DEFAULT_WINDOW_HASH).toString(true));
+        // The app can quit while the window is being created, which destroys it.
+        if (!electronWindow.isDestroyed()) {
+            electronWindow.loadURL(uri.withFragment(DEFAULT_WINDOW_HASH).toString(true));
+        }
         return electronWindow;
     }
 
     protected async openWindowWithWorkspace(workspacePath: string): Promise<BrowserWindow> {
         const options = await this.getLastWindowOptions();
         const [uri, electronWindow] = await Promise.all([this.createWindowUri(), this.reuseOrCreateWindow(options)]);
-        electronWindow.loadURL(uri.withFragment(encodeURI(workspacePath)).toString(true));
+        // The app can quit while the window is being created, which destroys it.
+        if (!electronWindow.isDestroyed()) {
+            electronWindow.loadURL(uri.withFragment(encodeURI(workspacePath)).toString(true));
+        }
         return electronWindow;
     }
 
