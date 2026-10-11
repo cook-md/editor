@@ -25,6 +25,7 @@ try {
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { ReportWidgetOptions } from './report-widget-types';
+import { ReportExportResult } from '../common/report-export-protocol';
 import { CooklangPluginApi, CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
 
 interface Handler { execute: (...args: unknown[]) => unknown }
@@ -55,6 +56,14 @@ class Fixture {
     reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
     refreshes = 0;
     shown: ReportWidgetOptions[] = [];
+    exportCalls: Array<{ html: string; name: string; options: unknown }> = [];
+    exportResult: ReportExportResult = { saved: true, filePath: '/out/Family Book.pdf' };
+    exportError: Error | undefined = undefined;
+    nativeImages: { title?: string; steps: Record<string, Record<string, string>> } = { steps: {} };
+    contentImages: { title?: string; steps: Record<string, Record<string, string>> } = { steps: {} };
+    imageLookups: string[] = [];
+    contentLookups: string[] = [];
+    fileReads: string[] = [];
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -88,6 +97,14 @@ class Fixture {
                 this.pantryEdits.push({ text, json });
                 return 'edited';
             },
+            recipeImages: async (path: string) => {
+                this.imageLookups.push(path);
+                return JSON.stringify(this.nativeImages);
+            },
+            recipeImagesFromContent: async (content: string) => {
+                this.contentLookups.push(content);
+                return JSON.stringify(this.contentImages);
+            },
         };
         (contribution as any).reportConfigService = {
             resolveWorkspaceUri: (arg: string) => {
@@ -101,7 +118,13 @@ class Fixture {
         };
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
         (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
-        (contribution as any).fileService = { hasProvider: (scheme: string) => this.hasProvider(scheme) };
+        (contribution as any).fileService = {
+            hasProvider: (scheme: string) => this.hasProvider(scheme),
+            read: async (uri: URI) => {
+                this.fileReads.push(uri.toString());
+                return { value: 'remote recipe text' };
+            },
+        };
         (contribution as any).subscriptions = { hasFeature: async (name: string) => this.features.has(name) };
         (contribution as any).pluginReports = {
             render: async (uri: URI, template: string, scale: number) => {
@@ -110,6 +133,15 @@ class Fixture {
             },
         };
         (contribution as any).outlets = { refresh: () => { this.refreshes += 1; } };
+        (contribution as any).reportExport = {
+            exportPdf: async (html: string, name: string, options?: unknown) => {
+                this.exportCalls.push({ html, name, options });
+                if (this.exportError) {
+                    throw this.exportError;
+                }
+                return this.exportResult;
+            },
+        };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -487,5 +519,218 @@ describe('CooklangPluginApiContribution — openReport', () => {
         fixture.hasProvider = scheme => scheme === 'file';
         expect(await fixture.error(OPEN_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}', label: 'x' })).to.match(/^Invalid arguments/);
         expect(fixture.shown).to.deep.equal([]);
+    });
+});
+
+describe('CooklangPluginApiContribution — exportPdf', () => {
+    const { EXPORT_PDF } = CooklangPluginApi.Commands;
+    const HTML = '<!doctype html><html><body><h1>Family Book</h1></body></html>';
+
+    it('delegates to the report export service and maps filePath to path', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Family Book' }))
+            .to.deep.equal({ saved: true, path: '/out/Family Book.pdf' });
+        expect(fixture.exportCalls).to.deep.equal([{ html: HTML, name: 'Family Book', options: undefined }]);
+    });
+
+    it('drops a trailing .pdf, because the service adds the extension', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Family Book.pdf' });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: ' Soups.PDF ' });
+        expect(fixture.exportCalls.map(call => call.name)).to.deep.equal(['Family Book', 'Soups']);
+    });
+
+    it('passes pageSize through, and no options at all when it is omitted', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'A4' });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'Letter' });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' });
+        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([{ pageSize: 'A4' }, { pageSize: 'Letter' }, undefined]);
+    });
+
+    it('passes pageNumbers: true through, and drops false', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'A4', pageNumbers: true });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageNumbers: true });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageNumbers: false });
+        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([
+            { pageSize: 'A4', pageNumbers: true },
+            { pageNumbers: true },
+            undefined,
+        ]);
+    });
+
+    it('reports a cancelled dialog as not saved, without an error', async () => {
+        const fixture = new Fixture();
+        fixture.exportResult = { saved: false };
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' })).to.deep.equal({ saved: false });
+    });
+
+    it("passes the service's error message through", async () => {
+        const fixture = new Fixture();
+        fixture.exportResult = { saved: false, error: 'EACCES: permission denied' };
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' }))
+            .to.deep.equal({ saved: false, error: 'EACCES: permission denied' });
+    });
+
+    it('turns a rejected service call into an error result instead of throwing', async () => {
+        const fixture = new Fixture();
+        fixture.exportError = new Error('connection closed');
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' }))
+            .to.deep.equal({ saved: false, error: 'connection closed' });
+    });
+
+    it('rejects bad html, file names and page sizes before exporting', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            undefined,
+            { defaultFileName: 'Book' },
+            { html: '', defaultFileName: 'Book' },
+            { html: ' \n\t ', defaultFileName: 'Book' },
+            { html: 42, defaultFileName: 'Book' },
+            { html: HTML },
+            { html: HTML, defaultFileName: '   ' },
+            { html: HTML, defaultFileName: 'Books/Family' },
+            { html: HTML, defaultFileName: 'Books\\Family' },
+            { html: HTML, defaultFileName: 'Family\nBook' },
+            { html: HTML, defaultFileName: 'x'.repeat(201) },
+            { html: HTML, defaultFileName: '.pdf' },
+            { html: HTML, defaultFileName: 'Book', pageSize: 'A3' },
+            { html: HTML, defaultFileName: 'Book', pageSize: 4 },
+            { html: HTML, defaultFileName: 'Book', pageNumbers: 'yes' },
+        ]) {
+            expect(await fixture.error(EXPORT_PDF, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.exportCalls).to.deep.equal([]);
+    });
+
+    it('accepts html up to the limit and rejects one character more', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const limit = CooklangPluginApi.MAX_EXPORT_HTML_LENGTH;
+        expect(limit).to.equal(100 * 1024 * 1024);
+        expect(await fixture.error(EXPORT_PDF, { html: 'x'.repeat(limit + 1), defaultFileName: 'Book' }))
+            .to.match(/^Invalid arguments: `html`/);
+        await fixture.run(EXPORT_PDF, { html: 'x'.repeat(limit), defaultFileName: 'Book' });
+        expect(fixture.exportCalls).to.have.length(1);
+    });
+
+    it('accepts a 200-character file name', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'x'.repeat(200) });
+        expect(fixture.exportCalls[0].name).to.equal('x'.repeat(200));
+    });
+
+    it('counts the file name length in code points, not UTF-16 units', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        // Each emoji is one code point but two UTF-16 units: 200 code points, 400 units.
+        const astral = '🥞'.repeat(200);
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: astral });
+        expect(fixture.exportCalls[0].name).to.equal(astral);
+        expect(await fixture.error(EXPORT_PDF, { html: HTML, defaultFileName: '🥞'.repeat(201) }))
+            .to.match(/^Invalid arguments: `defaultFileName`/);
+        expect(fixture.exportCalls).to.have.length(1);
+    });
+});
+
+describe('CooklangPluginApiContribution — recipeImages', () => {
+    const { RECIPE_IMAGES } = CooklangPluginApi.Commands;
+
+    it('returns a local recipe\'s images as absolute file URIs, looked up on disk', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = {
+            title: 'photos/hero.jpg',
+            steps: {
+                '0': { '0': '/ws/Dinner/Soup.1.jpg', '2': '/ws/Dinner/My Soup.3.webp' },
+                '1': { '3': '/ws/Dinner/Soup.2.4.PNG' },
+            },
+        };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Dinner/Soup.cook' })).to.deep.equal({
+            title: 'file:///ws/Dinner/photos/hero.jpg',
+            steps: {
+                '0': { '0': 'file:///ws/Dinner/Soup.1.jpg', '2': 'file:///ws/Dinner/My%20Soup.3.webp' },
+                '1': { '3': 'file:///ws/Dinner/Soup.2.4.PNG' },
+            },
+        });
+        expect(fixture.imageLookups).to.deep.equal(['/ws/Dinner/Soup.cook']);
+        expect(fixture.contentLookups).to.deep.equal([]);
+        expect(fixture.fileReads).to.deep.equal([]);
+    });
+
+    it('returns http(s) metadata URLs of a local recipe verbatim', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = { title: 'http://cdn.example/soup.jpg', steps: {} };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' }))
+            .to.deep.equal({ title: 'http://cdn.example/soup.jpg', steps: {} });
+    });
+
+    it('leaves out files the preview cannot show and recipes with no images', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = { title: 'hero.gif', steps: { '0': { '0': '/ws/Soup.1.tiff' } } };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' })).to.deep.equal({ steps: {} });
+        fixture.nativeImages = { steps: {} };
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' })).to.deep.equal({ steps: {} });
+    });
+
+    it('reads a recipe on another file system through FileService and keeps only https images', async () => {
+        const fixture = new Fixture();
+        fixture.contentImages = { title: 'https://cdn.example/p.jpg', steps: {} };
+        fixture.create();
+        const uri = 'cooklang-hub:/recipes/12/Pancakes.cook';
+        expect(await fixture.run(RECIPE_IMAGES, { uri })).to.deep.equal({ title: 'https://cdn.example/p.jpg', steps: {} });
+        expect(fixture.fileReads).to.deep.equal([uri]);
+        expect(fixture.contentLookups).to.deep.equal(['remote recipe text']);
+        expect(fixture.imageLookups).to.deep.equal([]);
+        for (const title of ['http://cdn.example/p.jpg', 'Pancakes.jpg', '/etc/passwd']) {
+            fixture.contentImages = { title, steps: {} };
+            expect(await fixture.run(RECIPE_IMAGES, { uri }), title).to.deep.equal({ steps: {} });
+        }
+    });
+
+    it('rejects anything but an absolute .cook URI', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            undefined,
+            {},
+            { uri: '' },
+            { uri: 'Soup.cook' },
+            { uri: 'file:///ws/week.menu' },
+            { uri: 'file:///ws/notes.md' },
+            { uri: 'file:///ws/So\nup.cook' },
+        ]) {
+            expect(await fixture.error(RECIPE_IMAGES, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.imageLookups).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.hasProvider = scheme => scheme === 'file';
+        fixture.create();
+        expect(await fixture.error(RECIPE_IMAGES, { uri: 'foo:/x/Soup.cook' }))
+            .to.equal('Invalid arguments: no file system for scheme "foo".');
+        expect(fixture.fileReads).to.deep.equal([]);
+    });
+
+    it('propagates a native lookup failure', async () => {
+        const fixture = new Fixture();
+        const contribution = fixture.create();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (contribution as any).languageService.recipeImages = async () => { throw new Error('recipeImages: not found'); };
+        expect(await fixture.error(RECIPE_IMAGES, { uri: 'file:///ws/Gone.cook' })).to.equal('recipeImages: not found');
     });
 });

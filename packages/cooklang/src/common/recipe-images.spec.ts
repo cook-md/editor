@@ -13,7 +13,14 @@
 
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
-import { RecipeImages, lookupStepImage, resolveImageUri } from './recipe-images';
+import {
+    RecipeImages,
+    discoverRecipeImages,
+    locateRecipeImage,
+    lookupStepImage,
+    mapRecipeImages,
+    resolveImageUri,
+} from './recipe-images';
 
 describe('lookupStepImage', () => {
 
@@ -115,5 +122,162 @@ describe('resolveImageUri', () => {
     it('returns undefined for blank input', () => {
         expect(resolveImageUri('', recipe)).to.be.undefined;
         expect(resolveImageUri('   ', recipe)).to.be.undefined;
+    });
+
+    // A UNC path is read over SMB, which can hand the user's NTLM hash to
+    // whoever runs `host`. An image may not introduce a host the recipe
+    // itself is not already read from.
+    it('rejects a UNC image for a local recipe', () => {
+        for (const raw of ['\\\\host\\share\\x.jpg', '//host/share/x.jpg', '\\\\?\\UNC\\host\\share\\x.jpg', '/\\host\\share\\x.jpg']) {
+            expect(resolveImageUri(raw, recipe), raw).to.be.undefined;
+        }
+    });
+
+    describe('for a recipe on a share', () => {
+        const shared = new URI('file://host/share/recipes/Pancakes.cook');
+
+        it('resolves a same-folder image on the same share', () => {
+            expect((resolveImageUri('photo.jpg', shared) as { uri: URI }).uri.toString())
+                .to.equal('file://host/share/recipes/photo.jpg');
+        });
+
+        it('keeps the absolute UNC path cooklang-find reports for a sibling on the same share', () => {
+            expect((resolveImageUri('\\\\host\\share\\recipes\\Pancakes.1.jpg', shared) as { uri: URI }).uri.toString())
+                .to.equal('file://host/share/recipes/Pancakes.1.jpg');
+            expect((resolveImageUri('\\\\HOST\\share\\recipes\\Pancakes.jpg', shared) as { uri: URI }).uri.path.toString())
+                .to.equal('/share/recipes/Pancakes.jpg');
+        });
+
+        it('rejects an image on another host', () => {
+            expect(resolveImageUri('\\\\other\\share\\x.jpg', shared)).to.be.undefined;
+            expect(resolveImageUri('//other/share/x.jpg', shared)).to.be.undefined;
+        });
+    });
+
+    it('normalises `..` segments, so the same file always has the same URI', () => {
+        expect((resolveImageUri('../photos/hero.jpg', recipe) as { uri: URI }).uri.toString())
+            .to.equal('file:///work/photos/hero.jpg');
+        expect((resolveImageUri('/work/recipes/../images/./hero.jpg', recipe) as { uri: URI }).uri.toString())
+            .to.equal('file:///work/images/hero.jpg');
+        expect((resolveImageUri('C:\\work\\a\\..\\hero.jpg', recipe) as { uri: URI }).uri.path.toString().toLowerCase())
+            .to.equal('/c:/work/hero.jpg');
+    });
+});
+
+describe('locateRecipeImage', () => {
+
+    const local = new URI('file:///work/recipes/Pancakes.cook');
+    const hub = new URI('cooklang-hub:/recipes/12/Pancakes.cook');
+
+    it('resolves a relative path against a local recipe folder', () => {
+        const location = locateRecipeImage('img/hero.jpg', local);
+        expect(location?.kind).to.equal('file');
+        expect(location?.kind === 'file' ? location.uri.toString() : undefined).to.equal('file:///work/recipes/img/hero.jpg');
+    });
+
+    it('keeps an absolute path for a local recipe', () => {
+        const location = locateRecipeImage('/work/recipes/Pancakes.1.jpg', local);
+        expect(location?.kind === 'file' ? location.uri.toString() : undefined).to.equal('file:///work/recipes/Pancakes.1.jpg');
+    });
+
+    it('keeps http and https URLs for a local recipe', () => {
+        expect(locateRecipeImage('http://cdn.example/p.jpg', local)).to.deep.equal({ kind: 'remote', url: 'http://cdn.example/p.jpg' });
+        expect(locateRecipeImage('https://cdn.example/p.jpg', local)).to.deep.equal({ kind: 'remote', url: 'https://cdn.example/p.jpg' });
+    });
+
+    it('keeps only https URLs for a recipe on another file system', () => {
+        expect(locateRecipeImage('https://cdn.example/p.jpg', hub)).to.deep.equal({ kind: 'remote', url: 'https://cdn.example/p.jpg' });
+        expect(locateRecipeImage('http://cdn.example/p.jpg', hub)).to.equal(undefined);
+    });
+
+    it('never names a file for a recipe on another file system', () => {
+        for (const raw of ['Pancakes.jpg', '/etc/passwd', 'C:\\photos\\p.jpg', 'javascript:alert(1)', 'data:image/png;base64,AAAA']) {
+            expect(locateRecipeImage(raw, hub), raw).to.equal(undefined);
+        }
+    });
+
+    it('ignores blank and missing values', () => {
+        expect(locateRecipeImage('', local)).to.equal(undefined);
+        expect(locateRecipeImage('   ', local)).to.equal(undefined);
+        expect(locateRecipeImage(undefined, local)).to.equal(undefined);
+    });
+});
+
+describe('mapRecipeImages', () => {
+
+    it('converts the title and every section step, keeping the keys', async () => {
+        const images: RecipeImages = {
+            title: '/r/P.jpg',
+            steps: { '0': { '0': '/r/P.1.jpg' }, '1': { '3': '/r/P.2.4.jpg' } },
+        };
+        expect(await mapRecipeImages(images, async raw => `x:${raw}`)).to.deep.equal({
+            title: 'x:/r/P.jpg',
+            steps: { '0': { '0': 'x:/r/P.1.jpg' }, '1': { '3': 'x:/r/P.2.4.jpg' } },
+        });
+    });
+
+    it('drops entries the converter rejects and leaves no empty section behind', async () => {
+        const images: RecipeImages = { title: 'a', steps: { '0': { '0': 'b', '1': 'c' }, '2': { '0': 'd' } } };
+        const result = await mapRecipeImages(images, async raw => (raw === 'a' || raw === 'd' ? undefined : raw.toUpperCase()));
+        expect(result).to.deep.equal({ steps: { '0': { '0': 'B', '1': 'C' } } });
+    });
+
+    it('treats a null native title and missing images as nothing', async () => {
+        const fromNative = JSON.parse('{"title":null,"steps":{}}') as RecipeImages;
+        expect(await mapRecipeImages(fromNative, async raw => raw)).to.deep.equal({ steps: {} });
+        expect(await mapRecipeImages(undefined, async raw => raw)).to.deep.equal({ steps: {} });
+    });
+
+    it('starts every conversion before awaiting any, so reads overlap', async () => {
+        const images: RecipeImages = { title: 't', steps: { '0': { '0': 'a', '1': 'b' } } };
+        let inFlight = 0;
+        let peak = 0;
+        await mapRecipeImages(images, async raw => {
+            inFlight++;
+            peak = Math.max(peak, inFlight);
+            await new Promise(resolve => setTimeout(resolve, 1));
+            inFlight--;
+            return raw;
+        });
+        expect(peak).to.equal(3);
+    });
+});
+
+describe('discoverRecipeImages', () => {
+
+    function service(calls: string[]): {
+        recipeImages: (path: string) => Promise<string>;
+        recipeImagesFromContent: (content: string) => Promise<string>;
+    } {
+        return {
+            recipeImages: async (path: string) => {
+                calls.push(`path:${path}`);
+                return '{"title":"/r/P.jpg","steps":{"0":{"0":"/r/P.1.jpg"}}}';
+            },
+            recipeImagesFromContent: async (content: string) => {
+                calls.push(`content:${content}`);
+                return '{"title":"https://cdn.example/p.jpg","steps":{}}';
+            },
+        };
+    }
+
+    it('asks the on-disk lookup for a local recipe, ignoring any content', async () => {
+        const calls: string[] = [];
+        const images = await discoverRecipeImages(service(calls), new URI('file:///r/P.cook'), 'text');
+        expect(images).to.deep.equal({ title: '/r/P.jpg', steps: { '0': { '0': '/r/P.1.jpg' } } });
+        expect(calls).to.deep.equal(['path:/r/P.cook']);
+    });
+
+    it('asks the content lookup for a recipe on another file system', async () => {
+        const calls: string[] = [];
+        const images = await discoverRecipeImages(service(calls), new URI('cooklang-hub:/recipes/12/P.cook'), 'text');
+        expect(images).to.deep.equal({ title: 'https://cdn.example/p.jpg', steps: {} });
+        expect(calls).to.deep.equal(['content:text']);
+    });
+
+    it('reports nothing for a recipe on another file system before its content is known', async () => {
+        const calls: string[] = [];
+        expect(await discoverRecipeImages(service(calls), new URI('cooklang-hub:/recipes/12/P.cook'), undefined)).to.equal(undefined);
+        expect(calls).to.deep.equal([]);
     });
 });

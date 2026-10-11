@@ -27,10 +27,11 @@ import * as React from '@theia/core/shared/react';
 import { CooklangLanguageService, COOKLANG_LANGUAGE_ID } from '../common';
 import { Ingredient, ParseResult, Recipe } from '../common/recipe-types';
 import {
-    RecipeImages,
     ResolvedRecipeImages,
-    resolveImageUri,
     RECIPE_IMAGE_EXTENSIONS,
+    discoverRecipeImages,
+    locateRecipeImage,
+    mapRecipeImages,
 } from '../common/recipe-images';
 import { RecipeImageService } from './recipe-image-service';
 import { RecipeNavigator } from './recipe-navigator';
@@ -401,40 +402,19 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     /**
      * Ask `cooklang-find` which images exist for this recipe and turn each one
      * into an `<img>` src. Guarded by `imageSequence` so a slow refresh cannot
-     * overwrite a newer one.
+     * overwrite a newer one. Discovery and the source rules are shared with
+     * `cooklang.api.recipeImages` (see `common/recipe-images.ts`).
      */
     protected async refreshImages(): Promise<void> {
         if (!this.uri) {
             return;
         }
         const sequence = ++this.imageSequence;
-        const resolved: ResolvedRecipeImages = { steps: {} };
+        let resolved: ResolvedRecipeImages = { steps: {} };
         const fileUris = new Set<string>();
         try {
-            const discovered = await this.discoverImages();
-            // Every entry is a `FileService` read over RPC, so they are flattened
-            // and awaited together: a 20-image recipe should not pay for forty
-            // sequential round-trips before anything renders.
-            const entries: Array<{ section?: string; step?: string; raw: string }> = [];
-            if (discovered?.title) {
-                entries.push({ raw: discovered.title });
-            }
-            for (const [section, steps] of Object.entries(discovered?.steps ?? {})) {
-                for (const [step, raw] of Object.entries(steps)) {
-                    entries.push({ section, step, raw });
-                }
-            }
-            await Promise.all(entries.map(async entry => {
-                const src = await this.toImageSrc(entry.raw, fileUris);
-                if (!src) {
-                    return;
-                }
-                if (entry.section === undefined || entry.step === undefined) {
-                    resolved.title = src;
-                } else {
-                    (resolved.steps[entry.section] ??= {})[entry.step] = src;
-                }
-            }));
+            const discovered = await discoverRecipeImages(this.service, this.uri, this.content);
+            resolved = await mapRecipeImages(discovered, raw => this.toImageSrc(raw, fileUris));
         } catch (e) {
             // Usually harmless: no images, an unsaved file, or an unreadable
             // folder. But it also catches a native addon that predates
@@ -450,42 +430,16 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
     }
 
     /**
-     * The recipe's images as `cooklang-find` reports them. A local recipe is
-     * looked up on disk (metadata first, then sibling files). Any other recipe
-     * has no folder, so only its metadata can name an image, which is read from
-     * the parsed text; before the first parse there is nothing to report.
-     */
-    protected async discoverImages(): Promise<RecipeImages | undefined> {
-        if (this.hasLocalSource()) {
-            return JSON.parse(await this.service.recipeImages(this.uri.path.fsPath())) as RecipeImages;
-        }
-        if (this.content === undefined) {
-            return undefined;
-        }
-        return JSON.parse(await this.service.recipeImagesFromContent(this.content)) as RecipeImages;
-    }
-
-    /**
      * Resolve one raw image value to a URL an `<img>` can load, recording every
      * local file URI in `fileUris` so the watcher knows what this recipe reads.
      */
-    protected async toImageSrc(raw: string | undefined, fileUris: Set<string>): Promise<string | undefined> {
-        if (!raw) {
-            return undefined;
-        }
-        const location = resolveImageUri(raw, this.uri);
+    protected async toImageSrc(raw: string, fileUris: Set<string>): Promise<string | undefined> {
+        const location = locateRecipeImage(raw, this.uri);
         if (!location) {
             return undefined;
         }
         if (location.kind === 'remote') {
-            // A non-`file` recipe's metadata comes from a third party: only
-            // `https:` is loaded, so its images never travel in the clear.
-            return this.hasLocalSource() || /^https:/i.test(location.url) ? location.url : undefined;
-        }
-        // A non-`file` recipe has no folder: a relative or absolute path in its
-        // metadata names nothing the preview may read.
-        if (!this.hasLocalSource()) {
-            return undefined;
+            return location.url;
         }
         // Recorded even when the read fails: a file that is missing now may be
         // created later, and the watcher should notice when it is.

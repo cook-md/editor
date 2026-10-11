@@ -41,6 +41,14 @@ import { PluginReportService } from './plugin-report-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportOutputFormat } from '../common/report-templates';
 import { CooklangOutletService } from './cooklang-outlet-service';
+import { ReportExportPdfOptions, ReportExportResult, ReportExportService, ReportPageSize } from '../common/report-export-protocol';
+import {
+    RECIPE_IMAGE_MIME_TYPES,
+    ResolvedRecipeImages,
+    discoverRecipeImages,
+    locateRecipeImage,
+    mapRecipeImages,
+} from '../common/recipe-images';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
@@ -105,6 +113,36 @@ export namespace CooklangPluginApi {
          * Rejects a `uri` whose scheme has no file system provider.
          */
         OPEN_REPORT: 'cooklang.api.openReport',
+        /**
+         * `{ html, defaultFileName, pageSize? }` → `{ saved, path?, error? }`: renders a standalone
+         * HTML document (at most {@link MAX_EXPORT_HTML_LENGTH} characters, so inline photos as
+         * `data:` URIs) to PDF and shows the native save dialog, the same path as a report tab's
+         * **Export PDF**. The document is loaded from a temp file into a hidden, sandboxed window
+         * with JavaScript disabled. `defaultFileName` prefills the dialog: at most
+         * {@link MAX_EXPORT_FILE_NAME_LENGTH} characters, no `/`, `\` or control characters; `.pdf`
+         * is added when missing. `pageSize` is `A4` or `Letter`; without it Chromium's default
+         * (Letter) applies, and CSS `@page { size }` is ignored. `pageNumbers: true` numbers the
+         * pages in the bottom margin (leave about 12 mm) and fills every empty
+         * `<span data-page-ref="ID"></span>` with the page the element `id="ID"` starts on (IDs are
+         * `[A-Za-z0-9_-]`, at most 64 characters; the document is rendered twice). Resolves `{ saved: false }` when the
+         * user cancels and `{ saved: false, error }` when rendering or writing fails; the editor
+         * shows no message of its own.
+         */
+        EXPORT_PDF: 'cooklang.api.exportPdf',
+        /**
+         * `{ uri }` → `{ title?, steps }`: the recipe's photos, found by the preview's rules. A
+         * `file:` recipe is looked up on disk (saved content): metadata `image` / `images` /
+         * `picture` / `pictures` first, else the sibling `Recipe.jpg`; step photos `Recipe.N.jpg`
+         * and `Recipe.S.N.jpg` (jpg, jpeg, png, webp). `steps[section][step]` keys are zero-based
+         * strings; section `"0"` also holds the linear `Recipe.N` form, so look a step up as
+         * `steps[s][j] ?? steps["0"][k]` (`k` counts steps across sections; see
+         * `lookupStepImage`). Files come back as absolute `file:` URIs (read them with
+         * `workspace.fs`), `http(s)` metadata URLs verbatim. A recipe on another file system
+         * (e.g. `cooklang-hub:`) has no folder: only its `https:` metadata image is reported.
+         * `uri` must be an absolute `.cook` URI whose scheme has a file system provider; a recipe
+         * that cannot be read rejects with the native error.
+         */
+        RECIPE_IMAGES: 'cooklang.api.recipeImages',
     } as const;
 
     /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
@@ -112,6 +150,22 @@ export namespace CooklangPluginApi {
 
     /** Maximum `cooklang.api.openReport` label length, in characters. */
     export const MAX_REPORT_LABEL_LENGTH = 60;
+
+    /** Maximum `cooklang.api.exportPdf` HTML length, in characters (100 Mi); photos travel inline as `data:` URIs. */
+    export const MAX_EXPORT_HTML_LENGTH = 100 * 1024 * 1024;
+
+    /** Maximum `cooklang.api.exportPdf` default file name length, in code points (an emoji counts once). */
+    export const MAX_EXPORT_FILE_NAME_LENGTH = 200;
+
+    /** `cooklang.api.exportPdf` result. */
+    export interface ExportPdfResult {
+        /** False when the user cancelled the dialog or the export failed. */
+        saved: boolean;
+        /** Absolute path of the written file, when saved. */
+        path?: string;
+        /** Why the export failed, when it did. */
+        error?: string;
+    }
 }
 
 /**
@@ -157,6 +211,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(ReportPresenter)
     protected readonly reportPresenter: ReportPresenter;
 
+    @inject(ReportExportService)
+    protected readonly reportExport: ReportExportService;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -178,6 +235,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
         registry.registerCommand({ id: Commands.REFRESH_BADGES }, { execute: () => this.outlets.refresh() });
         registry.registerCommand({ id: Commands.OPEN_REPORT }, { execute: (args: unknown) => this.openReport(args) });
+        registry.registerCommand({ id: Commands.EXPORT_PDF }, { execute: (args: unknown) => this.exportPdf(args) });
+        registry.registerCommand({ id: Commands.RECIPE_IMAGES }, { execute: (args: unknown) => this.recipeImages(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -252,18 +311,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
      * keep opening in the text editor; plugins ask for the preview explicitly.
      */
     protected async openPreview(args: unknown): Promise<void> {
-        const raw = this.string(this.object(args).uri, '`uri`');
-        const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !CooklangUri.isRecipe(uri)) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe.');
-        }
-        // Fail closed: FileService.activateProvider() never settles for a
-        // scheme with no registered (or registering) FileSystemProvider, so
-        // an unhandled scheme would hang the preview forever instead of
-        // rejecting.
-        if (!this.fileService.hasProvider(uri.scheme)) {
-            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
-        }
+        const uri = this.providedUri(this.object(args).uri, candidate => CooklangUri.isRecipe(candidate), 'a .cook recipe');
         await this.recipePreview.open(uri);
     }
 
@@ -309,21 +357,35 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     }
 
     /**
+     * `value` as an absolute URI that `accepts` and whose scheme has a file
+     * system provider. Fails closed: `FileService.activateProvider()` never
+     * settles for a scheme with no registered (or registering) provider, so an
+     * unhandled scheme would hang the caller forever instead of rejecting.
+     */
+    protected providedUri(value: unknown, accepts: (uri: URI) => boolean, expected: string): URI {
+        const raw = this.string(value, '`uri`');
+        const uri = new URI(raw);
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !accepts(uri)) {
+            throw this.invalid(`\`uri\` must be an absolute URI of ${expected}.`);
+        }
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
+        }
+        return uri;
+    }
+
+    /**
      * The validated `uri`, `template` and `scale` shared by `renderReport` and
      * `openReport`: an absolute `.cook`/`.menu` URI whose scheme has a file
      * system provider, a non-empty template within the length limit, and a
      * positive scale (default 1).
      */
     protected reportRequest(request: Record<string, unknown>): { uri: URI; template: string; scale: number } {
-        const raw = this.string(request.uri, '`uri`');
-        const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
-        }
-        // Fail closed: FileService.activateProvider() never settles for an unregistered scheme.
-        if (!this.fileService.hasProvider(uri.scheme)) {
-            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
-        }
+        const uri = this.providedUri(
+            request.uri,
+            candidate => CooklangUri.isRecipe(candidate) || CooklangUri.isMenu(candidate),
+            'a .cook recipe or .menu file'
+        );
         const template = this.text(request.template, '`template`');
         if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
             throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
@@ -359,6 +421,79 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             outputFormat: outputFormat as ReportOutputFormat,
             scale,
         });
+    }
+
+    protected async exportPdf(args: unknown): Promise<CooklangPluginApi.ExportPdfResult> {
+        const request = this.object(args);
+        const html = this.text(request.html, '`html`');
+        // `/\S/` instead of `trim()`: no copy of a document that may be 100 Mi characters.
+        if (!/\S/.test(html) || html.length > CooklangPluginApi.MAX_EXPORT_HTML_LENGTH) {
+            throw this.invalid(`\`html\` must be non-empty and at most ${CooklangPluginApi.MAX_EXPORT_HTML_LENGTH} characters.`);
+        }
+        const fileName = this.string(request.defaultFileName, '`defaultFileName`');
+        // Code points, not UTF-16 units: plugins truncate names by code point, so an emoji counts once.
+        if (Array.from(fileName).length > CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH || /[\\/]/.test(fileName)) {
+            throw this.invalid(
+                `\`defaultFileName\` must be at most ${CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH} characters, without path separators.`
+            );
+        }
+        // The export service appends `.pdf` itself.
+        const baseName = fileName.replace(/\.pdf$/i, '').trim();
+        if (baseName === '') {
+            throw this.invalid('`defaultFileName` must name the file, not only its extension.');
+        }
+        const pageSize = request.pageSize;
+        if (pageSize !== undefined && pageSize !== 'A4' && pageSize !== 'Letter') {
+            throw this.invalid('`pageSize` must be "A4" or "Letter".');
+        }
+        const pageNumbers = request.pageNumbers;
+        if (pageNumbers !== undefined && typeof pageNumbers !== 'boolean') {
+            throw this.invalid('`pageNumbers` must be a boolean.');
+        }
+        const options: ReportExportPdfOptions = {};
+        if (pageSize !== undefined) {
+            options.pageSize = pageSize as ReportPageSize;
+        }
+        if (pageNumbers === true) {
+            options.pageNumbers = true;
+        }
+        let result: ReportExportResult;
+        try {
+            result = await this.reportExport.exportPdf(html, baseName, Object.keys(options).length > 0 ? options : undefined);
+        } catch (e) {
+            return { saved: false, error: e instanceof Error ? e.message : String(e) };
+        }
+        const mapped: CooklangPluginApi.ExportPdfResult = { saved: result.saved };
+        if (result.filePath !== undefined) {
+            mapped.path = result.filePath;
+        }
+        if (result.error !== undefined) {
+            mapped.error = result.error;
+        }
+        return mapped;
+    }
+
+    protected async recipeImages(args: unknown): Promise<ResolvedRecipeImages> {
+        const uri = this.providedUri(this.object(args).uri, candidate => CooklangUri.isRecipe(candidate), 'a .cook recipe');
+        // A local recipe is looked up on disk; any other has only its metadata, read through its file system.
+        const content = uri.scheme === 'file' ? undefined : (await this.fileService.read(uri)).value;
+        const discovered = await discoverRecipeImages(this.languageService, uri, content);
+        return mapRecipeImages(discovered, async raw => this.recipeImageUri(raw, uri));
+    }
+
+    /**
+     * The plugin-facing form of one raw image value: `http(s)` URLs verbatim,
+     * local files as absolute URIs when the preview can show their type.
+     */
+    protected recipeImageUri(raw: string, recipeUri: URI): string | undefined {
+        const location = locateRecipeImage(raw, recipeUri);
+        if (location?.kind === 'remote') {
+            return location.url;
+        }
+        if (location?.kind === 'file' && RECIPE_IMAGE_MIME_TYPES[location.uri.path.ext.replace(/^\./, '').toLowerCase()]) {
+            return location.uri.toString();
+        }
+        return undefined;
     }
 
     protected pantryEdit(value: unknown): PantryEdit {

@@ -2281,6 +2281,23 @@ mod recipe_images_tests {
         assert!(value["steps"]["1"]["3"].as_str().unwrap().ends_with("Pancakes.2.4.jpg"));
     }
 
+    // `cooklang-find` checks metadata before sibling files, so a recipe's own
+    // `image:` wins over `Recipe.jpg`, while sibling step images are still found.
+    // The preview and `cooklang.api.recipeImages` both rely on this order.
+    #[test]
+    fn metadata_image_wins_over_the_sibling_title_image() {
+        let (dir, path) = fixture("precedence", &["Pancakes.jpg", "Pancakes.1.jpg"]);
+        fs::write(
+            dir.join("Pancakes.cook"),
+            "---\nimage: hero.jpg\n---\nCrack the @eggs{2}.\nFry it.\n",
+        )
+        .unwrap();
+        let json = napi_recipe_images(path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["title"], "hero.jpg");
+        assert!(value["steps"]["0"]["0"].as_str().unwrap().ends_with("Pancakes.1.jpg"));
+    }
+
     #[test]
     fn errors_when_the_recipe_does_not_exist() {
         assert!(napi_recipe_images("/definitely/not/here/Nope.cook".to_string()).is_err());

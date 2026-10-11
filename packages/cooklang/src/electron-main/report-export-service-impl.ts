@@ -13,11 +13,20 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { app, dialog, BrowserWindow } from '@theia/electron/shared/electron';
+import {
+    app,
+    dialog,
+    BrowserWindow,
+    BrowserWindowConstructorOptions,
+    PrintToPDFOptions,
+    SaveDialogOptions,
+    SaveDialogReturnValue,
+} from '@theia/electron/shared/electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ReportExportResult, ReportExportService } from '../common/report-export-protocol';
+import { fillPageRefs, hasPageRefs, pdfDestinationPages } from '../common/pdf-page-refs';
+import { ReportExportPdfOptions, ReportExportResult, ReportExportService } from '../common/report-export-protocol';
 
 @injectable()
 export class ReportExportServiceImpl implements ReportExportService {
@@ -25,11 +34,14 @@ export class ReportExportServiceImpl implements ReportExportService {
     /** Fixed logical content width (px) for offscreen rendering / PNG capture. */
     protected static readonly CONTENT_WIDTH = 820;
 
+    /** In-memory session partition (no `persist:` prefix) for the hidden export windows. */
+    protected static readonly PARTITION = 'report-export';
+
     /** Guard against a print callback that never fires, so cleanup always runs. */
     protected static readonly PRINT_TIMEOUT_MS = 60_000;
 
     async print(html: string): Promise<void> {
-        await this.withWindow(html, win => new Promise<void>((resolve, reject) => {
+        await this.withWindow(html, { javascript: false }, win => new Promise<void>((resolve, reject) => {
             const timer = setTimeout(
                 () => reject(new Error('Print timed out')),
                 ReportExportServiceImpl.PRINT_TIMEOUT_MS
@@ -49,20 +61,63 @@ export class ReportExportServiceImpl implements ReportExportService {
         }));
     }
 
-    async exportPdf(html: string, defaultFileName: string): Promise<ReportExportResult> {
+    async exportPdf(html: string, defaultFileName: string, options: ReportExportPdfOptions = {}): Promise<ReportExportResult> {
         try {
-            return await this.withWindow(html, async win => {
-                const data = await win.webContents.printToPDF({ printBackground: true });
-                return this.saveBuffer(data, defaultFileName, 'pdf', 'PDF Document');
-            });
+            const printOptions: PrintToPDFOptions = { printBackground: true };
+            if (options.pageSize) {
+                printOptions.pageSize = options.pageSize;
+            }
+            if (options.pageNumbers) {
+                Object.assign(printOptions, ReportExportServiceImpl.PAGE_NUMBER_FOOTER);
+            }
+            const data = await this.renderPdf(html, printOptions, options.pageNumbers === true);
+            return await this.saveBuffer(data, defaultFileName, 'pdf', 'PDF Document');
         } catch (error) {
             return { saved: false, error: this.message(error) };
         }
     }
 
+    /** Page number centred in the bottom margin (Chromium fills `.pageNumber`; no JavaScript involved). */
+    protected static readonly PAGE_NUMBER_FOOTER: Partial<PrintToPDFOptions> = {
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: '<div style="width:100%;text-align:center;font-size:8pt;color:#6b6b66;'
+            + 'font-family:-apple-system,\'Segoe UI\',Helvetica,Arial,sans-serif"><span class="pageNumber"></span></div>',
+    };
+
+    /**
+     * Passes for filling page references: the first finds where each `id` landed, the
+     * second prints the numbers. Filling them in can move content (an index entry gets
+     * longer), so print again while the pages still change, up to this many times.
+     */
+    protected static readonly MAX_PAGE_REF_PASSES = 3;
+
+    /**
+     * Print `html`; with `fillRefs`, fill its `data-page-ref` placeholders from the
+     * PDF's named destinations and print again until the numbers are stable.
+     */
+    protected async renderPdf(html: string, printOptions: PrintToPDFOptions, fillRefs: boolean): Promise<Uint8Array> {
+        const print = (document: string): Promise<Uint8Array> =>
+            this.withWindow(document, { javascript: false }, win => win.webContents.printToPDF(printOptions));
+        let data = await print(html);
+        if (!fillRefs || !hasPageRefs(html)) {
+            return data;
+        }
+        let pages = pdfDestinationPages(data);
+        for (let pass = 1; pass < ReportExportServiceImpl.MAX_PAGE_REF_PASSES && pages.size > 0; pass++) {
+            data = await print(fillPageRefs(html, pages));
+            const next = pdfDestinationPages(data);
+            if (samePages(pages, next)) {
+                break;
+            }
+            pages = next;
+        }
+        return data;
+    }
+
     async exportPng(html: string, defaultFileName: string): Promise<ReportExportResult> {
         try {
-            return await this.withWindow(html, async win => {
+            return await this.withWindow(html, { javascript: true }, async win => {
                 const height = await win.webContents.executeJavaScript(
                     'Math.ceil(document.body.scrollHeight)'
                 );
@@ -84,37 +139,72 @@ export class ReportExportServiceImpl implements ReportExportService {
     /**
      * Render `html` in a hidden, offscreen-painting BrowserWindow, run `fn`,
      * and always destroy the window and remove the temp file afterwards.
+     *
+     * `javascript` is off for print and PDF: report HTML is sanitised before it
+     * is shown (DOMPurify strips scripts), Mermaid diagrams are exported as
+     * pre-rendered SVG, and plugin HTML (`cooklang.api.exportPdf`) is static by
+     * contract. PNG export keeps it on, because it measures the page and waits
+     * for paint with `executeJavaScript`.
      */
-    protected async withWindow<T>(html: string, fn: (win: BrowserWindow) => Promise<T>): Promise<T> {
-        const tmpFile = path.join(
-            app?.getPath?.('temp') ?? os.tmpdir(),
-            `cooklang-report-${Date.now()}-${Math.floor(Math.random() * 1e6)}.html`
-        );
-        fs.writeFileSync(tmpFile, html, 'utf8');
-        const win = new BrowserWindow({
-            show: false,
-            paintWhenInitiallyHidden: true,
-            width: ReportExportServiceImpl.CONTENT_WIDTH,
-            height: 1024,
-            // The window loads report HTML from a local file: keep the renderer
-            // locked down (these are the current Electron defaults, stated explicitly
-            // for a security-sensitive operation).
-            webPreferences: {
-                backgroundThrottling: false,
-                contextIsolation: true,
-                sandbox: true,
-                nodeIntegration: false
-            }
-        });
+    protected async withWindow<T>(
+        html: string,
+        options: { javascript: boolean },
+        fn: (win: BrowserWindow) => Promise<T>
+    ): Promise<T> {
+        // A private folder per export: `mkdtemp` picks an unused name, the file
+        // is owner-only and must not exist yet (`wx`), so nothing else on the
+        // machine can read or swap the HTML the window loads.
+        const tmpDir = await fs.promises.mkdtemp(path.join(this.tempRoot(), 'cooklang-report-'));
+        let win: BrowserWindow | undefined;
         try {
+            const tmpFile = path.join(tmpDir, 'report.html');
+            await fs.promises.writeFile(tmpFile, html, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+            win = this.createWindow({
+                show: false,
+                paintWhenInitiallyHidden: true,
+                width: ReportExportServiceImpl.CONTENT_WIDTH,
+                height: 1024,
+                // The window loads report HTML from a local file: keep the renderer
+                // locked down (sandbox, isolation and no Node are the current Electron
+                // defaults, stated explicitly for a security-sensitive operation).
+                webPreferences: {
+                    backgroundThrottling: false,
+                    contextIsolation: true,
+                    sandbox: true,
+                    nodeIntegration: false,
+                    javascript: options.javascript,
+                    // Its own in-memory session: no cookies, cache or storage
+                    // shared with the editor, and nothing kept on disk.
+                    partition: ReportExportServiceImpl.PARTITION
+                }
+            });
+            // The page is a static document: it may not navigate away (a link
+            // or a meta refresh) or open windows of its own.
+            win.webContents.on('will-navigate', event => event.preventDefault());
+            win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
             await win.loadFile(tmpFile);
             return await fn(win);
         } finally {
-            if (!win.isDestroyed()) {
+            if (win && !win.isDestroyed()) {
                 win.destroy();
             }
-            fs.promises.unlink(tmpFile).catch(() => { /* best effort */ });
+            await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => { /* best effort */ });
         }
+    }
+
+    /** Where per-export temp folders are created; a seam for tests. */
+    protected tempRoot(): string {
+        return app?.getPath?.('temp') ?? os.tmpdir();
+    }
+
+    /** Seam for tests: the hidden export window. */
+    protected createWindow(options: BrowserWindowConstructorOptions): BrowserWindow {
+        return new BrowserWindow(options);
+    }
+
+    /** Seam for tests: the native save dialog. */
+    protected showSaveDialog(options: SaveDialogOptions): Promise<SaveDialogReturnValue> {
+        return dialog.showSaveDialog(options);
     }
 
     protected async saveBuffer(
@@ -123,7 +213,7 @@ export class ReportExportServiceImpl implements ReportExportService {
         extension: string,
         filterName: string
     ): Promise<ReportExportResult> {
-        const result = await dialog.showSaveDialog({
+        const result = await this.showSaveDialog({
             defaultPath: `${this.sanitize(defaultFileName)}.${extension}`,
             filters: [{ name: filterName, extensions: [extension] }]
         });
@@ -142,4 +232,8 @@ export class ReportExportServiceImpl implements ReportExportService {
     protected message(error: unknown): string {
         return error instanceof Error ? error.message : String(error);
     }
+}
+
+function samePages(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+    return a.size === b.size && [...a].every(([id, page]) => b.get(id) === page);
 }

@@ -22,12 +22,30 @@ export interface ReportExportResult {
     error?: string;
 }
 
+/** Paper sizes plugins may ask for; Electron's `printToPDF` default (`Letter`) applies when absent. */
+export type ReportPageSize = 'A4' | 'Letter';
+
+export interface ReportExportPdfOptions {
+    /**
+     * Paper size passed to `printToPDF`. CSS `@page { size }` is ignored by the
+     * export (Electron's `preferCSSPageSize` is off), so this is the only way to
+     * pick one.
+     */
+    pageSize?: ReportPageSize;
+    /**
+     * Number the pages (in the bottom margin, which must be tall enough: about 12 mm)
+     * and fill each empty `<span data-page-ref="ID"></span>` with the page the element
+     * with that `id` starts on. Filling takes a second rendering pass.
+     */
+    pageNumbers?: boolean;
+}
+
 export const ReportExportService = Symbol('ReportExportService');
 export interface ReportExportService {
     /** Open the native print dialog for the given standalone HTML document. */
     print(html: string): Promise<void>;
     /** Render the HTML to PDF and prompt for a save location. */
-    exportPdf(html: string, defaultFileName: string): Promise<ReportExportResult>;
+    exportPdf(html: string, defaultFileName: string, options?: ReportExportPdfOptions): Promise<ReportExportResult>;
     /** Capture the HTML to PNG and prompt for a save location. */
     exportPng(html: string, defaultFileName: string): Promise<ReportExportResult>;
 }
