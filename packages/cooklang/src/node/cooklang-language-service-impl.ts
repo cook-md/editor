@@ -340,6 +340,11 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
                 config[key] = FileUri.fsPath(value);
             }
         }
+        const staged = config.stagedRecipes;
+        if (staged && typeof staged === 'object') {
+            config.stagedRecipes = Object.fromEntries(
+                Object.entries(staged as Record<string, unknown>).map(([uri, content]) => [FileUri.fsPath(uri), content]));
+        }
         return JSON.stringify(config);
     }
 }
