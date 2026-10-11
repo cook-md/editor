@@ -1337,6 +1337,10 @@ struct ReportConfig {
     // expanded (recipe refs -> ingredients) and exposed as `plan.*` template
     // context; the menu source itself is not rendered as a recipe.
     is_menu: Option<bool>,
+    // Recipe sources staged in the chat but not yet saved (filesystem path ->
+    // content). A `.menu` plan expands these instead of reading disk, so a
+    // plan and the new recipes it links to can be measured before applying.
+    staged_recipes: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Process-wide nutrition client, keyed by (API url, auth token).
@@ -1499,10 +1503,17 @@ fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String
     #[cfg(feature = "nutrition")]
     if cfg.is_menu == Some(true) {
         let base = base_path.clone().unwrap_or_else(|| ".".to_string());
-        let plan = match cooklang_reports_nutrition::plan::build_plan_from_source(
+        let overrides: std::collections::HashMap<std::path::PathBuf, String> = cfg
+            .staged_recipes
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(path, src)| (std::path::PathBuf::from(path), src))
+            .collect();
+        let plan = match cooklang_reports_nutrition::plan::build_plan_from_source_with_overrides(
             recipe,
             std::path::Path::new(&base),
             None,
+            &overrides,
         ) {
             Ok(p) => p,
             Err(e) => return serde_json::json!({ "error": format!("plan error: {e}") }).to_string(),
@@ -1647,6 +1658,25 @@ mod nutrition_wiring_tests {
         let out = super::render_report(RECIPE.into(), NUTRITION_TEMPLATE.into(), cfg.into());
         assert!(out.contains("\"error\""), "expected an error payload, got: {out}");
         assert!(!out.contains("unknown"), "function should be registered: {out}");
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn menu_plan_expands_staged_recipes_that_are_not_on_disk() {
+        // CookBot stages a plan plus the new recipe it links to; the plan must
+        // expand the staged recipe rather than report it missing.
+        let menu = "= Day 1 =\n\nDinner:\n\n@./Main/Steak{2}\n\n@yogurt{150%g}\n";
+        let template =
+            "{{ plan.all_ingredients | map(attribute='name') | join(',') }}|{{ plan.missing_recipes | length }}";
+        let cfg = serde_json::json!({
+            "isMenu": true,
+            "basePath": "/nonexistent-ws",
+            "stagedRecipes": { "/nonexistent-ws/Main/Steak.cook": "Sear @skirt steak{300%g}.\n" },
+        });
+        let out = super::render_report(menu.into(), template.into(), cfg.to_string());
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        // Loose menu ingredients come first in a day, then expanded recipes.
+        assert_eq!(v["output"], "yogurt,skirt steak|0", "got: {out}");
     }
 
     #[cfg(feature = "nutrition")]

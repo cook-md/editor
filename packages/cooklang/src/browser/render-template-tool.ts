@@ -55,6 +55,7 @@ const BUILT_IN_PREFIX = 'builtin:';
 
 /** One change-set entry, as read structurally off the chat tool context. */
 interface StagedElement {
+    uri?: URI;
     state?: string;
     targetState?: string;
     /** `'delete'` for a pending removal — its `targetState` is meaningless (there is no new content). */
@@ -76,10 +77,15 @@ interface StagedElement {
  * Structural on purpose — `@theia/ai-chat` is not a dependency of this
  * package, and any other context simply has neither property.
  */
+interface StagedChangeSet {
+    getElementByURI?(uri: URI): StagedElement | undefined;
+    getElements?(): StagedElement[];
+}
+
 interface StagedChangeContext {
     request?: {
-        changeSet?: { getElementByURI?(uri: URI): StagedElement | undefined };
-        session?: { changeSet?: { getElementByURI?(uri: URI): StagedElement | undefined } };
+        changeSet?: StagedChangeSet;
+        session?: { changeSet?: StagedChangeSet };
     };
 }
 
@@ -126,6 +132,13 @@ export class RenderTemplateTool implements ToolProvider {
                 + 'error and fix it), or to present a finished report to the user (set show=true). Available template '
                 + 'context: `ingredients` (each with `.name`, `.quantity`), `metadata` (incl. `metadata.title`), and '
                 + '`scale`; filters include `aisled()`, `db()`, `excluding_pantry()`, `sort`, `titleize`, `default`. '
+                + 'A .menu file ALSO gets `plan`, with every recipe reference expanded and scaled: `plan.days[]` '
+                + '(`.name`, `.date`, `.ingredients` = that day\'s recipe + loose ingredients, `.meals[]` with '
+                + '`.meal_type` and `.recipes[]` {`name`, `scale`, `ingredients`}), `plan.all_ingredients`, '
+                + '`plan.servings` (people served, from the menu frontmatter) and `plan.missing_recipes[]` '
+                + '{`name`, `error`} for references that did not resolve. For a menu, `ingredients` holds only the loose '
+                + 'items written directly in the menu — never sum it for plan totals; use `day.ingredients` or '
+                + '`plan.all_ingredients`. Recipes staged in this chat count as if applied. '
                 + 'To save a template for reuse, write it as a `.jinja` file with the suggestFileContent tool '
                 + '(convention: config/reports/), then render it by templateUri once the user has applied it.',
             parameters: {
@@ -224,7 +237,8 @@ export class RenderTemplateTool implements ToolProvider {
         } catch (e) {
             return this.fail(`Could not read recipe ${recipeUri.toString()}: ${this.message(e)}`);
         }
-        const configJson = await this.reportConfigService.buildConfigJson(args.scale ?? 1, recipeUri);
+        const configJson = this.withStagedRecipes(
+            await this.reportConfigService.buildConfigJson(args.scale ?? 1, recipeUri), recipeUri, ctx);
         let resultJson: string;
         try {
             resultJson = await this.languageService.renderReport(recipeContent, template.content, configJson);
@@ -303,7 +317,8 @@ export class RenderTemplateTool implements ToolProvider {
             return { recipeUri: ref, error: `Could not read recipe: ${this.message(e)}` };
         }
         try {
-            const configJson = await this.reportConfigService.buildConfigJson(scale, recipeUri);
+            const configJson = this.withStagedRecipes(
+                await this.reportConfigService.buildConfigJson(scale, recipeUri), recipeUri, ctx);
             const resultJson = await this.languageService.renderReport(recipeContent, template.content, configJson);
             const parsed = this.tryParse(resultJson);
             if (!parsed) {
@@ -335,6 +350,35 @@ export class RenderTemplateTool implements ToolProvider {
             return element.targetState;
         }
         return (await this.fileService.read(uri)).value;
+    }
+
+    /**
+     * Adds the chat's pending `.cook` files to a `.menu` render's config as
+     * `stagedRecipes` (URI → content), so the plan expander resolves recipes
+     * CookBot just proposed alongside the plan instead of listing them under
+     * `plan.missing_recipes`. The request's own change set wins over the
+     * session's debounced one, as in `readRecipe`.
+     */
+    protected withStagedRecipes(configJson: string, recipeUri: URI, ctx?: ToolInvocationContext): string {
+        if (!CooklangUri.isMenu(recipeUri)) {
+            return configJson;
+        }
+        const request = (ctx as StagedChangeContext | undefined)?.request;
+        const staged: Record<string, string> = {};
+        for (const changeSet of [request?.session?.changeSet, request?.changeSet]) {
+            for (const element of changeSet?.getElements?.() ?? []) {
+                if (element.uri && CooklangUri.isRecipe(element.uri) && element.type !== 'delete'
+                    && element.state === 'pending' && typeof element.targetState === 'string') {
+                    staged[element.uri.toString()] = element.targetState;
+                }
+            }
+        }
+        if (Object.keys(staged).length === 0) {
+            return configJson;
+        }
+        const config = JSON.parse(configJson);
+        config.stagedRecipes = staged;
+        return JSON.stringify(config);
     }
 
     protected inlineTemplate(content: string): ResolvedTemplate {

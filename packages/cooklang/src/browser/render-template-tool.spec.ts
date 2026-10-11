@@ -585,4 +585,46 @@ describe('RenderTemplateTool staged content', () => {
             ctxWithDelete('file:///ws/a.cook')));
         expect(result.error).to.match(/staged for deletion/);
     });
+    /** A tool context whose session/request change sets list the given elements. */
+    function ctxWithElements(
+        session: Array<{ uri: string; state: string; targetState?: string; type?: string }>,
+        request: Array<{ uri: string; state: string; targetState?: string; type?: string }> = [],
+    ): unknown {
+        const changeSet = (elements: typeof session) => ({
+            getElementByURI: (u: URI) => elements.find(e => e.uri === u.toString()),
+            getElements: () => elements.map(e => ({ ...e, uri: new URI(e.uri) })),
+        });
+        return { request: { changeSet: changeSet(request), session: { changeSet: changeSet(session) } } };
+    }
+
+    it('passes pending .cook files to a .menu render so the plan can expand staged recipes', async () => {
+        const { tool, config, language, files } = createTool();
+        config.workspaceRoot = new URI('file:///ws');
+        files.files.set('file:///ws/Plans/Week.menu', 'PLAN');
+        await invokeWith(tool, { templateContent: 'T', recipeUri: 'Plans/Week.menu' }, ctxWithElements([
+            { uri: 'file:///ws/Main/Teriyaki Steak.cook', state: 'pending', targetState: 'SESSION STEAK' },
+            { uri: 'file:///ws/Main/Rice.cook', state: 'pending', targetState: 'RICE' },
+            { uri: 'file:///ws/Main/Applied.cook', state: 'applied', targetState: 'OLD' },
+            { uri: 'file:///ws/Main/Gone.cook', state: 'pending', type: 'delete' },
+            { uri: 'file:///ws/Plans/Other.menu', state: 'pending', targetState: 'MENU' },
+        ], [
+            { uri: 'file:///ws/Main/Teriyaki Steak.cook', state: 'pending', targetState: 'REQUEST STEAK' },
+        ]));
+        expect(JSON.parse(language.calls[0].config).stagedRecipes).to.deep.equal({
+            'file:///ws/Main/Teriyaki%20Steak.cook': 'REQUEST STEAK',
+            'file:///ws/Main/Rice.cook': 'RICE',
+        });
+    });
+
+    it('sends no stagedRecipes when rendering a .cook file or when nothing is staged', async () => {
+        const { tool, config, language, files } = createTool();
+        config.workspaceRoot = new URI('file:///ws');
+        files.files.set('file:///ws/a.cook', 'A');
+        files.files.set('file:///ws/p.menu', 'P');
+        const staged = ctxWithElements([{ uri: 'file:///ws/b.cook', state: 'pending', targetState: 'B' }]);
+        await invokeWith(tool, { templateContent: 'T', recipeUri: 'a.cook' }, staged);
+        await invokeWith(tool, { templateContent: 'T', recipeUri: 'p.menu' }, ctxWithElements([]));
+        expect(JSON.parse(language.calls[0].config).stagedRecipes).to.be.undefined;
+        expect(JSON.parse(language.calls[1].config).stagedRecipes).to.be.undefined;
+    });
 });

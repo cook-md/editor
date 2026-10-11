@@ -29,6 +29,14 @@ describe('CooklangLanguageServiceImpl report config conversion', () => {
         expect(config.aislePath).to.equal('/tmp/workspace/config/aisle.conf');
     });
 
+    it('converts stagedRecipes keys from URIs to filesystem paths', () => {
+        const impl = new CooklangLanguageServiceImpl();
+        const config = JSON.parse(impl['convertReportConfigPaths'](JSON.stringify({
+            stagedRecipes: { 'file:///tmp/workspace/Main%20Dish/Teriyaki%20Steak.cook': 'Sear @steak{300%g}.' }
+        })));
+        expect(config.stagedRecipes).to.deep.equal({ '/tmp/workspace/Main Dish/Teriyaki Steak.cook': 'Sear @steak{300%g}.' });
+    });
+
     it('leaves absent path entries absent', () => {
         const impl = new CooklangLanguageServiceImpl();
         const config = JSON.parse(impl['convertReportConfigPaths']('{"scale":2}'));
