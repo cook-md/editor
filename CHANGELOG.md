@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.54](https://github.com/cook-md/editor/compare/v0.1.0-alpha.53...v0.1.0-alpha.54) (2026-10-11)
+
+
+### Bug Fixes
+
+* **reports:** menu renders expand staged recipes; renderTemplate documents plan context ([#215](https://github.com/cook-md/editor/issues/215)) ([9d8d484](https://github.com/cook-md/editor/commit/9d8d48460181d3e091c3b65d735b96edc4814e36))
+
 ## [0.1.0-alpha.53](https://github.com/cook-md/editor/compare/v0.1.0-alpha.52...v0.1.0-alpha.53) (2026-10-11)
 
 
