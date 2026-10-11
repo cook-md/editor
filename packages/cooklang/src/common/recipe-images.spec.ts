@@ -135,6 +135,15 @@ describe('resolveImageUri', () => {
     it('rejects relative paths when the recipe itself is on a host share', () => {
         expect(resolveImageUri('photo.jpg', new URI('file://host/share/Pancakes.cook'))).to.be.undefined;
     });
+
+    it('normalises `..` segments, so the same file always has the same URI', () => {
+        expect((resolveImageUri('../photos/hero.jpg', recipe) as { uri: URI }).uri.toString())
+            .to.equal('file:///work/photos/hero.jpg');
+        expect((resolveImageUri('/work/recipes/../images/./hero.jpg', recipe) as { uri: URI }).uri.toString())
+            .to.equal('file:///work/images/hero.jpg');
+        expect((resolveImageUri('C:\\work\\a\\..\\hero.jpg', recipe) as { uri: URI }).uri.path.toString().toLowerCase())
+            .to.equal('/c:/work/hero.jpg');
+    });
 });
 
 describe('locateRecipeImage', () => {

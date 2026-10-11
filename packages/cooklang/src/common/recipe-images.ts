@@ -100,7 +100,9 @@ export function resolveImageUri(raw: string, recipeUri: URI): ImageLocation | un
         return undefined;
     }
     const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
-    const uri = isAbsolute ? URI.fromFilePath(normalized) : recipeUri.parent.resolve(normalized);
+    // `normalizePath()` folds `.` and `..`, so one file always has one URI
+    // (the preview's watcher compares them as strings).
+    const uri = (isAbsolute ? URI.fromFilePath(normalized) : recipeUri.parent.resolve(normalized)).normalizePath();
     // Same reason for anything else that ends up naming a host, such as a
     // relative path under a recipe that itself lives on a share.
     if (uri.authority !== '') {
