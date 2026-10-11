@@ -123,6 +123,18 @@ describe('resolveImageUri', () => {
         expect(resolveImageUri('', recipe)).to.be.undefined;
         expect(resolveImageUri('   ', recipe)).to.be.undefined;
     });
+
+    // A UNC path would be read over SMB, which can hand the user's NTLM hash
+    // to whoever runs `host`. No image is worth that.
+    it('rejects Windows UNC paths and anything else that names a host', () => {
+        for (const raw of ['\\\\host\\share\\x.jpg', '//host/share/x.jpg', '\\\\?\\UNC\\host\\share\\x.jpg', '/\\host\\share\\x.jpg']) {
+            expect(resolveImageUri(raw, recipe), raw).to.be.undefined;
+        }
+    });
+
+    it('rejects relative paths when the recipe itself is on a host share', () => {
+        expect(resolveImageUri('photo.jpg', new URI('file://host/share/Pancakes.cook'))).to.be.undefined;
+    });
 });
 
 describe('locateRecipeImage', () => {

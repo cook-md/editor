@@ -94,11 +94,19 @@ export function resolveImageUri(raw: string, recipeUri: URI): ImageLocation | un
     }
     // `URI.fromFilePath` does not translate Windows separators, so normalise them.
     const normalized = value.replace(/\\/g, '/');
-    const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
-    if (isAbsolute) {
-        return { kind: 'file', uri: URI.fromFilePath(normalized) };
+    // A UNC path (`\\host\share\…`, `\\?\UNC\…`) is read over SMB, which can
+    // leak the user's NTLM hash to `host`: never name one.
+    if (normalized.startsWith('//')) {
+        return undefined;
     }
-    return { kind: 'file', uri: recipeUri.parent.resolve(normalized) };
+    const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
+    const uri = isAbsolute ? URI.fromFilePath(normalized) : recipeUri.parent.resolve(normalized);
+    // Same reason for anything else that ends up naming a host, such as a
+    // relative path under a recipe that itself lives on a share.
+    if (uri.authority !== '') {
+        return undefined;
+    }
+    return { kind: 'file', uri };
 }
 
 /**
