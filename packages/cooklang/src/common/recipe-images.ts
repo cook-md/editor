@@ -94,18 +94,16 @@ export function resolveImageUri(raw: string, recipeUri: URI): ImageLocation | un
     }
     // `URI.fromFilePath` does not translate Windows separators, so normalise them.
     const normalized = value.replace(/\\/g, '/');
-    // A UNC path (`\\host\share\…`, `\\?\UNC\…`) is read over SMB, which can
-    // leak the user's NTLM hash to `host`: never name one.
-    if (normalized.startsWith('//')) {
-        return undefined;
-    }
+    // `//host/…` (a UNC path once separators are normalised) is absolute too.
     const isAbsolute = normalized.startsWith('/') || /^[a-zA-Z]:\//.test(normalized);
     // `normalizePath()` folds `.` and `..`, so one file always has one URI
     // (the preview's watcher compares them as strings).
     const uri = (isAbsolute ? URI.fromFilePath(normalized) : recipeUri.parent.resolve(normalized)).normalizePath();
-    // Same reason for anything else that ends up naming a host, such as a
-    // relative path under a recipe that itself lives on a share.
-    if (uri.authority !== '') {
+    // A UNC path is read over SMB, which can leak the user's NTLM hash to its
+    // host. An image may name only the host the recipe is already read from:
+    // none for a local recipe, the recipe's own share host for a shared one
+    // (whose siblings `cooklang-find` reports as `\\host\share\…`).
+    if (uri.authority.toLowerCase() !== recipeUri.authority.toLowerCase()) {
         return undefined;
     }
     return { kind: 'file', uri };

@@ -124,16 +124,34 @@ describe('resolveImageUri', () => {
         expect(resolveImageUri('   ', recipe)).to.be.undefined;
     });
 
-    // A UNC path would be read over SMB, which can hand the user's NTLM hash
-    // to whoever runs `host`. No image is worth that.
-    it('rejects Windows UNC paths and anything else that names a host', () => {
+    // A UNC path is read over SMB, which can hand the user's NTLM hash to
+    // whoever runs `host`. An image may not introduce a host the recipe
+    // itself is not already read from.
+    it('rejects a UNC image for a local recipe', () => {
         for (const raw of ['\\\\host\\share\\x.jpg', '//host/share/x.jpg', '\\\\?\\UNC\\host\\share\\x.jpg', '/\\host\\share\\x.jpg']) {
             expect(resolveImageUri(raw, recipe), raw).to.be.undefined;
         }
     });
 
-    it('rejects relative paths when the recipe itself is on a host share', () => {
-        expect(resolveImageUri('photo.jpg', new URI('file://host/share/Pancakes.cook'))).to.be.undefined;
+    describe('for a recipe on a share', () => {
+        const shared = new URI('file://host/share/recipes/Pancakes.cook');
+
+        it('resolves a same-folder image on the same share', () => {
+            expect((resolveImageUri('photo.jpg', shared) as { uri: URI }).uri.toString())
+                .to.equal('file://host/share/recipes/photo.jpg');
+        });
+
+        it('keeps the absolute UNC path cooklang-find reports for a sibling on the same share', () => {
+            expect((resolveImageUri('\\\\host\\share\\recipes\\Pancakes.1.jpg', shared) as { uri: URI }).uri.toString())
+                .to.equal('file://host/share/recipes/Pancakes.1.jpg');
+            expect((resolveImageUri('\\\\HOST\\share\\recipes\\Pancakes.jpg', shared) as { uri: URI }).uri.path.toString())
+                .to.equal('/share/recipes/Pancakes.jpg');
+        });
+
+        it('rejects an image on another host', () => {
+            expect(resolveImageUri('\\\\other\\share\\x.jpg', shared)).to.be.undefined;
+            expect(resolveImageUri('//other/share/x.jpg', shared)).to.be.undefined;
+        });
     });
 
     it('normalises `..` segments, so the same file always has the same URI', () => {
