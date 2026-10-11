@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.53](https://github.com/cook-md/editor/compare/v0.1.0-alpha.52...v0.1.0-alpha.53) (2026-10-11)
+
+
+### Features
+
+* **plugin-api:** exportPdf and recipeImages for the Cookbook plugin ([#213](https://github.com/cook-md/editor/issues/213)) ([e1709cd](https://github.com/cook-md/editor/commit/e1709cd179b789b1224c0790ca65016a2b6bb567))
+
 ## [0.1.0-alpha.52](https://github.com/cook-md/editor/compare/v0.1.0-alpha.51...v0.1.0-alpha.52) (2026-10-09)
 
 
