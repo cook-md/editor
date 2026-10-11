@@ -42,6 +42,13 @@ import { ReportPresenter } from './report-presenter';
 import { ReportOutputFormat } from '../common/report-templates';
 import { CooklangOutletService } from './cooklang-outlet-service';
 import { ReportExportResult, ReportExportService, ReportPageSize } from '../common/report-export-protocol';
+import {
+    RECIPE_IMAGE_MIME_TYPES,
+    ResolvedRecipeImages,
+    discoverRecipeImages,
+    locateRecipeImage,
+    mapRecipeImages,
+} from '../common/recipe-images';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
@@ -119,6 +126,20 @@ export namespace CooklangPluginApi {
          * shows no message of its own.
          */
         EXPORT_PDF: 'cooklang.api.exportPdf',
+        /**
+         * `{ uri }` → `{ title?, steps }`: the recipe's photos, found by the preview's rules. A
+         * `file:` recipe is looked up on disk (saved content): metadata `image` / `images` /
+         * `picture` / `pictures` first, else the sibling `Recipe.jpg`; step photos `Recipe.N.jpg`
+         * and `Recipe.S.N.jpg` (jpg, jpeg, png, webp). `steps[section][step]` keys are zero-based
+         * strings; section `"0"` also holds the linear `Recipe.N` form, so look a step up as
+         * `steps[s][j] ?? steps["0"][k]` (`k` counts steps across sections; see
+         * `lookupStepImage`). Files come back as absolute `file:` URIs (read them with
+         * `workspace.fs`), `http(s)` metadata URLs verbatim. A recipe on another file system
+         * (e.g. `cooklang-hub:`) has no folder: only its `https:` metadata image is reported.
+         * `uri` must be an absolute `.cook` URI whose scheme has a file system provider; a recipe
+         * that cannot be read rejects with the native error.
+         */
+        RECIPE_IMAGES: 'cooklang.api.recipeImages',
     } as const;
 
     /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
@@ -212,6 +233,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.REFRESH_BADGES }, { execute: () => this.outlets.refresh() });
         registry.registerCommand({ id: Commands.OPEN_REPORT }, { execute: (args: unknown) => this.openReport(args) });
         registry.registerCommand({ id: Commands.EXPORT_PDF }, { execute: (args: unknown) => this.exportPdf(args) });
+        registry.registerCommand({ id: Commands.RECIPE_IMAGES }, { execute: (args: unknown) => this.recipeImages(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -286,18 +308,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
      * keep opening in the text editor; plugins ask for the preview explicitly.
      */
     protected async openPreview(args: unknown): Promise<void> {
-        const raw = this.string(this.object(args).uri, '`uri`');
-        const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !CooklangUri.isRecipe(uri)) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe.');
-        }
-        // Fail closed: FileService.activateProvider() never settles for a
-        // scheme with no registered (or registering) FileSystemProvider, so
-        // an unhandled scheme would hang the preview forever instead of
-        // rejecting.
-        if (!this.fileService.hasProvider(uri.scheme)) {
-            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
-        }
+        const uri = this.providedUri(this.object(args).uri, candidate => CooklangUri.isRecipe(candidate), 'a .cook recipe');
         await this.recipePreview.open(uri);
     }
 
@@ -343,21 +354,35 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     }
 
     /**
+     * `value` as an absolute URI that `accepts` and whose scheme has a file
+     * system provider. Fails closed: `FileService.activateProvider()` never
+     * settles for a scheme with no registered (or registering) provider, so an
+     * unhandled scheme would hang the caller forever instead of rejecting.
+     */
+    protected providedUri(value: unknown, accepts: (uri: URI) => boolean, expected: string): URI {
+        const raw = this.string(value, '`uri`');
+        const uri = new URI(raw);
+        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !accepts(uri)) {
+            throw this.invalid(`\`uri\` must be an absolute URI of ${expected}.`);
+        }
+        if (!this.fileService.hasProvider(uri.scheme)) {
+            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
+        }
+        return uri;
+    }
+
+    /**
      * The validated `uri`, `template` and `scale` shared by `renderReport` and
      * `openReport`: an absolute `.cook`/`.menu` URI whose scheme has a file
      * system provider, a non-empty template within the length limit, and a
      * positive scale (default 1).
      */
     protected reportRequest(request: Record<string, unknown>): { uri: URI; template: string; scale: number } {
-        const raw = this.string(request.uri, '`uri`');
-        const uri = new URI(raw);
-        if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) || !(CooklangUri.isRecipe(uri) || CooklangUri.isMenu(uri))) {
-            throw this.invalid('`uri` must be an absolute URI of a .cook recipe or .menu file.');
-        }
-        // Fail closed: FileService.activateProvider() never settles for an unregistered scheme.
-        if (!this.fileService.hasProvider(uri.scheme)) {
-            throw this.invalid(`no file system for scheme "${uri.scheme}".`);
-        }
+        const uri = this.providedUri(
+            request.uri,
+            candidate => CooklangUri.isRecipe(candidate) || CooklangUri.isMenu(candidate),
+            'a .cook recipe or .menu file'
+        );
         const template = this.text(request.template, '`template`');
         if (template.trim() === '' || template.length > CooklangPluginApi.MAX_TEMPLATE_LENGTH) {
             throw this.invalid(`\`template\` must be non-empty and at most ${CooklangPluginApi.MAX_TEMPLATE_LENGTH} characters.`);
@@ -431,6 +456,29 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             mapped.error = result.error;
         }
         return mapped;
+    }
+
+    protected async recipeImages(args: unknown): Promise<ResolvedRecipeImages> {
+        const uri = this.providedUri(this.object(args).uri, candidate => CooklangUri.isRecipe(candidate), 'a .cook recipe');
+        // A local recipe is looked up on disk; any other has only its metadata, read through its file system.
+        const content = uri.scheme === 'file' ? undefined : (await this.fileService.read(uri)).value;
+        const discovered = await discoverRecipeImages(this.languageService, uri, content);
+        return mapRecipeImages(discovered, async raw => this.recipeImageUri(raw, uri));
+    }
+
+    /**
+     * The plugin-facing form of one raw image value: `http(s)` URLs verbatim,
+     * local files as absolute URIs when the preview can show their type.
+     */
+    protected recipeImageUri(raw: string, recipeUri: URI): string | undefined {
+        const location = locateRecipeImage(raw, recipeUri);
+        if (location?.kind === 'remote') {
+            return location.url;
+        }
+        if (location?.kind === 'file' && RECIPE_IMAGE_MIME_TYPES[location.uri.path.ext.replace(/^\./, '').toLowerCase()]) {
+            return location.uri.toString();
+        }
+        return undefined;
     }
 
     protected pantryEdit(value: unknown): PantryEdit {

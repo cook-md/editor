@@ -59,6 +59,11 @@ class Fixture {
     exportCalls: Array<{ html: string; name: string; options: unknown }> = [];
     exportResult: ReportExportResult = { saved: true, filePath: '/out/Family Book.pdf' };
     exportError: Error | undefined = undefined;
+    nativeImages: { title?: string; steps: Record<string, Record<string, string>> } = { steps: {} };
+    contentImages: { title?: string; steps: Record<string, Record<string, string>> } = { steps: {} };
+    imageLookups: string[] = [];
+    contentLookups: string[] = [];
+    fileReads: string[] = [];
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -92,6 +97,14 @@ class Fixture {
                 this.pantryEdits.push({ text, json });
                 return 'edited';
             },
+            recipeImages: async (path: string) => {
+                this.imageLookups.push(path);
+                return JSON.stringify(this.nativeImages);
+            },
+            recipeImagesFromContent: async (content: string) => {
+                this.contentLookups.push(content);
+                return JSON.stringify(this.contentImages);
+            },
         };
         (contribution as any).reportConfigService = {
             resolveWorkspaceUri: (arg: string) => {
@@ -105,7 +118,13 @@ class Fixture {
         };
         (contribution as any).contextKeys = { createKey: (key: string, value: unknown) => { this.keys.push({ key, value }); } };
         (contribution as any).recipePreview = { open: async (uri: URI) => { this.opened.push(uri.toString()); } };
-        (contribution as any).fileService = { hasProvider: (scheme: string) => this.hasProvider(scheme) };
+        (contribution as any).fileService = {
+            hasProvider: (scheme: string) => this.hasProvider(scheme),
+            read: async (uri: URI) => {
+                this.fileReads.push(uri.toString());
+                return { value: 'remote recipe text' };
+            },
+        };
         (contribution as any).subscriptions = { hasFeature: async (name: string) => this.features.has(name) };
         (contribution as any).pluginReports = {
             render: async (uri: URI, template: string, scale: number) => {
@@ -594,5 +613,97 @@ describe('CooklangPluginApiContribution — exportPdf', () => {
         fixture.create();
         await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'x'.repeat(200) });
         expect(fixture.exportCalls[0].name).to.equal('x'.repeat(200));
+    });
+});
+
+describe('CooklangPluginApiContribution — recipeImages', () => {
+    const { RECIPE_IMAGES } = CooklangPluginApi.Commands;
+
+    it('returns a local recipe\'s images as absolute file URIs, looked up on disk', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = {
+            title: 'photos/hero.jpg',
+            steps: {
+                '0': { '0': '/ws/Dinner/Soup.1.jpg', '2': '/ws/Dinner/My Soup.3.webp' },
+                '1': { '3': '/ws/Dinner/Soup.2.4.PNG' },
+            },
+        };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Dinner/Soup.cook' })).to.deep.equal({
+            title: 'file:///ws/Dinner/photos/hero.jpg',
+            steps: {
+                '0': { '0': 'file:///ws/Dinner/Soup.1.jpg', '2': 'file:///ws/Dinner/My%20Soup.3.webp' },
+                '1': { '3': 'file:///ws/Dinner/Soup.2.4.PNG' },
+            },
+        });
+        expect(fixture.imageLookups).to.deep.equal(['/ws/Dinner/Soup.cook']);
+        expect(fixture.contentLookups).to.deep.equal([]);
+        expect(fixture.fileReads).to.deep.equal([]);
+    });
+
+    it('returns http(s) metadata URLs of a local recipe verbatim', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = { title: 'http://cdn.example/soup.jpg', steps: {} };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' }))
+            .to.deep.equal({ title: 'http://cdn.example/soup.jpg', steps: {} });
+    });
+
+    it('leaves out files the preview cannot show and recipes with no images', async () => {
+        const fixture = new Fixture();
+        fixture.nativeImages = { title: 'hero.gif', steps: { '0': { '0': '/ws/Soup.1.tiff' } } };
+        fixture.create();
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' })).to.deep.equal({ steps: {} });
+        fixture.nativeImages = { steps: {} };
+        expect(await fixture.run(RECIPE_IMAGES, { uri: 'file:///ws/Soup.cook' })).to.deep.equal({ steps: {} });
+    });
+
+    it('reads a recipe on another file system through FileService and keeps only https images', async () => {
+        const fixture = new Fixture();
+        fixture.contentImages = { title: 'https://cdn.example/p.jpg', steps: {} };
+        fixture.create();
+        const uri = 'cooklang-hub:/recipes/12/Pancakes.cook';
+        expect(await fixture.run(RECIPE_IMAGES, { uri })).to.deep.equal({ title: 'https://cdn.example/p.jpg', steps: {} });
+        expect(fixture.fileReads).to.deep.equal([uri]);
+        expect(fixture.contentLookups).to.deep.equal(['remote recipe text']);
+        expect(fixture.imageLookups).to.deep.equal([]);
+        for (const title of ['http://cdn.example/p.jpg', 'Pancakes.jpg', '/etc/passwd']) {
+            fixture.contentImages = { title, steps: {} };
+            expect(await fixture.run(RECIPE_IMAGES, { uri }), title).to.deep.equal({ steps: {} });
+        }
+    });
+
+    it('rejects anything but an absolute .cook URI', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            undefined,
+            {},
+            { uri: '' },
+            { uri: 'Soup.cook' },
+            { uri: 'file:///ws/week.menu' },
+            { uri: 'file:///ws/notes.md' },
+            { uri: 'file:///ws/So\nup.cook' },
+        ]) {
+            expect(await fixture.error(RECIPE_IMAGES, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.imageLookups).to.deep.equal([]);
+    });
+
+    it('rejects a URI whose scheme has no file system provider', async () => {
+        const fixture = new Fixture();
+        fixture.hasProvider = scheme => scheme === 'file';
+        fixture.create();
+        expect(await fixture.error(RECIPE_IMAGES, { uri: 'foo:/x/Soup.cook' }))
+            .to.equal('Invalid arguments: no file system for scheme "foo".');
+        expect(fixture.fileReads).to.deep.equal([]);
+    });
+
+    it('propagates a native lookup failure', async () => {
+        const fixture = new Fixture();
+        const contribution = fixture.create();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (contribution as any).languageService.recipeImages = async () => { throw new Error('recipeImages: not found'); };
+        expect(await fixture.error(RECIPE_IMAGES, { uri: 'file:///ws/Gone.cook' })).to.equal('recipeImages: not found');
     });
 });
