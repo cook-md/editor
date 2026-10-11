@@ -614,6 +614,18 @@ describe('CooklangPluginApiContribution — exportPdf', () => {
         await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'x'.repeat(200) });
         expect(fixture.exportCalls[0].name).to.equal('x'.repeat(200));
     });
+
+    it('counts the file name length in code points, not UTF-16 units', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        // Each emoji is one code point but two UTF-16 units: 200 code points, 400 units.
+        const astral = '🥞'.repeat(200);
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: astral });
+        expect(fixture.exportCalls[0].name).to.equal(astral);
+        expect(await fixture.error(EXPORT_PDF, { html: HTML, defaultFileName: '🥞'.repeat(201) }))
+            .to.match(/^Invalid arguments: `defaultFileName`/);
+        expect(fixture.exportCalls).to.have.length(1);
+    });
 });
 
 describe('CooklangPluginApiContribution — recipeImages', () => {

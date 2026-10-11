@@ -151,7 +151,7 @@ export namespace CooklangPluginApi {
     /** Maximum `cooklang.api.exportPdf` HTML length, in characters (100 Mi); photos travel inline as `data:` URIs. */
     export const MAX_EXPORT_HTML_LENGTH = 100 * 1024 * 1024;
 
-    /** Maximum `cooklang.api.exportPdf` default file name length, in characters. */
+    /** Maximum `cooklang.api.exportPdf` default file name length, in code points (an emoji counts once). */
     export const MAX_EXPORT_FILE_NAME_LENGTH = 200;
 
     /** `cooklang.api.exportPdf` result. */
@@ -428,7 +428,8 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             throw this.invalid(`\`html\` must be non-empty and at most ${CooklangPluginApi.MAX_EXPORT_HTML_LENGTH} characters.`);
         }
         const fileName = this.string(request.defaultFileName, '`defaultFileName`');
-        if (fileName.length > CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH || /[\\/]/.test(fileName)) {
+        // Code points, not UTF-16 units: plugins truncate names by code point, so an emoji counts once.
+        if (Array.from(fileName).length > CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH || /[\\/]/.test(fileName)) {
             throw this.invalid(
                 `\`defaultFileName\` must be at most ${CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH} characters, without path separators.`
             );
