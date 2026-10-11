@@ -13,11 +13,19 @@
 
 import { injectable } from '@theia/core/shared/inversify';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { app, dialog, BrowserWindow } from '@theia/electron/shared/electron';
+import {
+    app,
+    dialog,
+    BrowserWindow,
+    BrowserWindowConstructorOptions,
+    PrintToPDFOptions,
+    SaveDialogOptions,
+    SaveDialogReturnValue,
+} from '@theia/electron/shared/electron';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { ReportExportResult, ReportExportService } from '../common/report-export-protocol';
+import { ReportExportPdfOptions, ReportExportResult, ReportExportService } from '../common/report-export-protocol';
 
 @injectable()
 export class ReportExportServiceImpl implements ReportExportService {
@@ -29,7 +37,7 @@ export class ReportExportServiceImpl implements ReportExportService {
     protected static readonly PRINT_TIMEOUT_MS = 60_000;
 
     async print(html: string): Promise<void> {
-        await this.withWindow(html, win => new Promise<void>((resolve, reject) => {
+        await this.withWindow(html, { javascript: false }, win => new Promise<void>((resolve, reject) => {
             const timer = setTimeout(
                 () => reject(new Error('Print timed out')),
                 ReportExportServiceImpl.PRINT_TIMEOUT_MS
@@ -49,10 +57,14 @@ export class ReportExportServiceImpl implements ReportExportService {
         }));
     }
 
-    async exportPdf(html: string, defaultFileName: string): Promise<ReportExportResult> {
+    async exportPdf(html: string, defaultFileName: string, options: ReportExportPdfOptions = {}): Promise<ReportExportResult> {
         try {
-            return await this.withWindow(html, async win => {
-                const data = await win.webContents.printToPDF({ printBackground: true });
+            return await this.withWindow(html, { javascript: false }, async win => {
+                const printOptions: PrintToPDFOptions = { printBackground: true };
+                if (options.pageSize) {
+                    printOptions.pageSize = options.pageSize;
+                }
+                const data = await win.webContents.printToPDF(printOptions);
                 return this.saveBuffer(data, defaultFileName, 'pdf', 'PDF Document');
             });
         } catch (error) {
@@ -62,7 +74,7 @@ export class ReportExportServiceImpl implements ReportExportService {
 
     async exportPng(html: string, defaultFileName: string): Promise<ReportExportResult> {
         try {
-            return await this.withWindow(html, async win => {
+            return await this.withWindow(html, { javascript: true }, async win => {
                 const height = await win.webContents.executeJavaScript(
                     'Math.ceil(document.body.scrollHeight)'
                 );
@@ -84,26 +96,37 @@ export class ReportExportServiceImpl implements ReportExportService {
     /**
      * Render `html` in a hidden, offscreen-painting BrowserWindow, run `fn`,
      * and always destroy the window and remove the temp file afterwards.
+     *
+     * `javascript` is off for print and PDF: report HTML is sanitised before it
+     * is shown (DOMPurify strips scripts), Mermaid diagrams are exported as
+     * pre-rendered SVG, and plugin HTML (`cooklang.api.exportPdf`) is static by
+     * contract. PNG export keeps it on, because it measures the page and waits
+     * for paint with `executeJavaScript`.
      */
-    protected async withWindow<T>(html: string, fn: (win: BrowserWindow) => Promise<T>): Promise<T> {
+    protected async withWindow<T>(
+        html: string,
+        options: { javascript: boolean },
+        fn: (win: BrowserWindow) => Promise<T>
+    ): Promise<T> {
         const tmpFile = path.join(
             app?.getPath?.('temp') ?? os.tmpdir(),
             `cooklang-report-${Date.now()}-${Math.floor(Math.random() * 1e6)}.html`
         );
         fs.writeFileSync(tmpFile, html, 'utf8');
-        const win = new BrowserWindow({
+        const win = this.createWindow({
             show: false,
             paintWhenInitiallyHidden: true,
             width: ReportExportServiceImpl.CONTENT_WIDTH,
             height: 1024,
             // The window loads report HTML from a local file: keep the renderer
-            // locked down (these are the current Electron defaults, stated explicitly
-            // for a security-sensitive operation).
+            // locked down (sandbox, isolation and no Node are the current Electron
+            // defaults, stated explicitly for a security-sensitive operation).
             webPreferences: {
                 backgroundThrottling: false,
                 contextIsolation: true,
                 sandbox: true,
-                nodeIntegration: false
+                nodeIntegration: false,
+                javascript: options.javascript
             }
         });
         try {
@@ -117,13 +140,23 @@ export class ReportExportServiceImpl implements ReportExportService {
         }
     }
 
+    /** Seam for tests: the hidden export window. */
+    protected createWindow(options: BrowserWindowConstructorOptions): BrowserWindow {
+        return new BrowserWindow(options);
+    }
+
+    /** Seam for tests: the native save dialog. */
+    protected showSaveDialog(options: SaveDialogOptions): Promise<SaveDialogReturnValue> {
+        return dialog.showSaveDialog(options);
+    }
+
     protected async saveBuffer(
         data: Buffer | Uint8Array,
         defaultFileName: string,
         extension: string,
         filterName: string
     ): Promise<ReportExportResult> {
-        const result = await dialog.showSaveDialog({
+        const result = await this.showSaveDialog({
             defaultPath: `${this.sanitize(defaultFileName)}.${extension}`,
             filters: [{ name: filterName, extensions: [extension] }]
         });

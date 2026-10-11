@@ -22,12 +22,24 @@ export interface ReportExportResult {
     error?: string;
 }
 
+/** Paper sizes plugins may ask for; Electron's `printToPDF` default (`Letter`) applies when absent. */
+export type ReportPageSize = 'A4' | 'Letter';
+
+export interface ReportExportPdfOptions {
+    /**
+     * Paper size passed to `printToPDF`. CSS `@page { size }` is ignored by the
+     * export (Electron's `preferCSSPageSize` is off), so this is the only way to
+     * pick one.
+     */
+    pageSize?: ReportPageSize;
+}
+
 export const ReportExportService = Symbol('ReportExportService');
 export interface ReportExportService {
     /** Open the native print dialog for the given standalone HTML document. */
     print(html: string): Promise<void>;
     /** Render the HTML to PDF and prompt for a save location. */
-    exportPdf(html: string, defaultFileName: string): Promise<ReportExportResult>;
+    exportPdf(html: string, defaultFileName: string, options?: ReportExportPdfOptions): Promise<ReportExportResult>;
     /** Capture the HTML to PNG and prompt for a save location. */
     exportPng(html: string, defaultFileName: string): Promise<ReportExportResult>;
 }
