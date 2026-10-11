@@ -25,6 +25,7 @@ try {
 import { expect } from 'chai';
 import URI from '@theia/core/lib/common/uri';
 import { ReportWidgetOptions } from './report-widget-types';
+import { ReportExportResult } from '../common/report-export-protocol';
 import { CooklangPluginApi, CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
 
 interface Handler { execute: (...args: unknown[]) => unknown }
@@ -55,6 +56,9 @@ class Fixture {
     reportCalls: Array<{ uri: string; template: string; scale: number }> = [];
     refreshes = 0;
     shown: ReportWidgetOptions[] = [];
+    exportCalls: Array<{ html: string; name: string; options: unknown }> = [];
+    exportResult: ReportExportResult = { saved: true, filePath: '/out/Family Book.pdf' };
+    exportError: Error | undefined = undefined;
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -110,6 +114,15 @@ class Fixture {
             },
         };
         (contribution as any).outlets = { refresh: () => { this.refreshes += 1; } };
+        (contribution as any).reportExport = {
+            exportPdf: async (html: string, name: string, options?: unknown) => {
+                this.exportCalls.push({ html, name, options });
+                if (this.exportError) {
+                    throw this.exportError;
+                }
+                return this.exportResult;
+            },
+        };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         contribution.registerCommands({
             registerCommand: (command: { id: string; label?: string }, handler: Handler) => {
@@ -487,5 +500,99 @@ describe('CooklangPluginApiContribution — openReport', () => {
         fixture.hasProvider = scheme => scheme === 'file';
         expect(await fixture.error(OPEN_REPORT, { uri: 'foo:/x.cook', template: '{{ 1 }}', label: 'x' })).to.match(/^Invalid arguments/);
         expect(fixture.shown).to.deep.equal([]);
+    });
+});
+
+describe('CooklangPluginApiContribution — exportPdf', () => {
+    const { EXPORT_PDF } = CooklangPluginApi.Commands;
+    const HTML = '<!doctype html><html><body><h1>Family Book</h1></body></html>';
+
+    it('delegates to the report export service and maps filePath to path', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Family Book' }))
+            .to.deep.equal({ saved: true, path: '/out/Family Book.pdf' });
+        expect(fixture.exportCalls).to.deep.equal([{ html: HTML, name: 'Family Book', options: undefined }]);
+    });
+
+    it('drops a trailing .pdf, because the service adds the extension', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Family Book.pdf' });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: ' Soups.PDF ' });
+        expect(fixture.exportCalls.map(call => call.name)).to.deep.equal(['Family Book', 'Soups']);
+    });
+
+    it('passes pageSize through', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'A4' });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'Letter' });
+        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([{ pageSize: 'A4' }, { pageSize: 'Letter' }]);
+    });
+
+    it('reports a cancelled dialog as not saved, without an error', async () => {
+        const fixture = new Fixture();
+        fixture.exportResult = { saved: false };
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' })).to.deep.equal({ saved: false });
+    });
+
+    it("passes the service's error message through", async () => {
+        const fixture = new Fixture();
+        fixture.exportResult = { saved: false, error: 'EACCES: permission denied' };
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' }))
+            .to.deep.equal({ saved: false, error: 'EACCES: permission denied' });
+    });
+
+    it('turns a rejected service call into an error result instead of throwing', async () => {
+        const fixture = new Fixture();
+        fixture.exportError = new Error('connection closed');
+        fixture.create();
+        expect(await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' }))
+            .to.deep.equal({ saved: false, error: 'connection closed' });
+    });
+
+    it('rejects bad html, file names and page sizes before exporting', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        for (const args of [
+            undefined,
+            { defaultFileName: 'Book' },
+            { html: '', defaultFileName: 'Book' },
+            { html: ' \n\t ', defaultFileName: 'Book' },
+            { html: 42, defaultFileName: 'Book' },
+            { html: HTML },
+            { html: HTML, defaultFileName: '   ' },
+            { html: HTML, defaultFileName: 'Books/Family' },
+            { html: HTML, defaultFileName: 'Books\\Family' },
+            { html: HTML, defaultFileName: 'Family\nBook' },
+            { html: HTML, defaultFileName: 'x'.repeat(201) },
+            { html: HTML, defaultFileName: '.pdf' },
+            { html: HTML, defaultFileName: 'Book', pageSize: 'A3' },
+            { html: HTML, defaultFileName: 'Book', pageSize: 4 },
+        ]) {
+            expect(await fixture.error(EXPORT_PDF, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
+        }
+        expect(fixture.exportCalls).to.deep.equal([]);
+    });
+
+    it('accepts html up to the limit and rejects one character more', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const limit = CooklangPluginApi.MAX_EXPORT_HTML_LENGTH;
+        expect(limit).to.equal(100 * 1024 * 1024);
+        expect(await fixture.error(EXPORT_PDF, { html: 'x'.repeat(limit + 1), defaultFileName: 'Book' }))
+            .to.match(/^Invalid arguments: `html`/);
+        await fixture.run(EXPORT_PDF, { html: 'x'.repeat(limit), defaultFileName: 'Book' });
+        expect(fixture.exportCalls).to.have.length(1);
+    });
+
+    it('accepts a 200-character file name', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'x'.repeat(200) });
+        expect(fixture.exportCalls[0].name).to.equal('x'.repeat(200));
     });
 });

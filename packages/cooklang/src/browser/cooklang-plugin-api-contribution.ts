@@ -41,6 +41,7 @@ import { PluginReportService } from './plugin-report-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportOutputFormat } from '../common/report-templates';
 import { CooklangOutletService } from './cooklang-outlet-service';
+import { ReportExportResult, ReportExportService, ReportPageSize } from '../common/report-export-protocol';
 
 /**
  * The public Cooklang API for plugins: label-less commands (hidden from the
@@ -105,6 +106,19 @@ export namespace CooklangPluginApi {
          * Rejects a `uri` whose scheme has no file system provider.
          */
         OPEN_REPORT: 'cooklang.api.openReport',
+        /**
+         * `{ html, defaultFileName, pageSize? }` → `{ saved, path?, error? }`: renders a standalone
+         * HTML document (at most {@link MAX_EXPORT_HTML_LENGTH} characters, so inline photos as
+         * `data:` URIs) to PDF and shows the native save dialog, the same path as a report tab's
+         * **Export PDF**. The document is loaded from a temp file into a hidden, sandboxed window
+         * with JavaScript disabled. `defaultFileName` prefills the dialog: at most
+         * {@link MAX_EXPORT_FILE_NAME_LENGTH} characters, no `/`, `\` or control characters; `.pdf`
+         * is added when missing. `pageSize` is `A4` or `Letter`; without it Chromium's default
+         * (Letter) applies, and CSS `@page { size }` is ignored. Resolves `{ saved: false }` when the
+         * user cancels and `{ saved: false, error }` when rendering or writing fails; the editor
+         * shows no message of its own.
+         */
+        EXPORT_PDF: 'cooklang.api.exportPdf',
     } as const;
 
     /** Maximum `cooklang.api.renderReport` template length, in characters (64 K), not bytes. */
@@ -112,6 +126,22 @@ export namespace CooklangPluginApi {
 
     /** Maximum `cooklang.api.openReport` label length, in characters. */
     export const MAX_REPORT_LABEL_LENGTH = 60;
+
+    /** Maximum `cooklang.api.exportPdf` HTML length, in characters (100 Mi); photos travel inline as `data:` URIs. */
+    export const MAX_EXPORT_HTML_LENGTH = 100 * 1024 * 1024;
+
+    /** Maximum `cooklang.api.exportPdf` default file name length, in characters. */
+    export const MAX_EXPORT_FILE_NAME_LENGTH = 200;
+
+    /** `cooklang.api.exportPdf` result. */
+    export interface ExportPdfResult {
+        /** False when the user cancelled the dialog or the export failed. */
+        saved: boolean;
+        /** Absolute path of the written file, when saved. */
+        path?: string;
+        /** Why the export failed, when it did. */
+        error?: string;
+    }
 }
 
 /**
@@ -157,6 +187,9 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     @inject(ReportPresenter)
     protected readonly reportPresenter: ReportPresenter;
 
+    @inject(ReportExportService)
+    protected readonly reportExport: ReportExportService;
+
     onStart(): void {
         this.contextKeys.createKey<number>(CooklangPluginApi.CONTEXT_KEY, CooklangPluginApi.VERSION);
     }
@@ -178,6 +211,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         registry.registerCommand({ id: Commands.RENDER_REPORT }, { execute: (args: unknown) => this.renderReport(args) });
         registry.registerCommand({ id: Commands.REFRESH_BADGES }, { execute: () => this.outlets.refresh() });
         registry.registerCommand({ id: Commands.OPEN_REPORT }, { execute: (args: unknown) => this.openReport(args) });
+        registry.registerCommand({ id: Commands.EXPORT_PDF }, { execute: (args: unknown) => this.exportPdf(args) });
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
@@ -359,6 +393,44 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             outputFormat: outputFormat as ReportOutputFormat,
             scale,
         });
+    }
+
+    protected async exportPdf(args: unknown): Promise<CooklangPluginApi.ExportPdfResult> {
+        const request = this.object(args);
+        const html = this.text(request.html, '`html`');
+        // `/\S/` instead of `trim()`: no copy of a document that may be 100 Mi characters.
+        if (!/\S/.test(html) || html.length > CooklangPluginApi.MAX_EXPORT_HTML_LENGTH) {
+            throw this.invalid(`\`html\` must be non-empty and at most ${CooklangPluginApi.MAX_EXPORT_HTML_LENGTH} characters.`);
+        }
+        const fileName = this.string(request.defaultFileName, '`defaultFileName`');
+        if (fileName.length > CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH || /[\\/]/.test(fileName)) {
+            throw this.invalid(
+                `\`defaultFileName\` must be at most ${CooklangPluginApi.MAX_EXPORT_FILE_NAME_LENGTH} characters, without path separators.`
+            );
+        }
+        // The export service appends `.pdf` itself.
+        const baseName = fileName.replace(/\.pdf$/i, '').trim();
+        if (baseName === '') {
+            throw this.invalid('`defaultFileName` must name the file, not only its extension.');
+        }
+        const pageSize = request.pageSize;
+        if (pageSize !== undefined && pageSize !== 'A4' && pageSize !== 'Letter') {
+            throw this.invalid('`pageSize` must be "A4" or "Letter".');
+        }
+        let result: ReportExportResult;
+        try {
+            result = await this.reportExport.exportPdf(html, baseName, pageSize === undefined ? undefined : { pageSize: pageSize as ReportPageSize });
+        } catch (e) {
+            return { saved: false, error: e instanceof Error ? e.message : String(e) };
+        }
+        const mapped: CooklangPluginApi.ExportPdfResult = { saved: result.saved };
+        if (result.filePath !== undefined) {
+            mapped.path = result.filePath;
+        }
+        if (result.error !== undefined) {
+            mapped.error = result.error;
+        }
+        return mapped;
     }
 
     protected pantryEdit(value: unknown): PantryEdit {
