@@ -542,12 +542,13 @@ describe('CooklangPluginApiContribution — exportPdf', () => {
         expect(fixture.exportCalls.map(call => call.name)).to.deep.equal(['Family Book', 'Soups']);
     });
 
-    it('passes pageSize through', async () => {
+    it('passes pageSize through, and no options at all when it is omitted', async () => {
         const fixture = new Fixture();
         fixture.create();
         await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'A4' });
         await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'Letter' });
-        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([{ pageSize: 'A4' }, { pageSize: 'Letter' }]);
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book' });
+        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([{ pageSize: 'A4' }, { pageSize: 'Letter' }, undefined]);
     });
 
     it('reports a cancelled dialog as not saved, without an error', async () => {
