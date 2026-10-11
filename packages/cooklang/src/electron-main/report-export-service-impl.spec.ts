@@ -23,12 +23,14 @@ import {
     SaveDialogOptions,
     SaveDialogReturnValue,
 } from '@theia/electron/shared/electron';
+import { skiaLikePdf } from '../common/pdf-page-refs.spec';
 import { ReportExportServiceImpl } from './report-export-service-impl';
 
 /** The slice of `BrowserWindow` the export service uses. */
 class FakeWindow {
     destroyed = false;
     pdfError: Error | undefined = undefined;
+    pdfOutput: (html: string) => Buffer = () => Buffer.from('%PDF-1.7');
     readonly loaded: string[] = [];
     readonly loadedFiles: Array<{ file: string; mode: number }> = [];
     readonly pdfOptions: PrintToPDFOptions[] = [];
@@ -38,7 +40,7 @@ class FakeWindow {
             if (this.pdfError) {
                 throw this.pdfError;
             }
-            return Buffer.from('%PDF-1.7');
+            return this.pdfOutput(this.loaded[this.loaded.length - 1] ?? '');
         },
         print: (_options: unknown, callback: (success: boolean, reason: string) => void): void => callback(true, ''),
         executeJavaScript: async (): Promise<number> => 100,
@@ -85,6 +87,7 @@ class TestExportService extends ReportExportServiceImpl {
     readonly dialogs: SaveDialogOptions[] = [];
     dialogResult: SaveDialogReturnValue = { canceled: true, filePath: '' };
     pdfError: Error | undefined = undefined;
+    pdfOutput: ((html: string) => Buffer) | undefined = undefined;
     readonly tempDir = createTempRoot();
 
     protected override tempRoot(): string {
@@ -94,6 +97,9 @@ class TestExportService extends ReportExportServiceImpl {
     protected override createWindow(options: BrowserWindowConstructorOptions): BrowserWindow {
         const window = new FakeWindow();
         window.pdfError = this.pdfError;
+        if (this.pdfOutput) {
+            window.pdfOutput = this.pdfOutput;
+        }
         this.windows.push({ options, window });
         return window as unknown as BrowserWindow;
     }
@@ -147,6 +153,61 @@ describe('ReportExportServiceImpl', () => {
             { printBackground: true, pageSize: 'A4' },
             { printBackground: true, pageSize: 'Letter' },
         ]);
+    });
+
+    describe('page numbers', () => {
+        const REFS = '<a href="#r-1">Soup <span data-page-ref="r-1"></span></a><a href="#index">Index <span data-page-ref="index"></span></a>';
+
+        it('adds a page-number footer only when asked', async () => {
+            const service = new TestExportService();
+            await service.exportPdf(HTML, 'Book');
+            await service.exportPdf(HTML, 'Book', { pageNumbers: true });
+            expect(service.windows[0].window.pdfOptions[0]).to.not.have.property('displayHeaderFooter');
+            const numbered = service.windows[1].window.pdfOptions[0];
+            expect(numbered).to.include({ printBackground: true, displayHeaderFooter: true, headerTemplate: '<span></span>' });
+            expect(numbered.footerTemplate).to.contain('<span class="pageNumber"></span>');
+        });
+
+        it('renders once when the document has no page references', async () => {
+            const service = new TestExportService();
+            service.pdfOutput = () => skiaLikePdf({ 'r-1': 2 });
+            await service.exportPdf(HTML, 'Book', { pageNumbers: true });
+            expect(service.windows).to.have.length(1);
+        });
+
+        it('fills page references from the first pass and prints again with them', async () => {
+            const service = new TestExportService();
+            service.pdfOutput = () => skiaLikePdf({ 'r-1': 3, index: 5 });
+            const target = path.join(os.tmpdir(), `cooklang-export-spec-refs-${Date.now()}.pdf`);
+            service.dialogResult = { canceled: false, filePath: target };
+            try {
+                await service.exportPdf(REFS, 'Book', { pageNumbers: true });
+                expect(service.windows.map(entry => entry.window.loaded[0])).to.deep.equal([
+                    REFS,
+                    '<a href="#r-1">Soup <span data-page-ref="r-1">3</span></a><a href="#index">Index <span data-page-ref="index">5</span></a>',
+                ]);
+                expect(service.windows.every(entry => entry.window.destroyed)).to.equal(true);
+                // The saved file is the last pass.
+                expect(fs.readFileSync(target)).to.deep.equal(skiaLikePdf({ 'r-1': 3, index: 5 }));
+            } finally {
+                fs.rmSync(target, { force: true });
+            }
+        });
+
+        it('prints again while filling the numbers moves pages, at most three times', async () => {
+            const service = new TestExportService();
+            let pass = 0;
+            service.pdfOutput = () => skiaLikePdf({ 'r-1': 3, index: 4 + pass++ });
+            await service.exportPdf(REFS, 'Book', { pageNumbers: true });
+            expect(service.windows).to.have.length(3);
+            expect(service.windows[2].window.loaded[0]).to.contain('<span data-page-ref="index">5</span>');
+        });
+
+        it('stops after one pass when the PDF has no destinations', async () => {
+            const service = new TestExportService();
+            await service.exportPdf(REFS, 'Book', { pageNumbers: true });
+            expect(service.windows).to.have.length(1);
+        });
     });
 
     it('reports a cancelled save dialog as not saved and suggests <name>.pdf', async () => {

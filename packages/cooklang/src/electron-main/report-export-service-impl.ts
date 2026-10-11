@@ -25,6 +25,7 @@ import {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { fillPageRefs, hasPageRefs, pdfDestinationPages } from '../common/pdf-page-refs';
 import { ReportExportPdfOptions, ReportExportResult, ReportExportService } from '../common/report-export-protocol';
 
 @injectable()
@@ -62,17 +63,56 @@ export class ReportExportServiceImpl implements ReportExportService {
 
     async exportPdf(html: string, defaultFileName: string, options: ReportExportPdfOptions = {}): Promise<ReportExportResult> {
         try {
-            return await this.withWindow(html, { javascript: false }, async win => {
-                const printOptions: PrintToPDFOptions = { printBackground: true };
-                if (options.pageSize) {
-                    printOptions.pageSize = options.pageSize;
-                }
-                const data = await win.webContents.printToPDF(printOptions);
-                return this.saveBuffer(data, defaultFileName, 'pdf', 'PDF Document');
-            });
+            const printOptions: PrintToPDFOptions = { printBackground: true };
+            if (options.pageSize) {
+                printOptions.pageSize = options.pageSize;
+            }
+            if (options.pageNumbers) {
+                Object.assign(printOptions, ReportExportServiceImpl.PAGE_NUMBER_FOOTER);
+            }
+            const data = await this.renderPdf(html, printOptions, options.pageNumbers === true);
+            return await this.saveBuffer(data, defaultFileName, 'pdf', 'PDF Document');
         } catch (error) {
             return { saved: false, error: this.message(error) };
         }
+    }
+
+    /** Page number centred in the bottom margin (Chromium fills `.pageNumber`; no JavaScript involved). */
+    protected static readonly PAGE_NUMBER_FOOTER: Partial<PrintToPDFOptions> = {
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: '<div style="width:100%;text-align:center;font-size:8pt;color:#6b6b66;'
+            + 'font-family:-apple-system,\'Segoe UI\',Helvetica,Arial,sans-serif"><span class="pageNumber"></span></div>',
+    };
+
+    /**
+     * Passes for filling page references: the first finds where each `id` landed, the
+     * second prints the numbers. Filling them in can move content (an index entry gets
+     * longer), so print again while the pages still change, up to this many times.
+     */
+    protected static readonly MAX_PAGE_REF_PASSES = 3;
+
+    /**
+     * Print `html`; with `fillRefs`, fill its `data-page-ref` placeholders from the
+     * PDF's named destinations and print again until the numbers are stable.
+     */
+    protected async renderPdf(html: string, printOptions: PrintToPDFOptions, fillRefs: boolean): Promise<Uint8Array> {
+        const print = (document: string): Promise<Uint8Array> =>
+            this.withWindow(document, { javascript: false }, win => win.webContents.printToPDF(printOptions));
+        let data = await print(html);
+        if (!fillRefs || !hasPageRefs(html)) {
+            return data;
+        }
+        let pages = pdfDestinationPages(data);
+        for (let pass = 1; pass < ReportExportServiceImpl.MAX_PAGE_REF_PASSES && pages.size > 0; pass++) {
+            data = await print(fillPageRefs(html, pages));
+            const next = pdfDestinationPages(data);
+            if (samePages(pages, next)) {
+                break;
+            }
+            pages = next;
+        }
+        return data;
     }
 
     async exportPng(html: string, defaultFileName: string): Promise<ReportExportResult> {
@@ -192,4 +232,8 @@ export class ReportExportServiceImpl implements ReportExportService {
     protected message(error: unknown): string {
         return error instanceof Error ? error.message : String(error);
     }
+}
+
+function samePages(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+    return a.size === b.size && [...a].every(([id, page]) => b.get(id) === page);
 }

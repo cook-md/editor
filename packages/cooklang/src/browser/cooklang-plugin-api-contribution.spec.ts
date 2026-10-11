@@ -551,6 +551,19 @@ describe('CooklangPluginApiContribution — exportPdf', () => {
         expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([{ pageSize: 'A4' }, { pageSize: 'Letter' }, undefined]);
     });
 
+    it('passes pageNumbers: true through, and drops false', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageSize: 'A4', pageNumbers: true });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageNumbers: true });
+        await fixture.run(EXPORT_PDF, { html: HTML, defaultFileName: 'Book', pageNumbers: false });
+        expect(fixture.exportCalls.map(call => call.options)).to.deep.equal([
+            { pageSize: 'A4', pageNumbers: true },
+            { pageNumbers: true },
+            undefined,
+        ]);
+    });
+
     it('reports a cancelled dialog as not saved, without an error', async () => {
         const fixture = new Fixture();
         fixture.exportResult = { saved: false };
@@ -592,6 +605,7 @@ describe('CooklangPluginApiContribution — exportPdf', () => {
             { html: HTML, defaultFileName: '.pdf' },
             { html: HTML, defaultFileName: 'Book', pageSize: 'A3' },
             { html: HTML, defaultFileName: 'Book', pageSize: 4 },
+            { html: HTML, defaultFileName: 'Book', pageNumbers: 'yes' },
         ]) {
             expect(await fixture.error(EXPORT_PDF, args), JSON.stringify(args)).to.match(/^Invalid arguments/);
         }

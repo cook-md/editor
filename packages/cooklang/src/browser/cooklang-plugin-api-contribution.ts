@@ -41,7 +41,7 @@ import { PluginReportService } from './plugin-report-service';
 import { ReportPresenter } from './report-presenter';
 import { ReportOutputFormat } from '../common/report-templates';
 import { CooklangOutletService } from './cooklang-outlet-service';
-import { ReportExportResult, ReportExportService, ReportPageSize } from '../common/report-export-protocol';
+import { ReportExportPdfOptions, ReportExportResult, ReportExportService, ReportPageSize } from '../common/report-export-protocol';
 import {
     RECIPE_IMAGE_MIME_TYPES,
     ResolvedRecipeImages,
@@ -121,7 +121,10 @@ export namespace CooklangPluginApi {
          * with JavaScript disabled. `defaultFileName` prefills the dialog: at most
          * {@link MAX_EXPORT_FILE_NAME_LENGTH} characters, no `/`, `\` or control characters; `.pdf`
          * is added when missing. `pageSize` is `A4` or `Letter`; without it Chromium's default
-         * (Letter) applies, and CSS `@page { size }` is ignored. Resolves `{ saved: false }` when the
+         * (Letter) applies, and CSS `@page { size }` is ignored. `pageNumbers: true` numbers the
+         * pages in the bottom margin (leave about 12 mm) and fills every empty
+         * `<span data-page-ref="ID"></span>` with the page the element `id="ID"` starts on (IDs are
+         * `[A-Za-z0-9_-]`, at most 64 characters; the document is rendered twice). Resolves `{ saved: false }` when the
          * user cancels and `{ saved: false, error }` when rendering or writing fails; the editor
          * shows no message of its own.
          */
@@ -443,9 +446,20 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         if (pageSize !== undefined && pageSize !== 'A4' && pageSize !== 'Letter') {
             throw this.invalid('`pageSize` must be "A4" or "Letter".');
         }
+        const pageNumbers = request.pageNumbers;
+        if (pageNumbers !== undefined && typeof pageNumbers !== 'boolean') {
+            throw this.invalid('`pageNumbers` must be a boolean.');
+        }
+        const options: ReportExportPdfOptions = {};
+        if (pageSize !== undefined) {
+            options.pageSize = pageSize as ReportPageSize;
+        }
+        if (pageNumbers === true) {
+            options.pageNumbers = true;
+        }
         let result: ReportExportResult;
         try {
-            result = await this.reportExport.exportPdf(html, baseName, pageSize === undefined ? undefined : { pageSize: pageSize as ReportPageSize });
+            result = await this.reportExport.exportPdf(html, baseName, Object.keys(options).length > 0 ? options : undefined);
         } catch (e) {
             return { saved: false, error: e instanceof Error ? e.message : String(e) };
         }

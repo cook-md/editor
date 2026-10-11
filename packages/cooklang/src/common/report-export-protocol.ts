@@ -32,6 +32,12 @@ export interface ReportExportPdfOptions {
      * pick one.
      */
     pageSize?: ReportPageSize;
+    /**
+     * Number the pages (in the bottom margin, which must be tall enough: about 12 mm)
+     * and fill each empty `<span data-page-ref="ID"></span>` with the page the element
+     * with that `id` starts on. Filling takes a second rendering pass.
+     */
+    pageNumbers?: boolean;
 }
 
 export const ReportExportService = Symbol('ReportExportService');
