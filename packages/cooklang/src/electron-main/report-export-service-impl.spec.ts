@@ -30,6 +30,7 @@ class FakeWindow {
     destroyed = false;
     pdfError: Error | undefined = undefined;
     readonly loaded: string[] = [];
+    readonly loadedFiles: Array<{ file: string; mode: number }> = [];
     readonly pdfOptions: PrintToPDFOptions[] = [];
     readonly webContents = {
         printToPDF: async (options: PrintToPDFOptions): Promise<Buffer> => {
@@ -46,6 +47,7 @@ class FakeWindow {
 
     async loadFile(file: string): Promise<void> {
         this.loaded.push(fs.readFileSync(file, 'utf8'));
+        this.loadedFiles.push({ file, mode: fs.statSync(file).mode & 0o777 });
     }
 
     setContentSize(): void { /* no layout in tests */ }
@@ -59,11 +61,25 @@ class FakeWindow {
     }
 }
 
+/** Each service's temp root, removed after the suite. */
+const tempRoots: string[] = [];
+
+function createTempRoot(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cooklang-export-spec-'));
+    tempRoots.push(dir);
+    return dir;
+}
+
 class TestExportService extends ReportExportServiceImpl {
     readonly windows: Array<{ options: BrowserWindowConstructorOptions; window: FakeWindow }> = [];
     readonly dialogs: SaveDialogOptions[] = [];
     dialogResult: SaveDialogReturnValue = { canceled: true, filePath: '' };
     pdfError: Error | undefined = undefined;
+    readonly tempDir = createTempRoot();
+
+    protected override tempRoot(): string {
+        return this.tempDir;
+    }
 
     protected override createWindow(options: BrowserWindowConstructorOptions): BrowserWindow {
         const window = new FakeWindow();
@@ -81,6 +97,12 @@ class TestExportService extends ReportExportServiceImpl {
 const HTML = '<!doctype html><p>Soup</p>';
 
 describe('ReportExportServiceImpl', () => {
+
+    after(() => {
+        for (const dir of tempRoots.splice(0)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
 
     it('renders PDFs in a sandboxed window with JavaScript disabled, then destroys it', async () => {
         const service = new TestExportService();
@@ -142,5 +164,34 @@ describe('ReportExportServiceImpl', () => {
         expect(await service.exportPdf(HTML, 'Book')).to.deep.equal({ saved: false, error: 'GPU process crashed' });
         expect(service.windows[0].window.destroyed).to.equal(true);
         expect(service.dialogs).to.deep.equal([]);
+    });
+    describe('temp files', () => {
+        it('loads the HTML from an owner-only file in its own folder, and removes both after an export', async () => {
+            const service = new TestExportService();
+            await service.exportPdf(HTML, 'Book');
+            const [{ file, mode }] = service.windows[0].window.loadedFiles;
+            expect(path.dirname(path.dirname(file))).to.equal(service.tempDir);
+            if (process.platform !== 'win32') {
+                expect(mode).to.equal(0o600);
+            }
+            expect(fs.existsSync(file)).to.equal(false);
+            expect(fs.readdirSync(service.tempDir)).to.deep.equal([]);
+        });
+
+        it('removes the temp file and folder when printToPDF throws', async () => {
+            const service = new TestExportService();
+            service.pdfError = new Error('GPU process crashed');
+            expect(await service.exportPdf(HTML, 'Book')).to.deep.equal({ saved: false, error: 'GPU process crashed' });
+            expect(service.windows[0].window.loadedFiles).to.have.length(1);
+            expect(fs.readdirSync(service.tempDir)).to.deep.equal([]);
+        });
+
+        it('gives concurrent exports separate folders', async () => {
+            const service = new TestExportService();
+            await Promise.all([service.exportPdf(HTML, 'A'), service.exportPdf(HTML, 'B')]);
+            const dirs = service.windows.map(entry => path.dirname(entry.window.loadedFiles[0].file));
+            expect(new Set(dirs).size).to.equal(2);
+            expect(fs.readdirSync(service.tempDir)).to.deep.equal([]);
+        });
     });
 });

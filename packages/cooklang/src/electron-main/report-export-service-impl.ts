@@ -108,36 +108,43 @@ export class ReportExportServiceImpl implements ReportExportService {
         options: { javascript: boolean },
         fn: (win: BrowserWindow) => Promise<T>
     ): Promise<T> {
-        const tmpFile = path.join(
-            app?.getPath?.('temp') ?? os.tmpdir(),
-            `cooklang-report-${Date.now()}-${Math.floor(Math.random() * 1e6)}.html`
-        );
-        fs.writeFileSync(tmpFile, html, 'utf8');
-        const win = this.createWindow({
-            show: false,
-            paintWhenInitiallyHidden: true,
-            width: ReportExportServiceImpl.CONTENT_WIDTH,
-            height: 1024,
-            // The window loads report HTML from a local file: keep the renderer
-            // locked down (sandbox, isolation and no Node are the current Electron
-            // defaults, stated explicitly for a security-sensitive operation).
-            webPreferences: {
-                backgroundThrottling: false,
-                contextIsolation: true,
-                sandbox: true,
-                nodeIntegration: false,
-                javascript: options.javascript
-            }
-        });
+        // A private folder per export: `mkdtemp` picks an unused name, the file
+        // is owner-only and must not exist yet (`wx`), so nothing else on the
+        // machine can read or swap the HTML the window loads.
+        const tmpDir = await fs.promises.mkdtemp(path.join(this.tempRoot(), 'cooklang-report-'));
+        let win: BrowserWindow | undefined;
         try {
+            const tmpFile = path.join(tmpDir, 'report.html');
+            await fs.promises.writeFile(tmpFile, html, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+            win = this.createWindow({
+                show: false,
+                paintWhenInitiallyHidden: true,
+                width: ReportExportServiceImpl.CONTENT_WIDTH,
+                height: 1024,
+                // The window loads report HTML from a local file: keep the renderer
+                // locked down (sandbox, isolation and no Node are the current Electron
+                // defaults, stated explicitly for a security-sensitive operation).
+                webPreferences: {
+                    backgroundThrottling: false,
+                    contextIsolation: true,
+                    sandbox: true,
+                    nodeIntegration: false,
+                    javascript: options.javascript
+                }
+            });
             await win.loadFile(tmpFile);
             return await fn(win);
         } finally {
-            if (!win.isDestroyed()) {
+            if (win && !win.isDestroyed()) {
                 win.destroy();
             }
-            fs.promises.unlink(tmpFile).catch(() => { /* best effort */ });
+            await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => { /* best effort */ });
         }
+    }
+
+    /** Where per-export temp folders are created; a seam for tests. */
+    protected tempRoot(): string {
+        return app?.getPath?.('temp') ?? os.tmpdir();
     }
 
     /** Seam for tests: the hidden export window. */
