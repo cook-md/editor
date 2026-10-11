@@ -33,6 +33,9 @@ export class ReportExportServiceImpl implements ReportExportService {
     /** Fixed logical content width (px) for offscreen rendering / PNG capture. */
     protected static readonly CONTENT_WIDTH = 820;
 
+    /** In-memory session partition (no `persist:` prefix) for the hidden export windows. */
+    protected static readonly PARTITION = 'report-export';
+
     /** Guard against a print callback that never fires, so cleanup always runs. */
     protected static readonly PRINT_TIMEOUT_MS = 60_000;
 
@@ -129,9 +132,16 @@ export class ReportExportServiceImpl implements ReportExportService {
                     contextIsolation: true,
                     sandbox: true,
                     nodeIntegration: false,
-                    javascript: options.javascript
+                    javascript: options.javascript,
+                    // Its own in-memory session: no cookies, cache or storage
+                    // shared with the editor, and nothing kept on disk.
+                    partition: ReportExportServiceImpl.PARTITION
                 }
             });
+            // The page is a static document: it may not navigate away (a link
+            // or a meta refresh) or open windows of its own.
+            win.webContents.on('will-navigate', event => event.preventDefault());
+            win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
             await win.loadFile(tmpFile);
             return await fn(win);
         } finally {

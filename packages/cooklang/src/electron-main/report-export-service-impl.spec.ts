@@ -43,11 +43,21 @@ class FakeWindow {
         print: (_options: unknown, callback: (success: boolean, reason: string) => void): void => callback(true, ''),
         executeJavaScript: async (): Promise<number> => 100,
         capturePage: async (): Promise<{ toPNG: () => Buffer }> => ({ toPNG: () => Buffer.from('png') }),
+        on: (event: string, listener: (...args: unknown[]) => void): void => {
+            (this.listeners[event] ??= []).push(listener);
+        },
+        setWindowOpenHandler: (handler: (details: unknown) => unknown): void => {
+            this.openHandlers.push(handler);
+        },
     };
+    readonly listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
+    readonly openHandlers: Array<(details: unknown) => unknown> = [];
+    lockedAtLoad = false;
 
     async loadFile(file: string): Promise<void> {
         this.loaded.push(fs.readFileSync(file, 'utf8'));
         this.loadedFiles.push({ file, mode: fs.statSync(file).mode & 0o777 });
+        this.lockedAtLoad = (this.listeners['will-navigate']?.length ?? 0) > 0 && this.openHandlers.length > 0;
     }
 
     setContentSize(): void { /* no layout in tests */ }
@@ -193,5 +203,26 @@ describe('ReportExportServiceImpl', () => {
             expect(new Set(dirs).size).to.equal(2);
             expect(fs.readdirSync(service.tempDir)).to.deep.equal([]);
         });
+    });
+    describe('window lock-down', () => {
+        for (const [name, run] of [
+            ['PDF', (service: TestExportService) => service.exportPdf(HTML, 'Book')],
+            ['print', (service: TestExportService) => service.print(HTML)],
+            ['PNG', (service: TestExportService) => service.exportPng(HTML, 'Book')],
+        ] as const) {
+            it(`${name}: uses its own in-memory session, and blocks navigation and new windows before loading`, async () => {
+                const service = new TestExportService();
+                await run(service);
+                const { options, window } = service.windows[0];
+                expect(options.webPreferences?.partition).to.equal('report-export');
+                expect(window.lockedAtLoad).to.equal(true);
+                expect(window.listeners['will-navigate']).to.have.length(1);
+                let prevented = false;
+                window.listeners['will-navigate'][0]({ preventDefault: () => { prevented = true; } }, 'https://evil.example/');
+                expect(prevented).to.equal(true);
+                expect(window.openHandlers).to.have.length(1);
+                expect(window.openHandlers[0]({ url: 'https://evil.example/' })).to.deep.equal({ action: 'deny' });
+            });
+        }
     });
 });
