@@ -308,6 +308,20 @@ describe('AccountWidget upgrade block', () => {
         expect(text).to.not.contain('7-day free trial');
     });
 
+    it('opens /subscription tagged with the editor_account door', () => {
+        const widget = createWidget(IDLE_STATUS);
+        const opened: string[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (widget as any).windowService = { openNewWindow: (url: string) => { opened.push(url); } };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (widget as any).webBaseUrl = 'https://cook.md';
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (widget as any).handleManageSubscription();
+
+        expect(opened).to.deep.equal(['https://cook.md/subscription?from=editor_account']);
+    });
+
     it('starts the upgrade flow with from=editor_account when the button is clicked', async () => {
         const widget = createWidget(IDLE_STATUS);
         const calls: Array<string | undefined> = [];
