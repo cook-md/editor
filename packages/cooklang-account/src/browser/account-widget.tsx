@@ -425,7 +425,8 @@ export class AccountWidget extends ReactWidget {
     };
 
     private handleManageSubscription = (): void => {
-        this.windowService.openNewWindow(`${this.webBaseUrl}/subscription`, { external: true });
+        // from= is the door cook.md's paywall analytics attribute the visit to.
+        this.windowService.openNewWindow(`${this.webBaseUrl}/subscription?from=editor_account`, { external: true });
     };
 
     private handleLogout = (): void => {
