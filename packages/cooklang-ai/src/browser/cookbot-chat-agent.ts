@@ -16,6 +16,7 @@ import { AbstractStreamParsingChatAgent, ChatModel, CommandChatResponseContentIm
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { FILE_VARIABLE } from '@theia/ai-core/lib/browser/file-variable-contribution';
 import { nls } from '@theia/core/lib/common/nls';
 import { CookbotError } from '../common/cookbot-error';
 import { LanguageModelMessage, LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core/lib/common';
@@ -88,7 +89,7 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
         return this.workspaceService.getWorkspaceRelativePath(uri);
     }
 
-    /** Appends the active tab to each user message sent while one was open. */
+    /** Appends attached context files and the active tab to each user message. */
     protected override async getMessages(model: ChatModel, includeResponseInProgress = false): Promise<LanguageModelMessage[]> {
         const messages = await super.getMessages(model, includeResponseInProgress);
         let next = 0;
@@ -103,9 +104,22 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
                 continue;
             }
             next = index + 1;
+            const markers: string[] = [];
+            // Context chips (dropped or picked files) would otherwise never reach
+            // CookBot: the agent puts them in the system prompt, which the
+            // cookbot model does not send.
+            const attached = request.context.variables
+                .filter(variable => variable.variable.name === FILE_VARIABLE.name && variable.arg)
+                .map(variable => variable.arg!);
+            if (attached.length > 0) {
+                markers.push(`[Attached files: ${attached.join(', ')}]`);
+            }
             const activeFile = request.data?.[ACTIVE_FILE_KEY];
             if (typeof activeFile === 'string') {
-                messages[index] = { ...messages[index], text: `${text}\n\n[Active editor tab: ${activeFile}]` } as LanguageModelMessage;
+                markers.push(`[Active editor tab: ${activeFile}]`);
+            }
+            if (markers.length > 0) {
+                messages[index] = { ...messages[index], text: `${text}\n\n${markers.join('\n')}` } as LanguageModelMessage;
             }
         }
         return messages;

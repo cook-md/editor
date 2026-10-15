@@ -14,7 +14,7 @@
 // SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-only WITH Classpath-exception-2.0
 // *****************************************************************************
 
-import { AIVariableContext, AIVariableResolutionRequest, PromptText } from '@theia/ai-core';
+import { AIVariableContext, AIVariableResolutionRequest } from '@theia/ai-core';
 import { AIVariableCompletionContext, AIVariableDropResult, FrontendVariableContribution, FrontendVariableService } from '@theia/ai-core/lib/browser';
 import { FILE_VARIABLE } from '@theia/ai-core/lib/browser/file-variable-contribution';
 import { CancellationToken, ILogger, nls, QuickInputService, QuickPickItemOrSeparator, URI } from '@theia/core';
@@ -339,7 +339,6 @@ export class FileChatVariableContribution implements FrontendVariableContributio
 
         try {
             const variables: AIVariableResolutionRequest[] = [];
-            const texts: string[] = [];
             for (const uri of uris) {
                 if (await this.fileService.exists(uri)) {
                     const wsRelativePath = await this.wsService.getWorkspaceRelativePath(uri);
@@ -351,16 +350,17 @@ export class FileChatVariableContribution implements FrontendVariableContributio
                         variables.push(ImageContextVariable.createPathBasedRequest(wsRelativePath, fileName));
                         // we do not want to push a text for image variables
                     } else if (wsRelativePath) {
+                        // Context chip only: an inline `#file:<path>` reference breaks on
+                        // paths with spaces and duplicates the chip.
                         variables.push({
                             variable: FILE_VARIABLE,
                             arg: wsRelativePath
                         });
-                        texts.push(`${PromptText.VARIABLE_CHAR}${FILE_VARIABLE.name}${PromptText.VARIABLE_SEPARATOR_CHAR}${wsRelativePath}`);
                     }
                 }
             }
 
-            return { variables, text: texts.length ? texts.join(' ') : undefined };
+            return { variables };
         } catch {
             return undefined;
         }

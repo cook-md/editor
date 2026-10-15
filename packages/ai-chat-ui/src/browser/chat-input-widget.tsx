@@ -1087,6 +1087,12 @@ export class AIChatInputWidget extends ReactWidget {
             }
 
             if (position && textsToInsert.length > 0) {
+                const model = this.editorRef?.getControl().getModel();
+                const line = model?.getLineContent(position.lineNumber) ?? '';
+                const before = line.charAt(position.column - 2);
+                const after = line.charAt(position.column - 1);
+                const leading = before && !/\s/.test(before) ? ' ' : '';
+                const trailing = after && !/\s/.test(after) ? ' ' : '';
                 this.editorRef?.getControl().executeEdits('drag-and-drop', [{
                     range: {
                         startLineNumber: position.lineNumber,
@@ -1094,7 +1100,7 @@ export class AIChatInputWidget extends ReactWidget {
                         endLineNumber: position.lineNumber,
                         endColumn: position.column
                     },
-                    text: textsToInsert.join(' ')
+                    text: leading + textsToInsert.join(' ') + trailing
                 }]);
             }
         });
