@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.56](https://github.com/cook-md/editor/compare/v0.1.0-alpha.55...v0.1.0-alpha.56) (2026-10-15)
+
+
+### Bug Fixes
+
+* **chat:** caret in chat input, tab/file drops attach context, CookBot sees active tab and attachments ([#232](https://github.com/cook-md/editor/issues/232)) ([47f8792](https://github.com/cook-md/editor/commit/47f8792b36a7b5c8a922e4ed04f8d57bbd0e03e6))
+
 ## [0.1.0-alpha.55](https://github.com/cook-md/editor/compare/v0.1.0-alpha.54...v0.1.0-alpha.55) (2026-10-15)
 
 
