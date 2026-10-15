@@ -13,6 +13,19 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.55](https://github.com/cook-md/editor/compare/v0.1.0-alpha.54...v0.1.0-alpha.55) (2026-10-15)
+
+
+### Features
+
+* **ai:** write AI file edits directly with undo from the chat ([#231](https://github.com/cook-md/editor/issues/231)) ([9b75d02](https://github.com/cook-md/editor/commit/9b75d027b1b95cce0f8d0614685e885f1df887ac))
+
+
+### Bug Fixes
+
+* **account:** Manage subscription carries from=editor_account ([e3ec74a](https://github.com/cook-md/editor/commit/e3ec74aa6db6a110e535d09c7105e09ae1dc7a30))
+* editor crashes reported in Sentry ([#225](https://github.com/cook-md/editor/issues/225)) ([7761908](https://github.com/cook-md/editor/commit/776190851680a2e946f3f99092ac4663a4b3172b))
+
 ## [0.1.0-alpha.54](https://github.com/cook-md/editor/compare/v0.1.0-alpha.53...v0.1.0-alpha.54) (2026-10-11)
 
 
