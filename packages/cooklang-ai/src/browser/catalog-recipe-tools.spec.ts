@@ -140,9 +140,14 @@ describe('CookbotSearchRecipeCatalogTool', () => {
 
 describe('CookbotAddCatalogRecipeTool', () => {
 
-    class FakeFileService {
-        existing = new Set<string>();
-        async exists(uri: URI): Promise<boolean> { return this.existing.has(uri.toString()); }
+    interface WrittenFile { uri: URI; content: string; requestId: string }
+
+    class FakeChatFileWriter {
+        writes: WrittenFile[] = [];
+        async write(ctx: { request: { id: string } }, uri: URI, content: string): Promise<string> {
+            this.writes.push({ uri, content, requestId: ctx.request.id });
+            return 'add';
+        }
     }
 
     class FakeScope {
@@ -159,41 +164,29 @@ describe('CookbotAddCatalogRecipeTool', () => {
         }
     }
 
-    interface StagedElement { uri: URI; type: string; state: string; targetState: string; requestId: string; chatSessionId: string }
-
-    function createContext(): { ctx: object; staged: StagedElement[]; titles: string[] } {
-        const staged: StagedElement[] = [];
-        const titles: string[] = [];
+    function createContext(): { ctx: object } {
         const ctx = {
             request: {
                 id: 'req-1',
-                session: {
-                    id: 'session-1',
-                    changeSet: {
-                        addElements: (...elements: StagedElement[]) => { staged.push(...elements); },
-                        setTitle: (title: string) => { titles.push(title); },
-                    },
-                },
+                session: { id: 'session-1', changeSet: {} },
             },
             response: {},
         };
-        return { ctx, staged, titles };
+        return { ctx };
     }
 
-    function createTool(): { tool: CookbotAddCatalogRecipeTool; server: FakeServerTools; fs: FakeFileService; scope: FakeScope } {
+    function createTool(): { tool: CookbotAddCatalogRecipeTool; server: FakeServerTools; scope: FakeScope; writes: WrittenFile[] } {
         const tool = new CookbotAddCatalogRecipeTool();
         const server = new FakeServerTools();
-        const fs = new FakeFileService();
+        const writer = new FakeChatFileWriter();
         const scope = new FakeScope();
         /* eslint-disable @typescript-eslint/no-explicit-any */
         (tool as any).serverTools = server;
-        (tool as any).fileService = fs;
+        (tool as any).chatFileWriter = writer;
         (tool as any).workspaceFunctionScope = scope;
-        (tool as any).fileChangeFactory = (element: StagedElement) => element;
-        (tool as any).fileChangeSetTitleProvider = { getChangeSetTitle: () => 'Changes proposed' };
         /* eslint-enable @typescript-eslint/no-explicit-any */
         server.recipes.set(CARBONARA.id, CARBONARA);
-        return { tool, server, fs, scope };
+        return { tool, server, scope, writes: writer.writes };
     }
 
     it('requires id and shows the path (or id) as short label', () => {
@@ -206,93 +199,84 @@ describe('CookbotAddCatalogRecipeTool', () => {
         expect(def.getArgumentsShortLabel!('nope')).to.equal(undefined);
     });
 
-    it('stages the recipe at the suggested path as an add', async () => {
-        const { tool } = createTool();
-        const { ctx, staged, titles } = createContext();
+    it('writes the recipe at the suggested path', async () => {
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const raw = await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id }), ctx as ToolInvocationContext);
-        expect(staged).to.have.length(1);
-        expect(staged[0].uri.toString()).to.equal('file:///ws/Dinner/Spaghetti%20Carbonara.cook');
-        expect(staged[0].type).to.equal('add');
-        expect(staged[0].state).to.equal('pending');
-        expect(staged[0].targetState).to.equal(CARBONARA.content);
-        expect(staged[0].requestId).to.equal('req-1');
-        expect(staged[0].chatSessionId).to.equal('session-1');
-        expect(titles).to.deep.equal(['Changes proposed']);
+        expect(writes).to.have.length(1);
+        expect(writes[0].uri.toString()).to.equal('file:///ws/Dinner/Spaghetti%20Carbonara.cook');
+        expect(writes[0].content).to.equal(CARBONARA.content);
+        expect(writes[0].requestId).to.equal('req-1');
         const result = JSON.parse(raw as string);
-        expect(result.proposedPath).to.equal('Dinner/Spaghetti Carbonara.cook');
+        expect(result.path).to.equal('Dinner/Spaghetti Carbonara.cook');
         expect(result.title).to.equal('Spaghetti Carbonara');
-        expect(result.message).to.match(/review/);
-        expect(result.message).to.not.match(/saved/);
+        expect(result.message).to.match(/saved/);
+        expect(result.message).to.match(/undo/);
     });
 
-    it('honours an explicit path and marks existing files as modify', async () => {
-        const { tool, fs } = createTool();
-        fs.existing.add('file:///ws/Pasta/Carbonara.cook');
-        const { ctx, staged } = createContext();
+    it('honours an explicit path', async () => {
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const raw = await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id, path: 'Pasta/Carbonara.cook' }), ctx as ToolInvocationContext);
-        expect(staged).to.have.length(1);
-        expect(staged[0].uri.toString()).to.equal('file:///ws/Pasta/Carbonara.cook');
-        expect(staged[0].type).to.equal('modify');
-        expect(staged[0].targetState).to.equal(CARBONARA.content);
-        expect(JSON.parse(raw as string).proposedPath).to.equal('Pasta/Carbonara.cook');
+        expect(writes).to.have.length(1);
+        expect(writes[0].uri.toString()).to.equal('file:///ws/Pasta/Carbonara.cook');
+        expect(writes[0].content).to.equal(CARBONARA.content);
+        expect(JSON.parse(raw as string).path).to.equal('Pasta/Carbonara.cook');
     });
 
     it('falls back to the suggested path when path is blank', async () => {
-        const { tool } = createTool();
-        const { ctx, staged } = createContext();
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const raw = await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id, path: '   ' }), ctx as ToolInvocationContext);
-        expect(staged[0].uri.toString()).to.equal('file:///ws/Dinner/Spaghetti%20Carbonara.cook');
-        expect(JSON.parse(raw as string).proposedPath).to.equal('Dinner/Spaghetti Carbonara.cook');
+        expect(writes[0].uri.toString()).to.equal('file:///ws/Dinner/Spaghetti%20Carbonara.cook');
+        expect(JSON.parse(raw as string).path).to.equal('Dinner/Spaghetti Carbonara.cook');
     });
 
-    it('returns { error } for a path outside the workspace without staging', async () => {
-        const { tool } = createTool();
-        const { ctx, staged, titles } = createContext();
+    it('returns { error } for a path outside the workspace without writing', async () => {
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const result = JSON.parse(await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id, path: '../outside.cook' }), ctx as ToolInvocationContext) as string);
         expect(result.error).to.match(/outside of the workspace/);
-        expect(staged).to.deep.equal([]);
-        expect(titles).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 
-    it('returns { error } for an unknown id without staging', async () => {
-        const { tool } = createTool();
-        const { ctx, staged, titles } = createContext();
+    it('returns { error } for an unknown id without writing', async () => {
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const result = JSON.parse(await tool.getTool().handler(JSON.stringify({ id: 'nope' }), ctx as ToolInvocationContext) as string);
         expect(result.error).to.match(/NOT_FOUND/);
-        expect(staged).to.deep.equal([]);
-        expect(titles).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 
     it('returns { error } without calling the server when no workspace is open', async () => {
-        const { tool, server, scope } = createTool();
+        const { tool, server, scope, writes } = createTool();
         scope.rootError = new Error('No workspace has been opened yet');
-        const { ctx, staged, titles } = createContext();
+        const { ctx } = createContext();
         const result = JSON.parse(await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id }), ctx as ToolInvocationContext) as string);
         expect(result.error).to.match(/No workspace has been opened yet/);
         expect(server.fetchedIds).to.deep.equal([]);
-        expect(staged).to.deep.equal([]);
-        expect(titles).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 
     it('returns { error } when id is missing without calling the server', async () => {
-        const { tool, server } = createTool();
-        const { ctx, staged } = createContext();
+        const { tool, server, writes } = createTool();
+        const { ctx } = createContext();
         for (const args of ['{}', JSON.stringify({ id: '   ' }), JSON.stringify({ id: 42 })]) {
             const result = JSON.parse(await tool.getTool().handler(args, ctx as ToolInvocationContext) as string);
             expect(result.error, args).to.match(/id/);
         }
         expect(server.fetchedIds).to.deep.equal([]);
-        expect(staged).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 
     it('returns { error } on invalid or non-object arguments', async () => {
-        const { tool } = createTool();
-        const { ctx, staged } = createContext();
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         for (const bad of ['nope', 'null', '[1]', '"str"', '42']) {
             const result = JSON.parse(await tool.getTool().handler(bad, ctx as ToolInvocationContext) as string);
             expect(result.error, bad).to.match(/JSON object/);
         }
-        expect(staged).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 
     it('returns { error } outside a chat context', async () => {
@@ -302,11 +286,11 @@ describe('CookbotAddCatalogRecipeTool', () => {
     });
 
     it('returns { error } when the request was cancelled', async () => {
-        const { tool } = createTool();
-        const { ctx, staged } = createContext();
+        const { tool, writes } = createTool();
+        const { ctx } = createContext();
         const cancelled = { ...ctx, cancellationToken: { isCancellationRequested: true } };
         const result = JSON.parse(await tool.getTool().handler(JSON.stringify({ id: CARBONARA.id }), cancelled as unknown as ToolInvocationContext) as string);
         expect(result.error).to.match(/cancelled/i);
-        expect(staged).to.deep.equal([]);
+        expect(writes).to.deep.equal([]);
     });
 });

@@ -23,14 +23,15 @@ import { nls } from '@theia/core';
 @injectable()
 export class ChangeSetAcceptAction implements ChangeSetActionRenderer {
     readonly id = 'change-set-accept-action';
+    // Only shown while something is pending — AI file tools write
+    // immediately, so after an Undo this re-applies (redoes) the changes.
     canRender(changeSet: ChangeSet): boolean {
-        return changeSet.getElements().length > 0;
+        return !!hasPendingElementsToAccept(changeSet);
     }
 
     render(changeSet: ChangeSet): React.ReactNode {
         return <button
             className='theia-button'
-            disabled={!hasPendingElementsToAccept(changeSet)}
             title={nls.localize('theia/ai/chat-ui/applyAllTitle', 'Apply all pending changes')}
             onClick={() => acceptAllPendingElements(changeSet)}
         >

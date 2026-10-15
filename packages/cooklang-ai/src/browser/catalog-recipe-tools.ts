@@ -14,11 +14,9 @@
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest, ToolRequestParameterProperty, ToolInvocationContext } from '@theia/ai-core/lib/common';
 import { ChatToolContext } from '@theia/ai-chat/lib/common/chat-tool-request-service';
-import { ChangeSetFileElementFactory } from '@theia/ai-chat/lib/browser/change-set-file-element';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import { CookbotServerToolsService } from '../common/cookbot-server-tools-protocol';
 import { WorkspaceFunctionScope } from './file-tools/workspace-function-scope';
-import { FileChangeSetTitleProvider } from './file-tools/file-changeset-functions';
+import { ChatFileWriter } from './file-tools/chat-file-writer';
 
 // ── Vocabulary ──────────────────────────────────────────────────────────
 // Mirrors the kickstart wizard / cook.md `KickstartMatcherService` (and the
@@ -131,10 +129,9 @@ export class CookbotSearchRecipeCatalogTool implements ToolProvider {
 }
 
 /**
- * AI tool: fetch one catalog recipe and stage it into the workspace through the
- * chat changeset (same review/apply UX as suggestFileContent). The recipe body
- * never round-trips through the model. Mutating (stages a change), so it is
- * not auto-allowed.
+ * AI tool: fetch one catalog recipe and write it into the workspace through
+ * {@link ChatFileWriter} (undoable from the chat, like suggestFileContent).
+ * The recipe body never round-trips through the model.
  */
 @injectable()
 export class CookbotAddCatalogRecipeTool implements ToolProvider {
@@ -146,25 +143,18 @@ export class CookbotAddCatalogRecipeTool implements ToolProvider {
     @inject(WorkspaceFunctionScope)
     protected readonly workspaceFunctionScope: WorkspaceFunctionScope;
 
-    @inject(FileService)
-    protected readonly fileService: FileService;
-
-    @inject(ChangeSetFileElementFactory)
-    protected readonly fileChangeFactory: ChangeSetFileElementFactory;
-
-    @inject(FileChangeSetTitleProvider)
-    protected readonly fileChangeSetTitleProvider: FileChangeSetTitleProvider;
+    @inject(ChatFileWriter)
+    protected readonly chatFileWriter: ChatFileWriter;
 
     getTool(): ToolRequest {
         return {
             id: CookbotAddCatalogRecipeTool.ID,
             name: CookbotAddCatalogRecipeTool.ID,
             displayName: 'Add Catalog Recipe',
-            description: 'Propose adding a recipe from the cook.md catalog to the user\'s workspace: fetches the .cook file by the id returned '
-                + 'by searchRecipeCatalog and stages it for review (the user accepts or rejects it, like suggestFileContent). '
+            description: 'Add a recipe from the cook.md catalog to the user\'s workspace: fetches the .cook file by the id returned '
+                + 'by searchRecipeCatalog and saves it immediately (the user can undo it from the chat, like suggestFileContent). '
                 + 'By default the file goes to the catalog\'s suggested path (e.g. "Dinner/<Title>.cook", "Sides & Drinks/<Title>.cook"); '
-                + 'pass `path` only when the user asked for a specific location. Returns { proposedPath, title, message } — say the recipe is '
-                + 'proposed/ready for review, never that it was saved.',
+                + 'pass `path` only when the user asked for a specific location. Returns { path, title, message }.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -214,27 +204,18 @@ export class CookbotAddCatalogRecipeTool implements ToolProvider {
         const explicitPath = typeof args.path === 'string' && args.path.trim() ? args.path.trim() : undefined;
 
         try {
-            // Resolve the workspace first: with no workspace open there is nowhere to stage
+            // Resolve the workspace first: with no workspace open there is nowhere to write
             // the file, so fail before spending a network round-trip on the catalog fetch.
             const workspaceRoot = await this.workspaceFunctionScope.getWorkspaceRoot();
             const recipe = await this.serverTools.getCatalogRecipe(id);
             const path = explicitPath ?? recipe.suggestedPath;
             const uri = workspaceRoot.resolve(path).normalizePath();
             this.workspaceFunctionScope.ensureWithinWorkspace(uri, workspaceRoot);
-            const type: 'add' | 'modify' = (await this.fileService.exists(uri)) ? 'modify' : 'add';
-            ctx.request.session.changeSet.addElements(this.fileChangeFactory({
-                uri,
-                type,
-                state: 'pending',
-                targetState: recipe.content,
-                requestId: ctx.request.id,
-                chatSessionId: ctx.request.session.id,
-            }));
-            ctx.request.session.changeSet.setTitle(this.fileChangeSetTitleProvider.getChangeSetTitle(ctx));
+            await this.chatFileWriter.write(ctx, uri, recipe.content);
             return JSON.stringify({
-                proposedPath: path,
+                path,
                 title: recipe.title,
-                message: `Proposed adding "${recipe.title}" at ${path} — the user will review and apply the change.`,
+                message: `Added "${recipe.title}" at ${path}. The change is saved; the user can undo it from the chat.`,
             });
         } catch (e) {
             return fail(`Could not add catalog recipe: ${e instanceof Error ? e.message : String(e)}`);

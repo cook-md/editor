@@ -24,5 +24,4 @@ export const FIND_FILES_BY_PATTERN_FUNCTION_ID = 'findFilesByPattern';
 export const SUGGEST_FILE_CONTENT_ID = 'suggestFileContent';
 export const SUGGEST_FILE_REPLACEMENTS_ID = 'suggestFileReplacements';
 export const CLEAR_FILE_CHANGES_ID = 'clearFileChanges';
-export const GET_PROPOSED_CHANGES_ID = 'getProposedFileState';
 export const UPDATE_RECIPE_METADATA_ID = 'updateRecipeMetadata';

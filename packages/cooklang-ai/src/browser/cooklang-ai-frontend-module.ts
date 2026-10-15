@@ -41,8 +41,8 @@ import {
     FileChangeSetTitleProvider,
     DefaultFileChangeSetTitleProvider,
     ClearFileChanges,
-    GetProposedFileState,
 } from './file-tools/file-changeset-functions';
+import { ChatFileWriter } from './file-tools/chat-file-writer';
 import { RecipeMetadataSource } from './file-tools/recipe-metadata-source';
 import { UpdateRecipeMetadataTool } from './file-tools/update-recipe-metadata-tool';
 
@@ -79,18 +79,18 @@ export default new ContainerModule(bind => {
     // instead of only reporting that every file tool failed.
     bindToolProvider(OpenRecipeFolder, bind);
 
-    // File tools — changeset infrastructure
+    // File tools — direct writes, recorded in the chat change set for undo
+    bind(ChatFileWriter).toSelf().inSingletonScope();
     bind(ReplaceContentInFileFunctionHelper).toSelf().inSingletonScope();
     bind(ReplaceContentInFileFunctionHelperV2).toSelf().inSingletonScope();
     bind(FileChangeSetTitleProvider).to(DefaultFileChangeSetTitleProvider).inSingletonScope();
 
-    // File tools — suggest & replace (user reviews before applying)
+    // File tools — write & replace (saved immediately, undoable from the chat)
     bindToolProvider(SuggestFileContent, bind);
     bindToolProvider(SuggestFileReplacements, bind);
     bindToolProvider(ClearFileChanges, bind);
-    bindToolProvider(GetProposedFileState, bind);
 
-    // File tools — bulk recipe metadata edits (stages via the same ChangeSet as above)
+    // File tools — bulk recipe metadata edits (writes via ChatFileWriter as above)
     bind(RecipeMetadataSource).toSelf().inSingletonScope();
     bindToolProvider(UpdateRecipeMetadataTool, bind);
 

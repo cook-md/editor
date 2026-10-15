@@ -100,7 +100,7 @@ export class CookbotSessionInitializer {
                 if (this.initPromise === pendingInit && cookMd !== undefined && cookMd !== this.initializedInstructions) {
                     // COOK.md is only sent at Initialize, so a file added or
                     // edited mid-session (including one the onboarding skill
-                    // just staged) was ignored until the editor restarted.
+                    // just wrote) was ignored until the editor restarted.
                     console.info('[Cookbot] COOK.md changed, re-initializing the session');
                     previous = this.initPromise;
                     this.initPromise = undefined;

@@ -26,11 +26,12 @@ import { expect } from 'chai';
 import { URI } from '@theia/core';
 import { ToolInvocationContext } from '@theia/ai-core/lib/common';
 import { UpdateRecipeMetadataTool } from './update-recipe-metadata-tool';
+import { ChatFileWriter } from './chat-file-writer';
 import { RecipeMetadataEntry, RecipeMetadataFilter } from './recipe-metadata-source';
 
 after(() => disableJSDOM());
 
-interface StagedElement { uri: URI; type: string; state: string; targetState: string; requestId: string; chatSessionId: string }
+interface WrittenElement { uri: URI; type: string; state: string; targetState: string; requestId: string; chatSessionId: string; applied: boolean }
 
 class FakeScope {
     root = new URI('file:///ws');
@@ -77,6 +78,9 @@ class FakeFileService {
         if (value === undefined) { throw new Error('ENOENT'); }
         return { value: { toString: () => value } };
     }
+    async exists(uri: URI): Promise<boolean> {
+        return this.contents.has(uri.toString().replace('file:///ws/', ''));
+    }
 }
 
 class FakeMonacoWorkspace {
@@ -87,8 +91,8 @@ class FakeMonacoWorkspace {
     }
 }
 
-function createContext(): { ctx: object; staged: StagedElement[]; titles: string[]; pending: Map<string, undefined> } {
-    const staged: StagedElement[] = [];
+function createContext(): { ctx: object; staged: WrittenElement[]; titles: string[]; pending: Map<string, undefined> } {
+    const staged: WrittenElement[] = [];
     const titles: string[] = [];
     const ctx = {
         request: {
@@ -96,7 +100,7 @@ function createContext(): { ctx: object; staged: StagedElement[]; titles: string
             session: {
                 id: 'session-1',
                 changeSet: {
-                    addElements: (...elements: StagedElement[]) => { staged.push(...elements); },
+                    addElements: (...elements: WrittenElement[]) => { staged.push(...elements); },
                     setTitle: (title: string) => { titles.push(title); },
                     getElementByURI: () => undefined,
                 },
@@ -119,10 +123,15 @@ function createTool(): {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     (tool as any).workspaceFunctionScope = scope;
     (tool as any).metadataSource = metadataSource;
-    (tool as any).fileService = fileService;
-    (tool as any).monacoWorkspace = monacoWorkspace;
-    (tool as any).fileChangeFactory = (element: StagedElement) => element;
-    (tool as any).fileChangeSetTitleProvider = { getChangeSetTitle: () => 'Changes proposed' };
+    const writer = new ChatFileWriter();
+    (writer as any).fileService = fileService;
+    (writer as any).monacoWorkspace = monacoWorkspace;
+    (writer as any).fileChangeFactory = (element: WrittenElement) => {
+        const written = { ...element, applied: false, apply: async () => { written.applied = true; } };
+        return written;
+    };
+    (writer as any).fileChangeSetTitleProvider = { getChangeSetTitle: () => 'Changes made' };
+    (tool as any).chatFileWriter = writer;
     /* eslint-enable @typescript-eslint/no-explicit-any */
     return { tool, scope, metadataSource, fileService, monacoWorkspace };
 }
@@ -224,7 +233,7 @@ describe('UpdateRecipeMetadataTool', () => {
     });
 
     describe('select — glob', () => {
-        it('stages every matching file', async () => {
+        it('writes every matching file', async () => {
             const { tool, metadataSource } = createTool();
             metadataSource.allCookPaths = ['Banchan/Kimchi.cook', 'Napoleon.cook'];
             metadataSource.contents.set('Banchan/Kimchi.cook', KIMCHI);
@@ -237,9 +246,11 @@ describe('UpdateRecipeMetadataTool', () => {
                 '---\ntags: [French, Spicy]\n---\nBody',
             ]);
             expect(staged.every(s => s.type === 'modify')).to.equal(true);
-            expect(titles).to.deep.equal(['Changes proposed']);
+            expect(staged.every(s => s.applied)).to.equal(true);
+            expect(titles).to.deep.equal(['Changes made', 'Changes made']);
+            expect(result.message).to.match(/undo/);
             expect(result.matched).to.equal(2);
-            expect(result.staged).to.equal(2);
+            expect(result.updated).to.equal(2);
             expect(result.unchanged).to.equal(0);
             expect(result.dryRun).to.equal(false);
         });
@@ -256,7 +267,7 @@ describe('UpdateRecipeMetadataTool', () => {
     });
 
     describe('select — where', () => {
-        it('only stages files the metadata source reports as matched', async () => {
+        it('only writes files the metadata source reports as matched', async () => {
             const { tool, metadataSource } = createTool();
             metadataSource.allCookPaths = ['Banchan/Kimchi.cook', 'Napoleon.cook'];
             metadataSource.contents.set('Banchan/Kimchi.cook', KIMCHI);
@@ -308,14 +319,14 @@ describe('UpdateRecipeMetadataTool', () => {
     });
 
     describe('unchanged / skipped', () => {
-        it('reports a no-op edit as unchanged, not staged', async () => {
+        it('reports a no-op edit as unchanged, not written', async () => {
             const { tool, metadataSource } = createTool();
             metadataSource.contents.set('Napoleon.cook', NAPOLEON);
             const { ctx, staged } = createContext();
             const result = await invoke(tool, { select: { paths: ['Napoleon.cook'] }, addTags: ['French'] }, ctx);
             expect(staged).to.deep.equal([]);
             expect(result.unchanged).to.equal(1);
-            expect(result.staged).to.equal(0);
+            expect(result.updated).to.equal(0);
         });
 
         it('skips a file using deprecated >> metadata with a reason, never rewriting it', async () => {
@@ -352,12 +363,12 @@ describe('UpdateRecipeMetadataTool', () => {
             const { ctx } = createContext();
             const result = await invoke(tool, { select: { glob: '**/*.cook' }, addTags: ['x'] }, ctx);
             expect((result.sample as unknown[]).length).to.equal(3);
-            expect(result.staged).to.equal(5);
+            expect(result.updated).to.equal(5);
         });
     });
 
     describe('dryRun', () => {
-        it('stages nothing but reports wouldStage and the matched paths', async () => {
+        it('writes nothing but reports wouldUpdate and the matched paths', async () => {
             const { tool, metadataSource } = createTool();
             metadataSource.allCookPaths = ['Napoleon.cook'];
             metadataSource.contents.set('Napoleon.cook', NAPOLEON);
@@ -365,8 +376,8 @@ describe('UpdateRecipeMetadataTool', () => {
             const result = await invoke(tool, { select: { glob: '**/*.cook' }, addTags: ['Spicy'], dryRun: true }, ctx);
             expect(staged).to.deep.equal([]);
             expect(titles).to.deep.equal([]);
-            expect(result.staged).to.equal(0);
-            expect(result.wouldStage).to.equal(1);
+            expect(result.updated).to.equal(0);
+            expect(result.wouldUpdate).to.equal(1);
             expect(result.paths).to.deep.equal(['Napoleon.cook']);
             expect(result.dryRun).to.equal(true);
         });
@@ -379,7 +390,7 @@ describe('UpdateRecipeMetadataTool', () => {
             const { ctx } = createContext();
             const result = await invoke(tool, { select: { glob: '**/*.cook' }, addTags: ['x'], dryRun: true }, ctx);
             expect((result.paths as unknown[]).length).to.equal(50);
-            expect(result.wouldStage).to.equal(60);
+            expect(result.wouldUpdate).to.equal(60);
         });
     });
 
