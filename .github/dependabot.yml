@@ -48,6 +48,14 @@ updates:
       # require()s it synchronously (ERR_PACKAGE_PATH_NOT_EXPORTED).
       - dependency-name: "string-argv"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # chalk 5+ is ESM-only; the dev-packages compile to CommonJS
+      # (TS2307 'Cannot find module chalk'). Stay on 4.x.
+      - dependency-name: "chalk"
+        update-types: ["version-update:semver-major"]
+      # chai 5+ is ESM-only and ~250 CommonJS-compiled mocha specs import it;
+      # chai-string also peer-depends on chai ^4 (npm ERESOLVE).
+      - dependency-name: "chai"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
