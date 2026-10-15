@@ -289,9 +289,9 @@ dependencies = [
 
 [[package]]
 name = "cooklang"
-version = "0.18.6"
+version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c3a241ae9621d706658e24d626311057d09f0803b6bcc10ebbbe5f23816af8f"
+checksum = "b3d3381b8082bb6043b1ab8032d37ccfd040e742fe7b792288a3aa2e2d6bc5be"
 dependencies = [
  "bitflags 2.11.0",
  "codesnake",
@@ -316,43 +316,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cooklang"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3d3381b8082bb6043b1ab8032d37ccfd040e742fe7b792288a3aa2e2d6bc5be"
-dependencies = [
- "bitflags 2.11.0",
- "codesnake",
- "enum-map",
- "finl_unicode",
- "indexmap",
- "serde",
- "serde_yaml",
- "smallvec",
- "strum",
- "thiserror",
- "tracing",
- "unicase",
- "unicode-width",
- "yansi",
-]
-
-[[package]]
-name = "cooklang-find"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5850cb631fdcd36ba3bb75f0361020f823d286119fa804a349ed60312728c28"
-dependencies = [
- "camino",
- "glob",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
-]
-
-[[package]]
 name = "cooklang-find"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -368,11 +331,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cooklang-find"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "067e477a65ba674eb2c23cd1f09aa43fe6f08b84e55d53e02f971b866f5b8555"
+dependencies = [
+ "camino",
+ "glob",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+]
+
+[[package]]
 name = "cooklang-language-server"
 version = "0.2.4"
 dependencies = [
  "anyhow",
- "cooklang 0.19.0",
+ "cooklang",
  "dashmap 6.1.0",
  "nohash-hasher",
  "ropey",
@@ -392,7 +370,7 @@ version = "0.1.0"
 dependencies = [
  "camino",
  "chrono",
- "cooklang 0.18.6",
+ "cooklang",
  "cooklang-find 0.8.0",
  "cooklang-language-server",
  "cooklang-reports",
@@ -412,13 +390,13 @@ dependencies = [
 
 [[package]]
 name = "cooklang-reports"
-version = "0.5.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6653d1b7eb136f9475161c9cf4d1030c1a3a88ec201bc213fad71aedc418b0d"
+checksum = "a8c769664170e37bc12b9a83505589a9b23c5818666e2958aee37499608dbd0e"
 dependencies = [
  "anyhow",
- "cooklang 0.18.6",
- "cooklang-find 0.6.1",
+ "cooklang",
+ "cooklang-find 0.10.0",
  "minijinja",
  "serde",
  "serde_json",
@@ -429,11 +407,11 @@ dependencies = [
 
 [[package]]
 name = "cooklang-reports-nutrition"
-version = "0.1.4"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0ba276f91af75053eb379f0f861f08e0b80ea147b9b6be0f371f8b688d32639"
+checksum = "e7d8e564248816bff6404da66a972a2d6dcbfe32d5e236f08c1d8baa352d6940"
 dependencies = [
- "cooklang 0.18.6",
+ "cooklang",
  "cooklang-reports",
  "cookmd-nutrition-client",
  "minijinja",
@@ -1451,12 +1429,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
-name = "memo-map"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38d1115007560874e373613744c6fba374c17688327a71c1476d1a5954cc857b"
-
-[[package]]
 name = "migrations_internals"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1479,14 +1451,12 @@ dependencies = [
 
 [[package]]
 name = "minijinja"
-version = "2.20.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2929e494b2280e1e18959bb2e121da03347ae896896fdfaceaab43c88a02803f"
+checksum = "13345868cfa94eadafc067112ff29271380a820d5594d9ee6ba81a8d00ea5dc2"
 dependencies = [
  "indexmap",
- "memo-map",
  "serde",
- "serde_json",
 ]
 
 [[package]]
