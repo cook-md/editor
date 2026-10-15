@@ -27,6 +27,8 @@ import { ElementExt } from '@theia/core/shared/@lumino/domutils';
 import { Selection } from '@theia/editor/lib/browser/editor';
 import { SelectionDirection } from '@theia/monaco-editor-core/esm/vs/editor/common/core/selection';
 import { ShowLightbulbIconMode } from '@theia/monaco-editor-core/esm/vs/editor/common/config/editorOptions';
+import { IStandaloneThemeService } from '@theia/monaco-editor-core/esm/vs/editor/standalone/common/standaloneTheme';
+import { StandaloneThemeService } from '@theia/monaco-editor-core/esm/vs/editor/standalone/browser/standaloneThemeService';
 
 export class SimpleMonacoEditor extends MonacoEditorServices implements Disposable {
 
@@ -104,13 +106,23 @@ export class SimpleMonacoEditor extends MonacoEditorServices implements Disposab
             }
         };
         const instantiator = this.getInstantiatorWithOverrides(override);
-        return this.editor = instantiator.createInstance(CodeEditorWidget, this.node, {
+        // A bare CodeEditorWidget, unlike StandaloneEditor, does not register its
+        // container with the theme service, so the theme CSS (cursor color, etc.)
+        // only existed while some full editor was open. With none open, the chat
+        // input's caret was transparent.
+        const themeService = StandaloneServices.get(IStandaloneThemeService) as StandaloneThemeService;
+        const themeRegistration = themeService.registerEditorContainer(this.node);
+        this.editor = instantiator.createInstance(CodeEditorWidget, this.node, {
             ...combinedOptions,
             dimension: {
                 width: 0,
                 height: 0
             },
         }, widgetOptions ?? {});
+        return Disposable.create(() => {
+            this.editor.dispose();
+            themeRegistration.dispose();
+        });
     }
 
     protected addHandlers(codeEditor: CodeEditorWidget): void {

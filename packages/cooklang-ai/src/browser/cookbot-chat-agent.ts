@@ -12,10 +12,17 @@
 // *****************************************************************************
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
-import { AbstractStreamParsingChatAgent, CommandChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common';
+import { AbstractStreamParsingChatAgent, ChatModel, CommandChatResponseContentImpl, MutableChatRequestModel } from '@theia/ai-chat/lib/common';
+import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { FILE_VARIABLE } from '@theia/ai-core/lib/browser/file-variable-contribution';
 import { nls } from '@theia/core/lib/common/nls';
 import { CookbotError } from '../common/cookbot-error';
-import { LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core/lib/common';
+import { LanguageModelMessage, LanguageModelRequirement, ToolInvocationRegistry } from '@theia/ai-core/lib/common';
+
+/** Request data key holding the workspace-relative path of the tab active when the message was sent. */
+const ACTIVE_FILE_KEY = 'cookbotActiveFile';
 
 @injectable()
 export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
@@ -34,6 +41,12 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
     @inject(ToolInvocationRegistry)
     protected readonly toolRegistry: ToolInvocationRegistry;
 
+    @inject(ApplicationShell)
+    protected readonly shell: ApplicationShell;
+
+    @inject(WorkspaceService)
+    protected readonly workspaceService: WorkspaceService;
+
     @postConstruct()
     override init(): void {
         super.init();
@@ -50,6 +63,66 @@ export class CookbotChatAgent extends AbstractStreamParsingChatAgent {
         this.toolRegistry.onDidChange(() => {
             this.additionalToolRequests = this.toolRegistry.getAllFunctions();
         });
+    }
+
+    override async invoke(request: MutableChatRequestModel): Promise<void> {
+        // Captured once per request, so the history re-sent on later turns stays
+        // identical rather than following whatever tab is active by then.
+        const activeFile = await this.getActiveFilePath();
+        if (activeFile) {
+            request.addData(ACTIVE_FILE_KEY, activeFile);
+        }
+        return super.invoke(request);
+    }
+
+    /**
+     * The workspace-relative path of the selected main-area tab. Uses
+     * `getCurrentWidget('main')`: recipe/menu previews are not focusable, so
+     * `currentWidget` would miss them.
+     */
+    protected async getActiveFilePath(): Promise<string | undefined> {
+        const widget = this.shell.getCurrentWidget('main');
+        const uri = Navigatable.is(widget) ? widget.getResourceUri() : undefined;
+        if (!uri) {
+            return undefined;
+        }
+        return this.workspaceService.getWorkspaceRelativePath(uri);
+    }
+
+    /** Appends attached context files and the active tab to each user message. */
+    protected override async getMessages(model: ChatModel, includeResponseInProgress = false): Promise<LanguageModelMessage[]> {
+        const messages = await super.getMessages(model, includeResponseInProgress);
+        let next = 0;
+        for (const request of model.getRequests()) {
+            const text = request.message.parts.map(part => part.promptText).join('');
+            if (!text) {
+                continue;
+            }
+            const index = messages.findIndex((message, i) => i >= next && message.actor === 'user'
+                && LanguageModelMessage.isTextMessage(message) && message.text === text);
+            if (index < 0) {
+                continue;
+            }
+            next = index + 1;
+            const markers: string[] = [];
+            // Context chips (dropped or picked files) would otherwise never reach
+            // CookBot: the agent puts them in the system prompt, which the
+            // cookbot model does not send.
+            const attached = request.context.variables
+                .filter(variable => variable.variable.name === FILE_VARIABLE.name && variable.arg)
+                .map(variable => variable.arg!);
+            if (attached.length > 0) {
+                markers.push(`[Attached files: ${attached.join(', ')}]`);
+            }
+            const activeFile = request.data?.[ACTIVE_FILE_KEY];
+            if (typeof activeFile === 'string') {
+                markers.push(`[Active editor tab: ${activeFile}]`);
+            }
+            if (markers.length > 0) {
+                messages[index] = { ...messages[index], text: `${text}\n\n${markers.join('\n')}` } as LanguageModelMessage;
+            }
+        }
+        return messages;
     }
 
     protected override handleError(request: MutableChatRequestModel, error: Error): void {

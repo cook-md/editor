@@ -26,6 +26,8 @@ import { ImageContextVariable } from '@theia/ai-chat/lib/common/image-context-va
 import { AgentCompletionNotificationService, FrontendVariableService, AIActivationService, CompletionNotificationOptions } from '@theia/ai-core/lib/browser';
 import { AISettingsService } from '@theia/ai-core/lib/common';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
+import { Navigatable } from '@theia/core/lib/browser/navigatable-types';
+import { Drag } from '@theia/core/shared/@lumino/dragdrop';
 import { DisposableCollection, Emitter, InMemoryResources, URI, nls, Disposable } from '@theia/core';
 import { ContextMenuRenderer, HoverService, LabelProvider, Message, OpenerService, ReactWidget } from '@theia/core/lib/browser';
 import { SelectComponent, SelectOption } from '@theia/core/lib/browser/widgets/select-component';
@@ -998,9 +1000,72 @@ export class AIChatInputWidget extends ReactWidget {
         event.preventDefault();
         event.stopPropagation();
         this.node.classList.remove('drag-over');
+        this.insertDropResult(event.nativeEvent);
+    }
+
+    protected override onBeforeAttach(msg: Message): void {
+        super.onBeforeAttach(msg);
+        this.node.addEventListener('lm-dragenter', this.onTabDrag, true);
+        this.node.addEventListener('lm-dragover', this.onTabDrag, true);
+        this.node.addEventListener('lm-dragleave', this.onTabDragLeave, true);
+        this.node.addEventListener('lm-drop', this.onTabDrop, true);
+    }
+
+    protected override onAfterDetach(msg: Message): void {
+        super.onAfterDetach(msg);
+        this.node.removeEventListener('lm-dragenter', this.onTabDrag, true);
+        this.node.removeEventListener('lm-dragover', this.onTabDrag, true);
+        this.node.removeEventListener('lm-dragleave', this.onTabDragLeave, true);
+        this.node.removeEventListener('lm-drop', this.onTabDrop, true);
+    }
+
+    /**
+     * Editor tabs are dragged with Lumino's pointer-based drag, which fires
+     * `lm-*` events carrying the widget rather than a native drop with a
+     * `DataTransfer`, so a tab dropped on the input needs its own handling.
+     */
+    protected draggedTabUri(event: Drag.Event): URI | undefined {
+        const factory = event.mimeData.getData('application/vnd.lumino.widget-factory');
+        const widget = typeof factory === 'function' ? factory() : undefined;
+        return Navigatable.is(widget) ? widget.getResourceUri() : undefined;
+    }
+
+    protected onTabDrag = (event: Event): void => {
+        const dragEvent = event as Drag.Event;
+        if (!this.draggedTabUri(dragEvent)) {
+            return;
+        }
+        dragEvent.preventDefault();
+        dragEvent.stopPropagation();
+        // The dock panel only proposes 'move'; accepting it does not move the tab.
+        dragEvent.dropAction = dragEvent.proposedAction;
+        this.node.classList.add('drag-over');
+    };
+
+    protected onTabDragLeave = (): void => {
+        this.node.classList.remove('drag-over');
+    };
+
+    protected onTabDrop = (event: Event): void => {
+        const dragEvent = event as Drag.Event;
+        const uri = this.draggedTabUri(dragEvent);
+        this.node.classList.remove('drag-over');
+        if (!uri) {
+            return;
+        }
+        dragEvent.preventDefault();
+        dragEvent.stopPropagation();
+        dragEvent.dropAction = dragEvent.proposedAction;
+        const dataTransfer = new DataTransfer();
+        ApplicationShell.setDraggedEditorUris(dataTransfer, [uri]);
+        this.insertDropResult(new DragEvent('drop', { dataTransfer, clientX: dragEvent.clientX, clientY: dragEvent.clientY }));
+    };
+
+    protected insertDropResult(event: DragEvent): void {
         const dataTransferText = event.dataTransfer?.getData('text/plain');
-        const position = this.editorRef?.getControl().getTargetAtClientPoint(event.clientX, event.clientY)?.position;
-        this.variableService.getDropResult(event.nativeEvent, { type: 'ai-chat-input-widget' }).then(result => {
+        const position = this.editorRef?.getControl().getTargetAtClientPoint(event.clientX, event.clientY)?.position
+            ?? this.editorRef?.getControl().getPosition() ?? undefined;
+        this.variableService.getDropResult(event, { type: 'ai-chat-input-widget' }).then(result => {
             const textsToInsert: string[] = [];
 
             result.variables.forEach(variable => {
@@ -1022,6 +1087,12 @@ export class AIChatInputWidget extends ReactWidget {
             }
 
             if (position && textsToInsert.length > 0) {
+                const model = this.editorRef?.getControl().getModel();
+                const line = model?.getLineContent(position.lineNumber) ?? '';
+                const before = line.charAt(position.column - 2);
+                const after = line.charAt(position.column - 1);
+                const leading = before && !/\s/.test(before) ? ' ' : '';
+                const trailing = after && !/\s/.test(after) ? ' ' : '';
                 this.editorRef?.getControl().executeEdits('drag-and-drop', [{
                     range: {
                         startLineNumber: position.lineNumber,
@@ -1029,7 +1100,7 @@ export class AIChatInputWidget extends ReactWidget {
                         endLineNumber: position.lineNumber,
                         endColumn: position.column
                     },
-                    text: textsToInsert.join(' ')
+                    text: leading + textsToInsert.join(' ') + trailing
                 }]);
             }
         });
