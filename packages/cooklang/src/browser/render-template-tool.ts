@@ -12,7 +12,7 @@
 // *****************************************************************************
 
 import { injectable, inject } from '@theia/core/shared/inversify';
-import { ToolInvocationContext, ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
+import { ToolProvider, ToolRequest } from '@theia/ai-core/lib/common';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import URI from '@theia/core/lib/common/uri';
 import { CooklangLanguageService, CooklangUri, ReportOutputFormat, ReportTemplates } from '../common';
@@ -53,49 +53,13 @@ interface ResolvedTemplate {
 
 const BUILT_IN_PREFIX = 'builtin:';
 
-/** One change-set entry, as read structurally off the chat tool context. */
-interface StagedElement {
-    uri?: URI;
-    state?: string;
-    targetState?: string;
-    /** `'delete'` for a pending removal — its `targetState` is meaningless (there is no new content). */
-    type?: string;
-}
-
-/**
- * The slice of a chat tool context this tool reads: two change sets.
- *
- * `request.changeSet` is the CURRENT chat request's own change set (e.g. set
- * synchronously by `suggestFileContent` earlier in the same turn) — checked
- * first because it has no debounce. `request.session.changeSet` is the whole
- * session's aggregated `ChatTreeChangeSet`, which refreshes via a 100ms
- * trailing debounce (`packages/ai-chat/src/common/chat-model.ts` ~1181-1190):
- * a write-then-render pair issued in the same parallel tool-call batch (see
- * `cookbot-language-model.ts`) can still see it stale, so it is only the
- * fallback.
- *
- * Structural on purpose — `@theia/ai-chat` is not a dependency of this
- * package, and any other context simply has neither property.
- */
-interface StagedChangeSet {
-    getElementByURI?(uri: URI): StagedElement | undefined;
-    getElements?(): StagedElement[];
-}
-
-interface StagedChangeContext {
-    request?: {
-        changeSet?: StagedChangeSet;
-        session?: { changeSet?: StagedChangeSet };
-    };
-}
-
 /**
  * AI tool that renders a Jinja2 report template against a `.cook`/`.menu` file
  * and returns `{ output }` or `{ error }`. The template is either inline
  * (`templateContent`) or a reference (`templateUri`: a workspace `.jinja` file
  * or a `builtin:*` id). Rendering is read-only, so the tool auto-executes (no
  * changeset/approval). Saving templates is handled separately by the
- * user-reviewed `suggestFileContent` tool.
+ * `suggestFileContent` tool.
  *
  * Kept free of `@theia/monaco` imports (file reads go through `FileService`;
  * the report tab goes through `ReportPresenter`) so it is unit-testable.
@@ -138,9 +102,9 @@ export class RenderTemplateTool implements ToolProvider {
                 + '`plan.servings` (people served, from the menu frontmatter) and `plan.missing_recipes[]` '
                 + '{`name`, `error`} for references that did not resolve. For a menu, `ingredients` holds only the loose '
                 + 'items written directly in the menu — never sum it for plan totals; use `day.ingredients` or '
-                + '`plan.all_ingredients`. Recipes staged in this chat count as if applied. '
+                + '`plan.all_ingredients`. '
                 + 'To save a template for reuse, write it as a `.jinja` file with the suggestFileContent tool '
-                + '(convention: config/reports/), then render it by templateUri once the user has applied it.',
+                + '(convention: config/reports/), then render it by templateUri.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -159,8 +123,8 @@ export class RenderTemplateTool implements ToolProvider {
                         type: 'string',
                         description: 'The .cook or .menu file to render against — preferably a path relative to the workspace '
                             + 'root (e.g. "Baking/Napoleon.cook"); an absolute path or file:// URI also works. Defaults to the '
-                            + 'active recipe in the editor. Renders the version staged in this chat if the file has a pending change, '
-                            + 'otherwise the saved file on disk (unsaved editor edits are not included). If you are also writing '
+                            + 'active recipe in the editor. Renders the saved file on disk (unsaved editor edits are not included). '
+                            + 'If you are also writing '
                             + 'the file, call this after the write tool has returned, not in the same batch.',
                     },
                     recipeUris: {
@@ -171,7 +135,6 @@ export class RenderTemplateTool implements ToolProvider {
                             + 'one call per recipe: the template is sent once rather than retyped for every candidate. '
                             + 'Returns { results: [{ recipeUri, output } | { recipeUri, error }] } in the order given; a recipe that '
                             + 'fails to read or render reports its error in its own entry and the rest still come back. '
-                            + 'Each uses the version staged in this chat when the file has a pending change. '
                             + 'Mutually exclusive with recipeUri, and cannot be combined with show (a batch is headless).',
                     },
                     show: {
@@ -190,11 +153,11 @@ export class RenderTemplateTool implements ToolProvider {
                     },
                 },
             },
-            handler: async (argString: string, ctx?: ToolInvocationContext) => this.execute(argString, ctx),
+            handler: async (argString: string) => this.execute(argString),
         };
     }
 
-    protected async execute(argString: string, ctx?: ToolInvocationContext): Promise<string> {
+    protected async execute(argString: string): Promise<string> {
         let args: RenderTemplateArgs;
         try {
             args = JSON.parse(argString);
@@ -213,7 +176,7 @@ export class RenderTemplateTool implements ToolProvider {
             return this.fail(template.error);
         }
         if (args.recipeUris !== undefined) {
-            return this.executeBatch(args, template, ctx);
+            return this.executeBatch(args, template);
         }
         let recipeUri: URI | undefined;
         if (args.recipeUri) {
@@ -233,12 +196,11 @@ export class RenderTemplateTool implements ToolProvider {
         }
         let recipeContent: string;
         try {
-            recipeContent = await this.readRecipe(recipeUri, ctx);
+            recipeContent = await this.readRecipe(recipeUri);
         } catch (e) {
             return this.fail(`Could not read recipe ${recipeUri.toString()}: ${this.message(e)}`);
         }
-        const configJson = this.withStagedRecipes(
-            await this.reportConfigService.buildConfigJson(args.scale ?? 1, recipeUri), recipeUri, ctx);
+        const configJson = await this.reportConfigService.buildConfigJson(args.scale ?? 1, recipeUri);
         let resultJson: string;
         try {
             resultJson = await this.languageService.renderReport(recipeContent, template.content, configJson);
@@ -279,7 +241,7 @@ export class RenderTemplateTool implements ToolProvider {
      * others still come back. One bad candidate costing a retry of the whole
      * shortlist would give the waste straight back.
      */
-    protected async executeBatch(args: RenderTemplateArgs, template: ResolvedTemplate, ctx?: ToolInvocationContext): Promise<string> {
+    protected async executeBatch(args: RenderTemplateArgs, template: ResolvedTemplate): Promise<string> {
         if (args.recipeUri) {
             return this.fail('Pass either recipeUri or recipeUris, not both.');
         }
@@ -293,13 +255,13 @@ export class RenderTemplateTool implements ToolProvider {
         }
         const results: BatchEntry[] = [];
         for (const ref of refs) {
-            results.push(await this.renderOne(ref, template, args.scale ?? 1, ctx));
+            results.push(await this.renderOne(ref, template, args.scale ?? 1));
         }
         return JSON.stringify({ results });
     }
 
     /** Renders one recipe reference, mapping every failure into the entry itself. */
-    protected async renderOne(ref: string, template: ResolvedTemplate, scale: number, ctx?: ToolInvocationContext): Promise<BatchEntry> {
+    protected async renderOne(ref: string, template: ResolvedTemplate, scale: number): Promise<BatchEntry> {
         const recipeUri = this.reportConfigService.resolveWorkspaceUri(ref);
         if (!recipeUri) {
             return {
@@ -312,13 +274,12 @@ export class RenderTemplateTool implements ToolProvider {
         }
         let recipeContent: string;
         try {
-            recipeContent = await this.readRecipe(recipeUri, ctx);
+            recipeContent = await this.readRecipe(recipeUri);
         } catch (e) {
             return { recipeUri: ref, error: `Could not read recipe: ${this.message(e)}` };
         }
         try {
-            const configJson = this.withStagedRecipes(
-                await this.reportConfigService.buildConfigJson(scale, recipeUri), recipeUri, ctx);
+            const configJson = await this.reportConfigService.buildConfigJson(scale, recipeUri);
             const resultJson = await this.languageService.renderReport(recipeContent, template.content, configJson);
             const parsed = this.tryParse(resultJson);
             if (!parsed) {
@@ -332,53 +293,9 @@ export class RenderTemplateTool implements ToolProvider {
         }
     }
 
-    /**
-     * The recipe text to render: the chat's pending (staged) version when there
-     * is one, otherwise the file on disk. A plan CookBot just proposed is only
-     * staged, so reading disk made "build it and check it" take two prompts.
-     *
-     * Checks the request's own change set first (no debounce), then the
-     * session's aggregated one, then disk — see `StagedChangeContext`.
-     */
-    protected async readRecipe(uri: URI, ctx?: ToolInvocationContext): Promise<string> {
-        const request = (ctx as StagedChangeContext | undefined)?.request;
-        const element = request?.changeSet?.getElementByURI?.(uri) ?? request?.session?.changeSet?.getElementByURI?.(uri);
-        if (element?.type === 'delete') {
-            throw new Error(`${uri.path.fsPath()} is staged for deletion.`);
-        }
-        if (element?.state === 'pending' && typeof element.targetState === 'string') {
-            return element.targetState;
-        }
+    /** The recipe text to render: the saved file on disk. */
+    protected async readRecipe(uri: URI): Promise<string> {
         return (await this.fileService.read(uri)).value;
-    }
-
-    /**
-     * Adds the chat's pending `.cook` files to a `.menu` render's config as
-     * `stagedRecipes` (URI → content), so the plan expander resolves recipes
-     * CookBot just proposed alongside the plan instead of listing them under
-     * `plan.missing_recipes`. The request's own change set wins over the
-     * session's debounced one, as in `readRecipe`.
-     */
-    protected withStagedRecipes(configJson: string, recipeUri: URI, ctx?: ToolInvocationContext): string {
-        if (!CooklangUri.isMenu(recipeUri)) {
-            return configJson;
-        }
-        const request = (ctx as StagedChangeContext | undefined)?.request;
-        const staged: Record<string, string> = {};
-        for (const changeSet of [request?.session?.changeSet, request?.changeSet]) {
-            for (const element of changeSet?.getElements?.() ?? []) {
-                if (element.uri && CooklangUri.isRecipe(element.uri) && element.type !== 'delete'
-                    && element.state === 'pending' && typeof element.targetState === 'string') {
-                    staged[element.uri.toString()] = element.targetState;
-                }
-            }
-        }
-        if (Object.keys(staged).length === 0) {
-            return configJson;
-        }
-        const config = JSON.parse(configJson);
-        config.stagedRecipes = staged;
-        return JSON.stringify(config);
     }
 
     protected inlineTemplate(content: string): ResolvedTemplate {

@@ -15,12 +15,9 @@ import { URI } from '@theia/core';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import { ToolProvider, ToolRequest, ToolInvocationContext } from '@theia/ai-core/lib/common';
 import { ChatToolContext } from '@theia/ai-chat/lib/common/chat-tool-request-service';
-import { ChangeSetFileElement, ChangeSetFileElementFactory } from '@theia/ai-chat/lib/browser/change-set-file-element';
-import { FileService } from '@theia/filesystem/lib/browser/file-service';
-import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { Minimatch } from 'minimatch';
 import { WorkspaceFunctionScope } from './workspace-function-scope';
-import { FileChangeSetTitleProvider } from './file-changeset-functions';
+import { ChatFileWriter } from './chat-file-writer';
 import { RecipeMetadataSource } from './recipe-metadata-source';
 import { editFrontmatter, MetadataEditOps } from './frontmatter-editor';
 import { WhereClause } from './metadata-matcher';
@@ -54,14 +51,15 @@ interface SampleEntry { path: string; before: string; after: string }
 
 interface UpdateRecipeMetadataResult {
     matched: number;
-    staged: number;
+    updated: number;
     unchanged: number;
     skipped: SkippedEntry[];
     skippedTotal?: number;
     sample: SampleEntry[];
     dryRun: boolean;
-    wouldStage?: number;
+    wouldUpdate?: number;
     paths?: string[];
+    message?: string;
 }
 
 function hasAnyOp(ops: MetadataEditOps): boolean {
@@ -77,9 +75,8 @@ function fail(message: string): string {
 
 /**
  * AI tool: bulk-edit recipe frontmatter (tags/other keys) across many files
- * without the model ever reading a recipe body. Stages proposed changes into
- * the chat ChangeSet (same review/"Apply All" UX as `suggestFileReplacements`);
- * nothing is written to disk directly.
+ * without the model ever reading a recipe body. Writes each changed file
+ * through {@link ChatFileWriter}, so the user can undo them from the chat.
  */
 @injectable()
 export class UpdateRecipeMetadataTool implements ToolProvider {
@@ -91,17 +88,8 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
     @inject(RecipeMetadataSource)
     protected readonly metadataSource: RecipeMetadataSource;
 
-    @inject(FileService)
-    protected readonly fileService: FileService;
-
-    @inject(MonacoWorkspace)
-    protected readonly monacoWorkspace: MonacoWorkspace;
-
-    @inject(ChangeSetFileElementFactory)
-    protected readonly fileChangeFactory: ChangeSetFileElementFactory;
-
-    @inject(FileChangeSetTitleProvider)
-    protected readonly fileChangeSetTitleProvider: FileChangeSetTitleProvider;
+    @inject(ChatFileWriter)
+    protected readonly chatFileWriter: ChatFileWriter;
 
     getTool(): ToolRequest {
         return {
@@ -119,9 +107,8 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
                 'ANY needle), { equals: string }, { has: string } / { missing: string } (array membership and its inverse), ' +
                 '{ exists: boolean }. A map value (e.g. `source: { url, name, author }`) is matched against any of its string ' +
                 'leaves; an array is matched against any element. ' +
-                'It stages proposals for review exactly like `suggestFileReplacements` — the user accepts or rejects them, ' +
-                'nothing is written to disk here. Use `dryRun: true` first for jobs over 25 files to preview matches/skips ' +
-                'before staging. Only `.cook` files are supported.',
+                'Changed files are saved immediately; the user can undo them from the chat. Use `dryRun: true` first for ' +
+                'jobs over 25 files to preview matches/skips before writing. Only `.cook` files are supported.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -160,7 +147,7 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
                             required: ['path'],
                         },
                     },
-                    dryRun: { type: 'boolean', description: 'Preview only: nothing is staged. Reports wouldStage and the first 50 matched paths.' },
+                    dryRun: { type: 'boolean', description: 'Preview only: nothing is written. Reports wouldUpdate and the first 50 matched paths.' },
                 },
             },
             handler: async (args: string, ctx?: ToolInvocationContext) => this.execute(args, ctx),
@@ -316,8 +303,8 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
     ): Promise<string> {
         const skipped: SkippedEntry[] = [...preSkipped];
         const sample: SampleEntry[] = [];
-        let staged = 0;
-        let wouldStage = 0;
+        let updated = 0;
+        let wouldUpdate = 0;
         let unchanged = 0;
 
         for (const path of paths) {
@@ -336,7 +323,7 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
                 continue;
             }
 
-            const content = await this.readStartingContent(uri, ctx);
+            const content = await this.chatFileWriter.readCurrentContent(uri);
             if (content === undefined) {
                 skipped.push({ path, reason: 'File not found' });
                 continue;
@@ -352,31 +339,20 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
                 continue;
             }
 
-            wouldStage++;
+            wouldUpdate++;
             if (sample.length < MAX_SAMPLE) {
                 sample.push({ path, before: editResult.beforeLines.join('\n'), after: editResult.afterLines.join('\n') });
             }
             if (!dryRun) {
-                ctx.request.session.changeSet.addElements(this.fileChangeFactory({
-                    uri,
-                    type: 'modify',
-                    state: 'pending',
-                    targetState: editResult.content,
-                    requestId: ctx.request.id,
-                    chatSessionId: ctx.request.session.id,
-                }));
-                staged++;
+                await this.chatFileWriter.write(ctx, uri, editResult.content);
+                updated++;
             }
-        }
-
-        if (staged > 0) {
-            ctx.request.session.changeSet.setTitle(this.fileChangeSetTitleProvider.getChangeSetTitle(ctx));
         }
 
         const skippedTotal = skipped.length > MAX_SKIPPED_REPORTED ? skipped.length : undefined;
         const result: UpdateRecipeMetadataResult = {
             matched: paths.length + preSkipped.length,
-            staged,
+            updated,
             unchanged,
             skipped: skipped.slice(0, MAX_SKIPPED_REPORTED),
             sample,
@@ -385,31 +361,13 @@ export class UpdateRecipeMetadataTool implements ToolProvider {
         if (skippedTotal !== undefined) {
             result.skippedTotal = skippedTotal;
         }
+        if (updated > 0) {
+            result.message = 'The updated files are saved; the user can undo them from the chat.';
+        }
         if (dryRun) {
-            result.wouldStage = wouldStage;
+            result.wouldUpdate = wouldUpdate;
             result.paths = paths.slice(0, MAX_DRY_RUN_PATHS);
         }
         return JSON.stringify(result);
-    }
-
-    /**
-     * Pending changeset target state (if any) takes priority, then the
-     * open-editor content (unsaved changes), then the file on disk — same
-     * priority `getFileContent` uses.
-     */
-    protected async readStartingContent(uri: URI, ctx: ChatToolContext): Promise<string | undefined> {
-        const existing = ctx.request.session.changeSet?.getElementByURI(uri);
-        if (existing instanceof ChangeSetFileElement && existing.targetState !== undefined) {
-            return existing.targetState;
-        }
-        const openEditorValue = this.monacoWorkspace.getTextDocument(uri.toString())?.getText();
-        if (openEditorValue !== undefined) {
-            return openEditorValue;
-        }
-        try {
-            return (await this.fileService.read(uri)).value.toString();
-        } catch {
-            return undefined;
-        }
     }
 }

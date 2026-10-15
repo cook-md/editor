@@ -52,11 +52,11 @@ interface ToolCallback {
 /** Sent with the last tool round a single user message may use. */
 const ROUND_LIMIT_NOTE =
     'Tool-round limit reached for this request. Do not call more tools. Reply to the user now: '
-    + 'what is done, what is staged for review, and what is left for them to ask next.';
+    + 'what is done, which files were changed, and what is left for them to ask next.';
 
 /** Shown when the model still asks for tools after the round limit. */
 const STEP_LIMIT_TEXT =
-    'CookBot hit its step limit for one message. Anything it proposed is in the Changes panel — ask it to continue.';
+    'CookBot hit its step limit for one message. Files it changed are listed in the chat, where you can undo them — ask it to continue.';
 
 /** Shown when tools ran but the model ended the turn without a reply. */
 const NO_REPLY_TEXT =
@@ -369,7 +369,7 @@ export class CookbotLanguageModel implements LanguageModel {
      * never resolves cannot stall the turn forever, and racing `token` so a
      * cancelled request does not wait for it either. The handler keeps
      * running in both cases - Theia's wrapper still calls `complete()` on it
-     * when it eventually resolves, so it may still stage changes - only its
+     * when it eventually resolves, so it may still write files - only its
      * result is no longer awaited here. A handler that throws is turned into
      * a tool_result error instead of failing the whole turn.
      */

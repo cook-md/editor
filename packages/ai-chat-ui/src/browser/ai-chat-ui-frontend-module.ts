@@ -57,6 +57,7 @@ import { ChatViewWidgetToolbarContribution } from './chat-view-widget-toolbar-co
 import { ContextVariablePicker } from './context-variable-picker';
 import { ChangeSetActionRenderer, ChangeSetActionService } from './change-set-actions/change-set-action-service';
 import { ChangeSetAcceptAction } from './change-set-actions/change-set-accept-action';
+import { ChangeSetUndoAction } from './change-set-actions/change-set-undo-action';
 import { AIChatTreeInputArgs, AIChatTreeInputConfiguration, AIChatTreeInputFactory, AIChatTreeInputWidget } from './chat-tree-view/chat-view-tree-input-widget';
 import { SubChatWidget, SubChatWidgetFactory } from './chat-tree-view/sub-chat-widget';
 import { ChatInputHistoryService } from './chat-input-history';
@@ -197,6 +198,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(ChangeSetActionService).toSelf().inSingletonScope();
     bind(ChangeSetAcceptAction).toSelf().inSingletonScope();
     bind(ChangeSetActionRenderer).toService(ChangeSetAcceptAction);
+    bind(ChangeSetUndoAction).toSelf().inSingletonScope();
+    bind(ChangeSetActionRenderer).toService(ChangeSetUndoAction);
 
     bindRootContributionProvider(bind, ChatNodeToolbarActionContribution);
     bind(DefaultChatNodeToolbarActionContribution).toSelf().inSingletonScope();
