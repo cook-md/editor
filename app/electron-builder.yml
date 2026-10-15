@@ -170,6 +170,7 @@ nsis:
   deleteAppDataOnUninstall: false
   runAfterFinish: false
   artifactName: Cook-Editor-Setup.${ext}
+  include: resources/installer.nsh
 
 # --- Linux ---
 # rpm target is intentionally omitted: electron-builder/fpm wraps rpmbuild

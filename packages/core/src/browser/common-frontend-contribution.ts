@@ -1145,7 +1145,10 @@ export class CommonFrontendContribution implements FrontendApplicationContributi
                     setTheme(selectedItems[0].id, true);
                 },
                 onDidChangeActive: (_, activeItems) => {
-                    previewTheme(activeItems[0].id, false);
+                    // Empty when the pointer lands on a separator rather than an item (EDITOR-1P).
+                    if (activeItems.length > 0) {
+                        previewTheme(activeItems[0].id, false);
+                    }
                 },
                 onDidHide: () => {
                     if (resetTo) {
@@ -1207,7 +1210,10 @@ export class CommonFrontendContribution implements FrontendApplicationContributi
                     setTheme(selectedItems[0].id, true);
                 },
                 onDidChangeActive: (_, activeItems) => {
-                    previewTheme(activeItems[0].id, false);
+                    // Empty when the pointer lands on a separator rather than an item (EDITOR-1P).
+                    if (activeItems.length > 0) {
+                        previewTheme(activeItems[0].id, false);
+                    }
                 },
                 onDidHide: () => {
                     if (resetTo) {
