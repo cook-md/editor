@@ -208,13 +208,15 @@ export const aiCorePreferenceSchema: PreferenceSchema = {
         },
         [LANGUAGE_MODEL_ALIASES_PREFERENCE]: {
             title: nls.localize('theia/ai/core/preference/languageModelAliases/title', 'Language Model Aliases'),
-            markdownDescription: nls.localize('theia/ai/core/preference/languageModelAliases/description', 'Configure models for each language model alias in the \
-[AI Configuration View]({0}). Alternatiely you can set the settings manually in the settings.json: \n\
+            // The AI Configuration view lives in @theia/ai-ide, which Cook Editor does not ship, so the
+            // description must not link to `aiConfiguration:open` (EDITOR-1N). A new key keeps the stale
+            // translations, which still contain that link, from being used.
+            markdownDescription: nls.localize('theia/ai/core/preference/languageModelAliases/settingsJsonDescription',
+                'Configure models for each language model alias in the settings.json: \n\
 ```\n\
 "default/code": {\n\
   "selectedModel": "anthropic/claude-opus-4-20250514"\n\
-}\n\```',
-                'command:aiConfiguration:open'
+}\n\```'
             ),
             type: 'object',
             additionalProperties: {
