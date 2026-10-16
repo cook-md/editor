@@ -5,7 +5,7 @@
   "dependencies": {
     "electron-store": "^8.0.0",
     "fix-path": "^5.0.0",
-    "native-keymap": "^2.2.1"
+    "native-keymap": "^3.3.9"
   },
   "devDependencies": {
     "@theia/ext-scripts": "1.70.0",
