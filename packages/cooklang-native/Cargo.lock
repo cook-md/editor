@@ -454,9 +454,9 @@ dependencies = [
 
 [[package]]
 name = "cookmd-nutrition-client"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b960cdadced600d6714cfe531ae9250aebcde7f8789ba5b40655a67654a9989"
+checksum = "dd3fec1123ac42d944fd4590525026149824dccbe58f7b57c012e465e2c50281"
 dependencies = [
  "reqwest",
  "serde",

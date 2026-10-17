@@ -1461,6 +1461,50 @@ fn catch_render<F: FnOnce() -> String>(render: F) -> String {
     }
 }
 
+/// Remove duplicates, keeping first-seen order.
+#[cfg(feature = "nutrition")]
+fn dedup_names(names: &mut Vec<String>) {
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|n| seen.insert(n.clone()));
+}
+
+/// Ingredient names exactly as `is_in_category(ingredient, ...)` receives them:
+/// the ingredient's `name` field (not alias/display name). Deduplicated.
+#[cfg(feature = "nutrition")]
+fn unique_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut out: Vec<String> = names.into_iter().map(str::to_string).collect();
+    dedup_names(&mut out);
+    out
+}
+
+/// Names of the ingredients in the `ingredients` list a recipe template sees.
+/// Unparseable source yields nothing (the render reports the error itself).
+#[cfg(feature = "nutrition")]
+fn recipe_ingredient_names(source: &str) -> Vec<String> {
+    match cooklang_reports::parser::get_parser()
+        .parse(source)
+        .into_output()
+    {
+        Some(recipe) => unique_names(recipe.ingredients.iter().map(|i| i.name.as_str())),
+        None => Vec::new(),
+    }
+}
+
+/// Names of every ingredient in an expanded `.menu` plan (plan-wide, per-day
+/// and per-recipe lists, which already include nested recipe references).
+#[cfg(feature = "nutrition")]
+fn plan_ingredient_names(plan: &cooklang_reports_nutrition::plan::Plan) -> Vec<String> {
+    let all = plan.all_ingredients.iter();
+    let days = plan.days.iter().flat_map(|d| {
+        d.ingredients.iter().chain(
+            d.meals
+                .iter()
+                .flat_map(|m| m.recipes.iter().flat_map(|r| r.ingredients.iter())),
+        )
+    });
+    unique_names(all.chain(days).map(|i| i.name.as_str()))
+}
+
 fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String {
     // A malformed config silently degrades to defaults (no base path, no
     // nutrition wiring); log it so a bad config surfaces in the addon's stderr
@@ -1485,15 +1529,24 @@ fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String
         builder.datastore_path(p);
     }
     let config = builder.build();
+    // The shared (cached) client, kept so category lookups can be prefetched in
+    // one batch before the template runs. `None` when nutrition is not wired.
+    #[cfg(feature = "nutrition")]
+    let mut prefetch_client: Option<Arc<cookmd_nutrition_client::Client>> = None;
     #[cfg(feature = "nutrition")]
     let mut config = match cfg.nutrition_api_url {
         Some(url) => {
             let client = nutrition_client(&url, cfg.nutrition_token.as_deref().unwrap_or(""));
+            prefetch_client = Some(client.clone());
             let ext = cooklang_reports_nutrition::NutritionExtension::new(client);
             config.with_extension(ext)
         }
         None => config,
     };
+    #[cfg(feature = "nutrition")]
+    let mut prefetch_names = prefetch_client
+        .as_ref()
+        .map(|_| recipe_ingredient_names(recipe));
     // `.menu` plans additionally get `plan.*` context (recipe refs expanded
     // into days/meals/ingredients, dangling refs surfaced). The menu source
     // still renders as a recipe, so templates built on the recipe-shaped
@@ -1516,14 +1569,29 @@ fn render_report_body(recipe: &str, template: &str, config_json: &str) -> String
             &overrides,
         ) {
             Ok(p) => p,
-            Err(e) => return serde_json::json!({ "error": format!("plan error: {e}") }).to_string(),
+            Err(e) => {
+                return serde_json::json!({ "error": format!("plan error: {e}") }).to_string()
+            }
         };
+        if let Some(names) = prefetch_names.as_mut() {
+            names.extend(plan_ingredient_names(&plan));
+            dedup_names(names);
+        }
         match serde_json::to_value(&plan) {
             Ok(v) => config = config.with_context("plan", v),
             Err(e) => {
                 return serde_json::json!({ "error": format!("plan serialize error: {e}") })
                     .to_string();
             }
+        }
+    }
+    // One batched category lookup for every ingredient the template can ask
+    // about. Errors are ignored: rendering falls back to the lazy per-ingredient
+    // path, which surfaces any real failure itself.
+    #[cfg(feature = "nutrition")]
+    if let (Some(client), Some(names)) = (&prefetch_client, &prefetch_names) {
+        if !names.is_empty() {
+            let _ = client.prefetch_categories(names);
         }
     }
     #[cfg(not(feature = "nutrition"))]
@@ -1704,6 +1772,164 @@ mod workspace_tools_tests {
 
     /// Temporary workspace directory, removed on drop (also when a test panics).
     struct TempWs(std::path::PathBuf);
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn recipe_names_are_deduplicated_in_first_seen_order() {
+        let src = "Mix @eggs{2} and @flour{100%g}, then more @eggs{1}. Add @salt.\n";
+        assert_eq!(
+            super::recipe_ingredient_names(src),
+            ["eggs", "flour", "salt"]
+        );
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn recipe_names_match_what_the_template_parser_calls_the_name() {
+        // Same canonical parser as the render, so the name field is identical
+        // to what `is_in_category(ingredient, ..)` receives (no alias handling).
+        let src = "Add @Parmesan|cheese{30%g}.\n";
+        assert_eq!(super::recipe_ingredient_names(src), ["Parmesan|cheese"]);
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn recipe_names_include_recipe_references_as_ingredients() {
+        // References are ingredients in the `ingredients` list the template
+        // iterates; their expansion (get_ingredient_list) stays on the lazy path.
+        let src = "Top with @./Sauces/Pesto{2} and @basil{5%g}.\n";
+        let names = super::recipe_ingredient_names(src);
+        assert_eq!(names.len(), 2, "got: {names:?}");
+        assert!(names.contains(&"basil".to_string()));
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn recipe_without_ingredients_yields_no_names() {
+        assert!(super::recipe_ingredient_names("Just stir.\n").is_empty());
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn menu_plan_names_cover_loose_and_nested_recipe_ingredients() {
+        let menu = "= Day 1 =\n\nDinner:\n\n@./Main/Steak{2}\n\n@yogurt{150%g}\n\n= Day 2 =\n\nLunch:\n\n@./Main/Steak{1}\n";
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert(
+            std::path::PathBuf::from("/nonexistent-ws/Main/Steak.cook"),
+            "Sear @skirt steak{300%g} with @yogurt{10%g}.\n".to_string(),
+        );
+        let plan = cooklang_reports_nutrition::plan::build_plan_from_source_with_overrides(
+            menu,
+            std::path::Path::new("/nonexistent-ws"),
+            None,
+            &overrides,
+        )
+        .unwrap();
+        let mut names = super::plan_ingredient_names(&plan);
+        names.sort();
+        assert_eq!(names, ["skirt steak", "yogurt"]);
+    }
+
+    /// Minimal keep-alive HTTP server standing in for the nutrition service.
+    /// Returns its base URL and a shared log of "METHOD path" request lines.
+    #[cfg(feature = "nutrition")]
+    fn mock_nutrition_service() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = log.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let seen = seen.clone();
+                std::thread::spawn(move || {
+                    let mut writer = stream.try_clone().unwrap();
+                    let mut reader = BufReader::new(stream);
+                    loop {
+                        let mut request_line = String::new();
+                        if reader.read_line(&mut request_line).unwrap_or(0) == 0 {
+                            return;
+                        }
+                        let mut content_length = 0usize;
+                        loop {
+                            let mut header = String::new();
+                            reader.read_line(&mut header).unwrap();
+                            if header.trim().is_empty() {
+                                break;
+                            }
+                            if let Some(v) =
+                                header.to_ascii_lowercase().strip_prefix("content-length:")
+                            {
+                                content_length = v.trim().parse().unwrap();
+                            }
+                        }
+                        let mut body = vec![0u8; content_length];
+                        reader.read_exact(&mut body).unwrap();
+                        let mut parts = request_line.split_whitespace();
+                        let (method, path) = (parts.next().unwrap(), parts.next().unwrap());
+                        seen.lock().unwrap().push(format!("{method} {path}"));
+                        let payload = match (method, path) {
+                            ("GET", "/categories") => serde_json::json!({
+                                "categories": [{"slug": "fish"}, {"slug": "meat"}, {"slug": "dairy"}, {"slug": "gluten"}]
+                            }),
+                            ("POST", "/categories/classify") => {
+                                let req: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                                let results: serde_json::Map<String, serde_json::Value> = req
+                                    ["ingredients"]
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|n| {
+                                        let name = n.as_str().unwrap();
+                                        let cats = match name {
+                                            "salmon" => serde_json::json!(["fish"]),
+                                            "flour" => serde_json::json!(["gluten"]),
+                                            _ => serde_json::json!([]),
+                                        };
+                                        (name.to_string(), cats)
+                                    })
+                                    .collect();
+                                serde_json::json!({ "results": results })
+                            }
+                            _ => serde_json::json!({}),
+                        };
+                        let body = payload.to_string();
+                        let _ = write!(
+                            writer,
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
+                            body.len(),
+                            body
+                        );
+                    }
+                });
+            }
+        });
+        (url, log)
+    }
+
+    #[cfg(feature = "nutrition")]
+    #[test]
+    fn report_render_prefetches_categories_in_one_batch() {
+        let (url, log) = mock_nutrition_service();
+        let recipe =
+            "Cook @salmon{200%g} with @flour{50%g}, @eggs{2} and @butter{20%g}; more @salmon{1}.";
+        let template = "{% for i in ingredients %}{{ i.name }}:{% for s in ['fish','meat','dairy','gluten'] %}{{ 1 if is_in_category(i, s) else 0 }}{% endfor %};{% endfor %}";
+        let cfg = serde_json::json!({ "nutritionApiUrl": url, "nutritionToken": "tok" });
+        let out = super::render_report(recipe.into(), template.into(), cfg.to_string());
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let output = v["output"]
+            .as_str()
+            .unwrap_or_else(|| panic!("expected output: {out}"));
+        assert!(output.contains("salmon:1000;"), "got: {output}");
+        assert!(output.contains("flour:0001;"), "got: {output}");
+        assert!(output.contains("eggs:0000;"), "got: {output}");
+        let requests = log.lock().unwrap().clone();
+        assert_eq!(
+            requests,
+            ["GET /categories", "POST /categories/classify"],
+            "expected one categories + one classify request, got: {requests:?}"
+        );
+    }
+
 
     impl TempWs {
         fn write(&self, rel: &str, content: &str) {
