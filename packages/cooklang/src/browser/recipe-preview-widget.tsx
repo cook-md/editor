@@ -141,6 +141,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
             element: this.node,
             context: () => this.recipe ? this.previewContext() : undefined,
             isVisible: () => this.isVisible,
+            uri: () => this.uri?.toString(),
             onDidChangeBadges: () => this.update(),
         });
         this.toDispose.push(this.badgeController);
@@ -345,7 +346,7 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                 return;
             }
             this.recipe = undefined;
-            this.badgeController.reset();
+            this.badgeController.reset(false);
             this.parseErrors = [`Parse request failed: ${e}`];
             this.update();
         });
@@ -556,6 +557,8 @@ export class RecipePreviewWidget extends ReactWidget implements Navigatable {
                             onIngredientContextMenu={this.handleIngredientContextMenu}
                             onNavigateToRecipe={this.hasLocalSource() ? this.handleNavigateToRecipe : undefined}
                             badges={this.badgeController.badges}
+                            badgesPending={this.badgeController.pending}
+                            placeholderCount={this.badgeController.placeholderCount}
                             onShowBadgeDetails={this.handleShowBadgeDetails}
                             onHideBadgeDetails={this.handleHideBadgeDetails}
                         />

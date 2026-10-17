@@ -28,7 +28,9 @@ export interface PreviewBadgeHost {
     context(): object | undefined;
     /** Lumino's `isVisible`: a hidden preview defers refreshes until it is shown again. */
     isVisible(): boolean;
-    /** `badges` changed; the widget should re-render. */
+    /** Identifies the shown document (its URI) so the number of badges can be remembered per document; `undefined` when unbound. */
+    uri?(): string | undefined;
+    /** `badges` changed, or the first result arrived (see {@link PreviewBadgeController.pending}); the widget should re-render. */
     onDidChangeBadges(): void;
 }
 
@@ -41,8 +43,28 @@ export interface PreviewBadgeHost {
 export class PreviewBadgeController implements Disposable {
 
     static readonly DEBOUNCE_MS = 500;
+    /** Placeholder count when nothing is remembered for the document and the outlet's contributions are unknown. */
+    static readonly DEFAULT_PLACEHOLDERS = 3;
+    /** Upper bound for the placeholders shown while loading. */
+    static readonly MAX_PLACEHOLDERS = 6;
+    /** Number of documents whose badge count is remembered. */
+    protected static readonly MEMORY_LIMIT = 200;
+    /** Badge counts of the last settled result per outlet and document, kept for the session so reopening a document reserves the right space at once. */
+    protected static readonly remembered = new Map<string, number>();
+
+    /** Forgets every remembered badge count. For tests. */
+    static clearMemory(): void {
+        PreviewBadgeController.remembered.clear();
+    }
 
     badges: PreviewBadge[] = [];
+    /**
+     * The first badge result for the shown document has not arrived yet. The
+     * widget renders {@link placeholderCount} placeholders meanwhile. Stays
+     * false across later refreshes: the previous badges are kept until the new
+     * result replaces them.
+     */
+    pending = true;
     /** Overridable in tests; production code always uses {@link DEBOUNCE_MS}. */
     debounceMs = PreviewBadgeController.DEBOUNCE_MS;
     /** A refresh was requested while hidden; run it once the preview is shown again. */
@@ -88,10 +110,30 @@ export class PreviewBadgeController implements Disposable {
      * refresh for the old source land after this. Does not call
      * `onDidChangeBadges`; the caller re-renders.
      */
-    reset(): void {
+    reset(awaitResult = true): void {
         this.badges = [];
+        // A new source awaits its first result, unless the caller knows none will come (e.g. a parse failure).
+        this.pending = awaitResult;
         this.sequence++;
         this.clearTimer();
+    }
+
+    /** How many placeholders to show while {@link pending}: the count last seen for this document, else the outlet's contributions, else a default. */
+    get placeholderCount(): number {
+        const known = PreviewBadgeController.remembered.get(this.memoryKey());
+        if (known !== undefined) {
+            return known;
+        }
+        let count = PreviewBadgeController.DEFAULT_PLACEHOLDERS;
+        try {
+            const context = this.host.context();
+            if (context) {
+                count = this.outlets.getItems(this.host.outlet, context, this.host.element).length;
+            }
+        } catch {
+            // Only a layout hint; fall back to the default.
+        }
+        return Math.min(count, PreviewBadgeController.MAX_PLACEHOLDERS);
     }
 
     /** Queries the outlet now (unless disposed) and re-renders the host when the badges changed; a pending debounce is dropped. */
@@ -102,13 +144,40 @@ export class PreviewBadgeController implements Disposable {
         this.clearTimer();
         const sequence = ++this.sequence;
         const context = this.host.context();
-        const badges = context ? await this.outlets.collectBadges(this.host.outlet, context, this.host.element) : [];
+        let badges: PreviewBadge[] = [];
+        try {
+            badges = context ? await this.outlets.collectBadges(this.host.outlet, context, this.host.element) : [];
+        } catch (e) {
+            console.warn('[cooklang] badge collection failed:', e);
+        }
         if (this.disposed || sequence !== this.sequence) {
             return;
         }
-        if (!PreviewBadge.equals(this.badges, badges)) {
+        const settled = this.pending;
+        this.pending = false;
+        if (context) {
+            this.remember(badges.length);
+        }
+        if (settled || !PreviewBadge.equals(this.badges, badges)) {
             this.badges = badges;
             this.host.onDidChangeBadges();
+        }
+    }
+
+    protected memoryKey(): string {
+        return `${this.host.outlet.join('/')}|${this.host.uri?.() ?? ''}`;
+    }
+
+    protected remember(count: number): void {
+        if (this.host.uri?.() === undefined) {
+            return;
+        }
+        const memory = PreviewBadgeController.remembered;
+        const key = this.memoryKey();
+        memory.delete(key); // re-insert so the oldest entry is the least recently settled
+        memory.set(key, count);
+        if (memory.size > PreviewBadgeController.MEMORY_LIMIT) {
+            memory.delete(memory.keys().next().value as string);
         }
     }
 

@@ -128,3 +128,51 @@
 .theia-hover.cooklang-preview-badge-hover {
     max-width: 360px;
 }
+
+/* Plugin badges of a preview header. Own wrapping container, so a badge row that
+   wraps never drags the header actions (`.cooklang-preview-actions`) with it. */
+.cooklang-preview-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+}
+
+/* The header's action buttons (like, cart, ...): fixed container pinned to the
+   right edge, so badges arriving never move them. */
+.cooklang-preview-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* Loading placeholder: same 26px height and radius as a pill, theme-variable
+   fill with a subtle shimmer (static under reduced motion). */
+.cooklang-badge-placeholder {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 64px;
+    height: 26px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    background-color: var(--theia-badge-background);
+    background-image: linear-gradient(90deg, transparent, var(--theia-editor-background), transparent);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    opacity: 0.35;
+    animation: cooklang-badge-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes cooklang-badge-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cooklang-badge-placeholder {
+        animation: none;
+    }
+}

@@ -31,7 +31,7 @@ import {
 import { CooklangActionBar } from './cooklang-action-bar';
 import { OutletItem } from './cooklang-outlet-service';
 import { PreviewBadge } from '../common/cooklang-outlet-context';
-import { PreviewBadgeView } from './preview-badge';
+import { PreviewBadgeRow } from './preview-badge';
 
 // ---------------------------------------------------------------------------
 // MenuMetadataPills
@@ -200,6 +200,9 @@ export interface MenuViewProps {
     onRecipeContextMenu?: (item: MenuRecipeReferenceItem, event: React.MouseEvent) => void;
     /** Plugin badges for the header; rendered only when both detail handlers are given. */
     badges?: readonly PreviewBadge[];
+    /** The first badge result is pending: reserve space with placeholders. */
+    badgesPending?: boolean;
+    placeholderCount?: number;
     onShowBadgeDetails?: (badge: PreviewBadge, target: HTMLElement, immediate: boolean) => void;
     onHideBadgeDetails?: () => void;
 }
@@ -214,6 +217,8 @@ export const MenuView = ({
     onNavigateToRecipe,
     onRecipeContextMenu,
     badges,
+    badgesPending,
+    placeholderCount,
     onShowBadgeDetails,
     onHideBadgeDetails,
 }: MenuViewProps): React.ReactElement => {
@@ -246,11 +251,11 @@ export const MenuView = ({
                             title='Scale factor'
                         />
                     </div>
-                    {onShowBadgeDetails && onHideBadgeDetails && badges?.map((badge, index) => (
-                        <PreviewBadgeView key={`${badge.kind}-${index}`} badge={badge}
-                            onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
-                    ))}
-                    <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
+                    <PreviewBadgeRow badges={badges} pending={badgesPending} placeholderCount={placeholderCount}
+                        onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
+                    <div className='cooklang-preview-actions'>
+                        <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
+                    </div>
                 </div>
             </div>
 

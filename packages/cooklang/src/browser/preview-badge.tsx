@@ -77,3 +77,49 @@ export const PreviewBadgeView = ({ badge, onShowDetails, onHideDetails }: Previe
         </button>
     );
 };
+
+export interface PreviewBadgeRowProps {
+    badges?: readonly PreviewBadge[];
+    /** The first result for the shown document is still pending: show {@link placeholderCount} placeholders instead of badges. */
+    pending?: boolean;
+    placeholderCount?: number;
+    onShowDetails?: (badge: PreviewBadge, target: HTMLElement, immediate: boolean) => void;
+    onHideDetails?: () => void;
+}
+
+/** Cap on placeholders; mirrors `PreviewBadgeController.MAX_PLACEHOLDERS`. */
+const MAX_PLACEHOLDERS = 6;
+
+/**
+ * The wrapping container for a preview header's plugin badges. While the first
+ * result is pending it shows neutral placeholders, so the header does not
+ * reflow when the badges arrive. Renders nothing when there is nothing to
+ * show or reserve.
+ */
+export const PreviewBadgeRow = ({ badges, pending, placeholderCount, onShowDetails, onHideDetails }: PreviewBadgeRowProps): React.ReactElement | undefined => {
+    if (pending) {
+        const count = Math.max(0, Math.min(placeholderCount ?? 0, MAX_PLACEHOLDERS));
+        if (count === 0) {
+            return undefined;
+        }
+        return (
+            <div className='cooklang-preview-badges loading' role='status' aria-busy='true'
+                aria-label={nls.localize('theia/cooklang/loadingBadges', 'Loading badges')}>
+                {Array.from({ length: count }, (_, index) => (
+                    <span key={index} className='cooklang-badge-placeholder' aria-hidden='true' />
+                ))}
+            </div>
+        );
+    }
+    if (!onShowDetails || !onHideDetails || !badges || badges.length === 0) {
+        return undefined;
+    }
+    return (
+        <div className='cooklang-preview-badges'>
+            {badges.map((badge, index) => (
+                <PreviewBadgeView key={`${badge.kind}-${index}`} badge={badge}
+                    onShowDetails={onShowDetails} onHideDetails={onHideDetails} />
+            ))}
+        </div>
+    );
+};
