@@ -101,6 +101,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             element: this.node,
             context: () => this.menuResult && this.menuResult.sections.length > 0 ? this.previewContext() : undefined,
             isVisible: () => this.isVisible,
+            uri: () => this.uri?.toString(),
             onDidChangeBadges: () => this.update(),
         });
         this.toDispose.push(this.badgeController);
@@ -232,7 +233,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             } catch (e) {
                 this.menuResult = undefined;
                 this.parseErrors = [`Failed to parse response: ${e}`];
-                this.badgeController.reset();
+                this.badgeController.reset(false);
                 this.update();
                 return;
             }
@@ -244,7 +245,7 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
             }
             this.menuResult = undefined;
             this.parseErrors = [`Parse request failed: ${e}`];
-            this.badgeController.reset();
+            this.badgeController.reset(false);
             this.update();
         });
     }
@@ -318,6 +319,8 @@ export class MenuPreviewWidget extends ReactWidget implements Navigatable {
                     onRecipeContextMenu={this.handleRecipeContextMenu}
                     onNavigateToRecipe={this.handleNavigateToRecipe}
                     badges={this.badgeController.badges}
+                    badgesPending={this.badgeController.pending}
+                    placeholderCount={this.badgeController.placeholderCount}
                     onShowBadgeDetails={this.handleShowBadgeDetails}
                     onHideBadgeDetails={this.handleHideBadgeDetails}
                 />

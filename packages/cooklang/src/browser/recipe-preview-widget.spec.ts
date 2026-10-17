@@ -114,8 +114,11 @@ class PreviewHarness {
         Object.assign(outlets, {
             menus: { getMenu: () => undefined },
             workspaceService: { tryGetRoots: () => [{ resource: ROOT }] },
-            getItems: (_path: MenuPath, _context: object, element?: HTMLElement): OutletItem[] => {
-                this.itemElements.push(element);
+            getItems: (path: MenuPath, _context: object, element?: HTMLElement): OutletItem[] => {
+                // The badge outlet is also queried (for the placeholder count); only the toolbar is under test.
+                if (path === CooklangOutlets.RECIPE_PREVIEW_TOOLBAR) {
+                    this.itemElements.push(element);
+                }
                 return [];
             },
             run: async (_path: MenuPath, _id: string, _context: object, element?: HTMLElement): Promise<void> => {

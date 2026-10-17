@@ -36,7 +36,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    flex-shrink: 0;
+    /* Shrinks (so the badges wrap) instead of pushing the header wider. */
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 /* Scale control */

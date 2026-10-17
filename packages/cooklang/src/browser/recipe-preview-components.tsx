@@ -40,7 +40,7 @@ import { TimerBadge } from './timer-components';
 import { CooklangActionBar } from './cooklang-action-bar';
 import { OutletItem } from './cooklang-outlet-service';
 import { PreviewBadge } from '../common/cooklang-outlet-context';
-import { PreviewBadgeView } from './preview-badge';
+import { PreviewBadgeRow } from './preview-badge';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -576,6 +576,9 @@ export interface RecipeViewProps {
     onNavigateToRecipe?: (referencePath: string) => void;
     onIngredientContextMenu?: (ingredient: Ingredient, event: React.MouseEvent) => void;
     badges?: readonly PreviewBadge[];
+    /** The first badge result is pending: reserve space with placeholders. */
+    badgesPending?: boolean;
+    placeholderCount?: number;
     onShowBadgeDetails?: (badge: PreviewBadge, target: HTMLElement, immediate: boolean) => void;
     onHideBadgeDetails?: () => void;
 }
@@ -591,6 +594,8 @@ export const RecipeView = ({
     onNavigateToRecipe,
     onIngredientContextMenu,
     badges,
+    badgesPending,
+    placeholderCount,
     onShowBadgeDetails,
     onHideBadgeDetails,
 }: RecipeViewProps): React.ReactElement => {
@@ -633,11 +638,11 @@ export const RecipeView = ({
                             title='Scale factor'
                         />
                     </div>
-                    {onShowBadgeDetails && onHideBadgeDetails && badges?.map((badge, index) => (
-                        <PreviewBadgeView key={`${badge.kind}-${index}`} badge={badge}
-                            onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
-                    ))}
-                    <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
+                    <PreviewBadgeRow badges={badges} pending={badgesPending} placeholderCount={placeholderCount}
+                        onShowDetails={onShowBadgeDetails} onHideDetails={onHideBadgeDetails} />
+                    <div className='cooklang-preview-actions'>
+                        <CooklangActionBar items={toolbarItems} onRun={onRunToolbarItem} />
+                    </div>
                 </div>
             </div>
 

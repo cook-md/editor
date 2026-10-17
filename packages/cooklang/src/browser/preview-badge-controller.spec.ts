@@ -43,6 +43,8 @@ class Harness {
     readonly calls: Array<{ menuPath: MenuPath; context: object; element: HTMLElement | undefined }> = [];
     collect: () => Promise<PreviewBadge[]> = async () => [];
     context: object | undefined = CONTEXT;
+    uri: string | undefined = 'file:///ws/a.cook';
+    contributions = 4;
     visible = true;
     changes = 0;
     cancels = 0;
@@ -52,6 +54,7 @@ class Harness {
 
     constructor() {
         const outlets = {
+            getItems: () => Array.from({ length: this.contributions }, (_, i) => ({ id: `c${i}`, label: 'c' })),
             collectBadges: async (menuPath: MenuPath, context: object, element?: HTMLElement): Promise<PreviewBadge[]> => {
                 this.calls.push({ menuPath, context, element });
                 return this.collect();
@@ -70,6 +73,7 @@ class Harness {
             element: this.element,
             context: () => this.context,
             isVisible: () => this.visible,
+            uri: () => this.uri,
             onDidChangeBadges: () => { this.changes++; },
         };
         this.controller = new PreviewBadgeController(outlets as never, hoverService as never, host);
@@ -78,6 +82,8 @@ class Harness {
 }
 
 describe('PreviewBadgeController', () => {
+
+    beforeEach(() => PreviewBadgeController.clearMemory());
 
     it('collects badges from the outlet with the host context and element once the debounce elapses', async () => {
         const harness = new Harness();
@@ -99,12 +105,130 @@ describe('PreviewBadgeController', () => {
         expect(harness.calls).to.have.lengthOf(1);
     });
 
-    it('collects nothing and notifies nobody when the host has no context', async () => {
+    it('collects nothing and settles the pending state once when the host has no context', async () => {
         const harness = new Harness();
         harness.context = undefined;
         await harness.controller.refresh();
         expect(harness.calls).to.deep.equal([]);
-        expect(harness.changes).to.equal(0);
+        expect(harness.controller.pending).to.equal(false);
+        expect(harness.changes).to.equal(1);
+        await harness.controller.refresh();
+        expect(harness.changes).to.equal(1);
+    });
+
+    describe('pending state', () => {
+
+        it('is pending from the start until the first result arrives, even an empty one', async () => {
+            const harness = new Harness();
+            expect(harness.controller.pending).to.equal(true);
+            await harness.controller.refresh();
+            expect(harness.controller.pending).to.equal(false);
+            expect(harness.changes, 'the host must re-render to drop the placeholders').to.equal(1);
+        });
+
+        it('is pending again after reset, and not when the caller expects no result', () => {
+            const harness = new Harness();
+            harness.controller.pending = false;
+            harness.controller.reset();
+            expect(harness.controller.pending).to.equal(true);
+            harness.controller.reset(false);
+            expect(harness.controller.pending).to.equal(false);
+        });
+
+        it('keeps the previous badges and stays settled while a later refresh is in flight', async () => {
+            const harness = new Harness();
+            harness.collect = async () => [PILL];
+            await harness.controller.refresh();
+            let resolveNext!: (badges: PreviewBadge[]) => void;
+            harness.collect = () => new Promise<PreviewBadge[]>(resolve => { resolveNext = resolve; });
+            const inFlight = harness.controller.refresh();
+            expect(harness.controller.pending).to.equal(false);
+            expect(harness.controller.badges).to.deep.equal([PILL]);
+            const next: PreviewBadge = { kind: 'pill', text: 'next', tone: 'good', tooltipMarkdown: '' };
+            resolveNext([next]);
+            await inFlight;
+            expect(harness.controller.badges).to.deep.equal([next]);
+        });
+
+        it('settles when the outlet throws', async () => {
+            const harness = new Harness();
+            harness.collect = async () => { throw new Error('boom'); };
+            const warn = console.warn;
+            console.warn = () => undefined;
+            try {
+                await harness.controller.refresh();
+            } finally {
+                console.warn = warn;
+            }
+            expect(harness.controller.pending).to.equal(false);
+            expect(harness.controller.badges).to.deep.equal([]);
+        });
+    });
+
+    describe('placeholder count', () => {
+
+        it('uses the number of outlet contributions when nothing is remembered', () => {
+            const harness = new Harness();
+            harness.contributions = 4;
+            expect(harness.controller.placeholderCount).to.equal(4);
+        });
+
+        it('falls back to 3 when the context (and so the contributions) are not known yet', () => {
+            const harness = new Harness();
+            harness.context = undefined;
+            expect(harness.controller.placeholderCount).to.equal(3);
+        });
+
+        it('caps the count at 6', () => {
+            const harness = new Harness();
+            harness.contributions = 20;
+            expect(harness.controller.placeholderCount).to.equal(6);
+        });
+
+        it('remembers the last count per document URI, including zero', async () => {
+            const first = new Harness();
+            first.collect = async () => [PILL, PILL];
+            await first.controller.refresh();
+
+            const other = new Harness();
+            other.uri = 'file:///ws/b.cook';
+            other.collect = async () => [];
+            await other.controller.refresh();
+
+            // New controllers (e.g. a reopened preview) pick the counts up.
+            const reopened = new Harness();
+            reopened.contributions = 5;
+            expect(reopened.controller.placeholderCount).to.equal(2);
+            const reopenedOther = new Harness();
+            reopenedOther.uri = 'file:///ws/b.cook';
+            expect(reopenedOther.controller.placeholderCount, 'no placeholders flash for a document known to have none').to.equal(0);
+            const unseen = new Harness();
+            unseen.uri = 'file:///ws/c.cook';
+            unseen.contributions = 5;
+            expect(unseen.controller.placeholderCount).to.equal(5);
+        });
+
+        it('updates the remembered count on a later refresh', async () => {
+            const harness = new Harness();
+            harness.collect = async () => [PILL, PILL, PILL];
+            await harness.controller.refresh();
+            harness.collect = async () => [PILL];
+            await harness.controller.refresh();
+            expect(harness.controller.placeholderCount).to.equal(1);
+        });
+
+        it('remembers nothing for a refresh without context or without a URI', async () => {
+            const noContext = new Harness();
+            noContext.context = undefined;
+            await noContext.controller.refresh();
+            expect(noContext.controller.placeholderCount).to.equal(3);
+
+            const noUri = new Harness();
+            noUri.uri = undefined;
+            noUri.collect = async () => [PILL];
+            await noUri.controller.refresh();
+            expect(noUri.controller.placeholderCount).to.equal(4);
+        });
     });
 
     it('does not notify when the badges are unchanged', async () => {
