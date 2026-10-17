@@ -13,6 +13,18 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.57](https://github.com/cook-md/editor/compare/v0.1.0-alpha.56...v0.1.0-alpha.57) (2026-10-17)
+
+
+### Bug Fixes
+
+* **preview:** reserve badge space with loading pills; keep header actions steady ([#237](https://github.com/cook-md/editor/issues/237)) ([f85e211](https://github.com/cook-md/editor/commit/f85e2118b8b6c0502d7932feae56d8459a908b1e))
+
+
+### Performance Improvements
+
+* **native:** prefetch nutrition categories in one batch before report renders ([#238](https://github.com/cook-md/editor/issues/238)) ([bb57f87](https://github.com/cook-md/editor/commit/bb57f8752169534a023e4a3384a5f0f839b4b24f))
+
 ## [0.1.0-alpha.56](https://github.com/cook-md/editor/compare/v0.1.0-alpha.55...v0.1.0-alpha.56) (2026-10-15)
 
 
