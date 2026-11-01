@@ -42,7 +42,7 @@
     "@types/mocha": "^10.0.0",
     "@types/node-fetch": "^2.5.7",
     "chai": "^4.3.10",
-    "chalk": "4.0.0",
+    "chalk": "4.1.2",
     "decompress": "^4.2.1",
     "glob": "^8.0.3",
     "http-server": "^14.1.1",
