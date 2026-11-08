@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.58](https://github.com/cook-md/editor/compare/v0.1.0-alpha.57...v0.1.0-alpha.58) (2026-11-08)
+
+
+### Bug Fixes
+
+* editor errors reported in Sentry on alpha.57 ([#252](https://github.com/cook-md/editor/issues/252)) ([cf31840](https://github.com/cook-md/editor/commit/cf31840b2376f03f7dd99729b5cd3e1f3988d41e))
+
 ## [0.1.0-alpha.57](https://github.com/cook-md/editor/compare/v0.1.0-alpha.56...v0.1.0-alpha.57) (2026-10-17)
 
 
