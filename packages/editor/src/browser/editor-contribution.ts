@@ -45,6 +45,7 @@ export class EditorContribution implements FrontendApplicationContribution,
     @inject(OpenWithService) protected readonly openWithService: OpenWithService;
     @inject(EditorLanguageStatusService) protected readonly languageStatusService: EditorLanguageStatusService;
     @inject(ApplicationShell) protected readonly shell: ApplicationShell;
+    @inject(StatusBar) protected readonly statusBar: StatusBar;
 
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
@@ -57,6 +58,13 @@ export class EditorContribution implements FrontendApplicationContribution,
 
     onStart(): void {
         this.initEditorContextKeys();
+        // WidgetStatusBarService keeps the items when a non-editor widget becomes current,
+        // which would leave them bound to commands that need a current editor.
+        this.editorManager.onCurrentEditorChanged(editor => {
+            if (!editor) {
+                this.deactivate(this.statusBar);
+            }
+        });
         this.openWithService.registerHandler({
             id: 'default',
             label: this.editorManager.label,

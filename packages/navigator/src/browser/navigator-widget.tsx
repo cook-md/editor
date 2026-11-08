@@ -16,13 +16,13 @@
 
 import { injectable, inject, postConstruct } from '@theia/core/shared/inversify';
 import { Message } from '@theia/core/shared/@lumino/messaging';
-import URI from '@theia/core/lib/common/uri';
 import { CommandService } from '@theia/core/lib/common';
 import { Key, TreeModel, ContextMenuRenderer, ExpandableTreeNode, TreeProps, TreeNode } from '@theia/core/lib/browser';
 import { DirNode, FileStatNodeData } from '@theia/filesystem/lib/browser';
 import { WorkspaceService, WorkspaceCommands } from '@theia/workspace/lib/browser';
 import { WorkspaceNode, WorkspaceRootNode } from './navigator-tree';
 import { FileNavigatorModel } from './navigator-model';
+import { NavigatorClipboard } from './navigator-clipboard';
 import { isOSX, environment } from '@theia/core';
 import * as React from '@theia/core/shared/react';
 import { NavigatorContextKeyService } from './navigator-context-key-service';
@@ -139,9 +139,8 @@ export class FileNavigatorWidget extends AbstractNavigatorTreeWidget {
             if (!target) {
                 return;
             }
-            for (const file of raw.split('\n')) {
+            for (const source of NavigatorClipboard.parseUris(raw)) {
                 event.preventDefault();
-                const source = new URI(file);
                 this.model.copy(source, target);
             }
         }
