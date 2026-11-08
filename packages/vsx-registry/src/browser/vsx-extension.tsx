@@ -676,18 +676,16 @@ export class VSXExtensionEditorComponent extends AbstractVSXExtensionComponent {
                     {this.renderAction()}
                 </div>
             </div>
-            {
-                sanitizedReadme &&
-                <div className='scroll-container'
-                    ref={ref => this._scrollContainer = (ref || undefined)}>
-                    <div className='body'
-                        ref={ref => this.body = (ref || undefined)}
-                        onClick={this.openLink}
-                        // eslint-disable-next-line react/no-danger
-                        dangerouslySetInnerHTML={{ __html: sanitizedReadme }}
-                    />
-                </div>
-            }
+            {/* Always rendered: the widget resolves its scroll container once on mount, usually before the readme has loaded. */}
+            <div className='scroll-container'
+                ref={ref => this._scrollContainer = (ref || undefined)}>
+                <div className='body'
+                    ref={ref => this.body = (ref || undefined)}
+                    onClick={this.openLink}
+                    // eslint-disable-next-line react/no-danger
+                    dangerouslySetInnerHTML={{ __html: sanitizedReadme ?? '' }}
+                />
+            </div>
         </React.Fragment >;
     }
 
