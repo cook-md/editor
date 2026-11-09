@@ -16,7 +16,7 @@
     "@theia/workspace": "1.70.0",
     "decompress": "^4.2.1",
     "filenamify": "^4.1.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "publishConfig": {
     "access": "public"

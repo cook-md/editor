@@ -6,7 +6,7 @@
     "@sentry/electron": "^7.20.0",
     "@sentry/node": "10.67.0",
     "@theia/core": "1.70.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "main": "lib/common",
   "theiaExtensions": [

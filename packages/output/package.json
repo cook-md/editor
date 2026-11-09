@@ -8,7 +8,7 @@
     "@theia/monaco": "1.70.0",
     "@theia/monaco-editor-core": "1.108.201",
     "p-queue": "^8.0.1",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "publishConfig": {
     "access": "public"

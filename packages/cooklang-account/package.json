@@ -3,10 +3,10 @@
   "version": "1.70.0",
   "description": "Theia - Cook.md Account, Subscription & Sync",
   "dependencies": {
+    "@theia/cooklang-native": "0.1.0",
     "@theia/core": "1.70.0",
     "@theia/workspace": "1.70.0",
-    "@theia/cooklang-native": "0.1.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "main": "lib/common",
   "theiaExtensions": [
@@ -15,9 +15,14 @@
       "backend": "lib/node/cooklang-account-backend-module"
     }
   ],
-  "keywords": ["theia-extension"],
+  "keywords": [
+    "theia-extension"
+  ],
   "license": "AGPL-3.0-only WITH LicenseRef-cooklang-theia-linking-exception",
-  "files": ["lib", "src"],
+  "files": [
+    "lib",
+    "src"
+  ],
   "scripts": {
     "build": "theiaext build",
     "clean": "theiaext clean",

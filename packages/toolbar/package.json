@@ -40,7 +40,7 @@
     "ajv": "^6.5.3",
     "jsonc-parser": "^2.2.0",
     "perfect-scrollbar": "1.5.6",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "theiaExtensions": [
     {

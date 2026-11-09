@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@electron/get": "^2.0.0",
-    "tslib": "^2.6.2",
+    "tslib": "^2.9.1",
     "unzipper": "^0.12.5"
   },
   "devDependencies": {

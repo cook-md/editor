@@ -3,7 +3,7 @@
   "version": "1.70.0",
   "description": "Theia - Cooklang AI Support",
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.6",
+    "@grpc/grpc-js": "^1.14.7",
     "@grpc/proto-loader": "^0.8.1",
     "@theia/ai-chat": "1.70.0",
     "@theia/ai-core": "1.70.0",
@@ -15,7 +15,7 @@
     "@theia/workspace": "1.70.0",
     "ignore": "^5.0.0",
     "minimatch": "^10.2.6",
-    "tslib": "^2.6.2",
+    "tslib": "^2.9.1",
     "yaml": "^2.9.1"
   },
   "main": "lib/common",
