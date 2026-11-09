@@ -31,7 +31,7 @@
   "dependencies": {
     "http-proxy-agent": "^5.0.0",
     "https-proxy-agent": "^5.0.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "gitHead": "21358137e41342742707f660b8e222f940a27652"
 }

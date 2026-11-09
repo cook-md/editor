@@ -6,7 +6,7 @@
     "@theia/core": "1.70.0",
     "node-pty": "1.2.0-beta.15",
     "string-argv": "^0.3.2",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "publishConfig": {
     "access": "public"

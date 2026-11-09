@@ -14,7 +14,7 @@
     "@theia/getting-started": "1.70.0",
     "@theia/monaco": "1.70.0",
     "@theia/workspace": "1.70.0",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "main": "lib/common",
   "theiaExtensions": [

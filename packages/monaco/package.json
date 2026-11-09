@@ -13,7 +13,7 @@
     "fast-plist": "^0.1.2",
     "idb": "^8.0.4",
     "jsonc-parser": "^2.2.0",
-    "tslib": "^2.6.2",
+    "tslib": "^2.9.1",
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "^9.2.0"
   },
