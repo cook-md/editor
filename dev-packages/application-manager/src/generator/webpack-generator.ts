@@ -430,6 +430,11 @@ for (const [entryPointName, entryPointPath] of Object.entries({
 
 const ignoredResources = new Set();
 
+// native-keymap 3 falls back to require('./build/Debug/keymapping') when the
+// Release binding is missing. Packaged apps always ship the Release build, and
+// webpack can't resolve the Debug path, so leave that fallback out of the bundle.
+ignoredResources.add('./build/Debug/keymapping');
+
 if (process.platform !== 'win32') {
     ignoredResources.add('@vscode/windows-ca-certs');
     ignoredResources.add('@vscode/windows-ca-certs/build/Release/crypt32.node');

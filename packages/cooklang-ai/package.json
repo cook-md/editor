@@ -14,7 +14,7 @@
     "@theia/monaco": "1.70.0",
     "@theia/workspace": "1.70.0",
     "ignore": "^5.0.0",
-    "minimatch": "^10.2.6",
+    "minimatch": "^11.0.1",
     "tslib": "^2.9.1",
     "yaml": "^2.9.1"
   },
