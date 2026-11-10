@@ -3,9 +3,9 @@
   "version": "1.70.0",
   "description": "Theia - AI Core UI",
   "dependencies": {
-    "@theia/core": "1.70.0",
     "@theia/ai-core": "1.70.0",
-    "tslib": "^2.6.2"
+    "@theia/core": "1.70.0",
+    "tslib": "^2.9.1"
   },
   "main": "lib/common",
   "publishConfig": {

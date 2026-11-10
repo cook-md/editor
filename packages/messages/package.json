@@ -6,7 +6,7 @@
     "@theia/core": "1.70.0",
     "react-perfect-scrollbar": "^1.5.3",
     "ts-md5": "^1.2.2",
-    "tslib": "^2.6.2"
+    "tslib": "^2.9.1"
   },
   "publishConfig": {
     "access": "public"
