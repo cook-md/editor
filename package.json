@@ -43,7 +43,7 @@
     "ignore-styles": "^5.0.1",
     "jsdom": "^22.1.0",
     "lerna": "^9.0.0",
-    "minimatch": "^10.0.3",
+    "minimatch": "^11.0.1",
     "mkdirp": "^0.5.0",
     "nan": "2.30.0",
     "node-abi": "^4.26.0",
