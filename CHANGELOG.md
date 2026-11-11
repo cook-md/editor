@@ -13,6 +13,13 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.59](https://github.com/cook-md/editor/compare/v0.1.0-alpha.58...v0.1.0-alpha.59) (2026-11-11)
+
+
+### Bug Fixes
+
+* **preview:** stop header badges and actions overflowing in narrow panes ([#261](https://github.com/cook-md/editor/issues/261)) ([017509b](https://github.com/cook-md/editor/commit/017509b0ab159060ef32208c0093dadbbcb0af6a))
+
 ## [0.1.0-alpha.58](https://github.com/cook-md/editor/compare/v0.1.0-alpha.57...v0.1.0-alpha.58) (2026-11-08)
 
 
