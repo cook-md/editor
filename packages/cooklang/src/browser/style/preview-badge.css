@@ -130,14 +130,26 @@
 }
 
 /* Plugin badges of a preview header. Own wrapping container, so a badge row that
-   wraps never drags the header actions (`.cooklang-preview-actions`) with it. */
+   wraps never drags the header actions (`.cooklang-preview-actions`) with it.
+   No `min-width: 0`: as a flex item it must not shrink below its widest badge,
+   or the badges spill out of it and over the scale control. */
 .cooklang-preview-badges {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
     gap: 6px;
-    min-width: 0;
+}
+
+/* Narrow pane (same breakpoint as the header rules in recipe-preview.css and
+   menu-preview.css): the badges take a full row below the scale control and
+   the action buttons, so neither moves when badges arrive or wrap. */
+@container cooklang-preview (max-width: 640px) {
+    .cooklang-preview-badges {
+        order: 1;
+        flex-basis: 100%;
+        justify-content: flex-start;
+    }
 }
 
 /* The header's action buttons (like, cart, ...): fixed container pinned to the
@@ -147,6 +159,18 @@
     align-items: center;
     flex-shrink: 0;
     margin-left: auto;
+}
+
+/* Narrow pane: buttons that do not fit one row wrap instead of being cut off. */
+@container cooklang-preview (max-width: 640px) {
+    .cooklang-preview-actions {
+        flex-shrink: 1;
+    }
+
+    .cooklang-preview-actions .theia-cooklang-action-bar {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
 }
 
 /* Loading placeholder: same 26px height and radius as a pill, theme-variable
