@@ -773,15 +773,16 @@ impl LspServer {
             .map_err(|e| napi::Error::from_reason(e.to_string()))
     }
 
+    /// Next chunk of raw server output, or `None` once the server has stopped.
+    ///
+    /// Returned as bytes, not a string: a chunk ends wherever the read
+    /// happened to stop, which can be in the middle of a multi-byte UTF-8
+    /// character. Decoding per chunk would fail on such a split and take the
+    /// whole connection down; the caller reassembles complete messages first.
     #[napi]
-    pub async fn receive_message(&self) -> napi::Result<Option<String>> {
+    pub async fn receive_message(&self) -> napi::Result<Option<napi::bindgen_prelude::Buffer>> {
         let mut rx = self.response_rx.lock().await;
-        match rx.recv().await {
-            Some(bytes) => String::from_utf8(bytes)
-                .map(Some)
-                .map_err(|e| napi::Error::from_reason(e.to_string())),
-            None => Ok(None),
-        }
+        Ok(rx.recv().await.map(Into::into))
     }
 }
 

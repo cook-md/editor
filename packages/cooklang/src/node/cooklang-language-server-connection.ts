@@ -45,7 +45,7 @@ export class NativeMessageReader extends AbstractMessageReader {
     private buffer = Buffer.alloc(0);
     private running = false;
 
-    constructor(private receiveFn: () => Promise<string | null>) {
+    constructor(private receiveFn: () => Promise<Buffer | null>) {
         super();
     }
 
@@ -65,7 +65,9 @@ export class NativeMessageReader extends AbstractMessageReader {
                 if (chunk === null) {
                     break;
                 }
-                this.buffer = Buffer.concat([this.buffer, Buffer.from(chunk, 'utf-8')]);
+                // Chunks are raw bytes and may end mid-character; only complete
+                // message bodies are decoded (in processBuffer).
+                this.buffer = Buffer.concat([this.buffer, chunk]);
                 this.processBuffer();
             } catch (error) {
                 this.fireError(error as Error);
@@ -140,7 +142,7 @@ export class NativeMessageWriter extends AbstractMessageWriter implements Messag
  */
 export function createNativeLspConnection(
     sendFn: (msg: string) => void,
-    receiveFn: () => Promise<string | null>
+    receiveFn: () => Promise<Buffer | null>
 ): MessageConnection {
     const reader = new NativeMessageReader(receiveFn);
     const writer = new NativeMessageWriter(sendFn);

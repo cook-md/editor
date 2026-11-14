@@ -16,6 +16,9 @@
       "path": "../cooklang-account"
     },
     {
+      "path": "../cooklang-telemetry"
+    },
+    {
       "path": "../core"
     },
     {

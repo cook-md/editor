@@ -158,5 +158,13 @@ export declare function renderReportAsync(recipe: string, template: string, conf
 export declare class LspServer {
   constructor()
   sendMessage(message: string): void
-  receiveMessage(): Promise<string | null>
+  /**
+   * Next chunk of raw server output, or `None` once the server has stopped.
+   *
+   * Returned as bytes, not a string: a chunk ends wherever the read
+   * happened to stop, which can be in the middle of a multi-byte UTF-8
+   * character. Decoding per chunk would fail on such a split and take the
+   * whole connection down; the caller reassembles complete messages first.
+   */
+  receiveMessage(): Promise<Buffer | null>
 }
