@@ -30,7 +30,7 @@
     "@types/react-dom": "^18.0.6",
     "@types/route-parser": "^0.1.1",
     "@types/safer-buffer": "^2.1.0",
-    "@types/uuid": "^9.0.8",
+    "@types/uuid": "^11.0.0",
     "@types/ws": "^8.18.2",
     "@types/yargs": "^15",
     "@vscode/codicons": "0.0.45",
