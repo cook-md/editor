@@ -56,6 +56,24 @@ updates:
       # chai-string also peer-depends on chai ^4 (npm ERESOLVE).
       - dependency-name: "chai"
         update-types: ["version-update:semver-major"]
+      # Theia is on React 18; a react-dom-only 19 bump fails tsc (TS2786,
+      # TS2322). Move React and its types together, deliberately.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
+      # trash 8+ is ESM-only; disk-file-system-provider.ts uses
+      # `import trash = require('trash')`.
+      - dependency-name: "trash"
+        update-types: ["version-update:semver-major"]
+      # mkdirp 1+ no longer exports a callable; scripts/performance calls
+      # require('mkdirp')(...).
+      - dependency-name: "mkdirp"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
