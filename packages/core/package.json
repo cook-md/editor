@@ -38,7 +38,7 @@
     "async-mutex": "^0.5.0",
     "body-parser": "^1.20.9",
     "cookie": "^1.0.2",
-    "dompurify": "^3.4.17",
+    "dompurify": "^3.4.18",
     "drivelist": "^12.0.2",
     "express": "^4.22.3",
     "fast-json-stable-stringify": "^2.1.0",
@@ -62,7 +62,7 @@
     "perfect-scrollbar": "1.5.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-tooltip": "^6.0.11",
+    "react-tooltip": "^6.0.13",
     "react-virtuoso": "^2.17.0",
     "reflect-metadata": "^0.2.2",
     "route-parser": "^0.0.5",
@@ -73,7 +73,7 @@
     "uuid": "^14.0.3",
     "vscode-languageserver-protocol": "3.17.5",
     "vscode-uri": "3.2.0",
-    "ws": "^8.22.2",
+    "ws": "^8.23.0",
     "yargs": "^15.3.1"
   },
   "peerDependencies": {
