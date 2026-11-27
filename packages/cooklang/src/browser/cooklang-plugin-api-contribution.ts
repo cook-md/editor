@@ -23,7 +23,9 @@ import { CooklangUri } from '../common/cooklang-uri';
 import { PluginReportResult } from '../common/plugin-report-types';
 import {
     CheckEntry,
+    ShoppingListEntry,
     ShoppingListFile,
+    ShoppingListIngredientItem,
     ShoppingListRecipeItem,
     ShoppingListResult,
     fromWireCheckedLog,
@@ -619,25 +621,56 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         });
     }
 
-    /** Validates a `.shopping-list` item tree; `type` is always `'recipe'`. */
-    protected shoppingItems(value: unknown, name: string): ShoppingListRecipeItem[] {
+    /**
+     * Validates a `.shopping-list` item tree. An item is a free-hand ingredient
+     * when `type` is `'ingredient'`; anything else is a recipe reference.
+     * `optional` (a `? ` selection line) is only legal on nested items.
+     */
+    protected shoppingItems(value: unknown, name: string, nested: boolean = false): ShoppingListEntry[] {
         if (!Array.isArray(value)) {
             throw this.invalid(`${name} must be an array.`);
         }
         return value.map(entry => {
             const item = this.object(entry);
-            const path = this.string(item.path, '`path`');
-            const multiplier = item.multiplier;
-            if (multiplier !== undefined && (typeof multiplier !== 'number' || !Number.isFinite(multiplier) || multiplier <= 0)) {
-                throw this.invalid(`Recipe multiplier must be a positive number: ${path}`);
+            const optional = item.optional;
+            if (optional !== undefined && typeof optional !== 'boolean') {
+                throw this.invalid('`optional` must be a boolean.');
             }
-            const children = item.children === undefined ? [] : this.shoppingItems(item.children, '`children`');
-            const result: ShoppingListRecipeItem = { type: 'recipe', path, children };
-            if (multiplier !== undefined) {
-                result.multiplier = multiplier;
+            if (optional === true && !nested) {
+                throw this.invalid('Only nested shopping list items can be optional.');
+            }
+            const result = item.type === 'ingredient' ? this.shoppingIngredient(item) : this.shoppingRecipe(item);
+            if (optional === true) {
+                result.optional = true;
             }
             return result;
         });
+    }
+
+    protected shoppingRecipe(item: Record<string, unknown>): ShoppingListRecipeItem {
+        const path = this.string(item.path, '`path`');
+        const multiplier = item.multiplier;
+        if (multiplier !== undefined && (typeof multiplier !== 'number' || !Number.isFinite(multiplier) || multiplier <= 0)) {
+            throw this.invalid(`Recipe multiplier must be a positive number: ${path}`);
+        }
+        const children = item.children === undefined ? [] : this.shoppingItems(item.children, '`children`', true);
+        const result: ShoppingListRecipeItem = { type: 'recipe', path, children };
+        if (multiplier !== undefined) {
+            result.multiplier = multiplier;
+        }
+        return result;
+    }
+
+    protected shoppingIngredient(item: Record<string, unknown>): ShoppingListIngredientItem {
+        const result: ShoppingListIngredientItem = { type: 'ingredient', name: this.string(item.name, 'ingredient `name`') };
+        if (item.quantity !== undefined) {
+            if (typeof item.quantity !== 'string') {
+                throw this.invalid(`Ingredient quantity must be a string: ${result.name}`);
+            }
+            this.noControlCharacters(item.quantity, 'ingredient `quantity`');
+            result.quantity = item.quantity;
+        }
+        return result;
     }
 
     /** The Rust writers do not escape newlines, so control characters would corrupt the file. */

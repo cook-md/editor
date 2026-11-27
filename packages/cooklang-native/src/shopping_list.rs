@@ -97,6 +97,25 @@ mod tests {
         assert_eq!(reparsed, list);
     }
 
+    /// The NAPI bridge moves the list through serde JSON; free-hand lines
+    /// (top-level, nested, and `? ` selection lines) must come back verbatim.
+    /// The writer emits selection lines first in a block, so the fixture does too.
+    #[test]
+    fn round_trips_free_hand_lines_through_json() {
+        let through_json = |text: &str| -> String {
+            let list = parse_list(text).expect("parse");
+            let json = serde_json::to_string(&list).expect("to json");
+            let back: ShoppingList = serde_json::from_str(&json).expect("from json");
+            write_list(&back).expect("write")
+        };
+        // The example from cook-md/editor#276.
+        let issue = "./Dinner/Pasta{2}\nmilk{2%l}\nlemons{3}\nbread\n./Plans/Week.menu\n  ./Dinner/Soup\n  olive oil{200%ml}\n";
+        assert_eq!(through_json(issue), issue);
+
+        let text = "./Dinner/Pasta{2}\nmilk{2%l}\nlemons{3}\nbread\n./Plans/Week.menu\n  ? salt{a pinch}\n  ? ./Sides/Bread{0.5}\n  ./Dinner/Soup\n  olive oil{200%ml}\n";
+        assert_eq!(through_json(text), text);
+    }
+
     #[test]
     fn empty_input_yields_empty_list() {
         let list = parse_list("").expect("parse");

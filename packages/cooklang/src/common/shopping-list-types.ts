@@ -24,17 +24,19 @@
 
 /**
  * Persisted shopping list — internal representation.
- * Only recipe entries are modeled; ingredient entries in the wire JSON are
- * ignored on load (the editor never authors them).
+ * Holds recipe references and free-hand ingredient lines, in file order.
  */
 export interface ShoppingListFile {
-    items: ShoppingListRecipeItem[];
+    items: ShoppingListEntry[];
 }
+
+/** One line of a `.shopping-list`: a recipe reference or a free-hand ingredient. */
+export type ShoppingListEntry = ShoppingListRecipeItem | ShoppingListIngredientItem;
 
 /**
  * A recipe entry. A bare entry (empty `children`) represents a single recipe.
  * An entry with children represents either a menu (children are recipes) or a
- * recipe with selected sub-references.
+ * recipe with selected sub-references and ingredients.
  *
  * `multiplier` is `undefined` when the `.shopping-list` serializes without an
  * explicit multiplier (equivalent to 1).
@@ -43,7 +45,23 @@ export interface ShoppingListRecipeItem {
     type: 'recipe';
     path: string;
     multiplier?: number;
-    children: ShoppingListRecipeItem[];
+    children: ShoppingListEntry[];
+    /** A nested `? ./path` selection line (an accepted optional reference). Only set when true. */
+    optional?: boolean;
+}
+
+/**
+ * A free-hand ingredient line (`milk{2%l}`, `bread`), at the top level or
+ * nested under a recipe. Other Cooklang tools author these; the editor keeps
+ * them as written.
+ */
+export interface ShoppingListIngredientItem {
+    type: 'ingredient';
+    name: string;
+    /** Raw quantity text: `2%l`, `3`, `a pinch`. `undefined` when absent. */
+    quantity?: string;
+    /** A nested `? name{quantity}` selection line. Only set when true. */
+    optional?: boolean;
 }
 
 /** Single entry in the `.shopping-checked` log — internal representation. */
@@ -93,11 +111,15 @@ interface WireRecipe {
     path: string;
     multiplier: number | null;
     children: WireShoppingItem[];
+    /** serde `default` — absent means false. */
+    optional?: boolean;
 }
 
 interface WireIngredient {
     name: string;
     quantity: string | null;
+    /** serde `default` — absent means false. */
+    optional?: boolean;
 }
 
 type WireCheckEntry =
@@ -109,27 +131,32 @@ type WireCheckEntry =
 /** Parse the JSON produced by NAPI `parseShoppingList` into internal shape. */
 export function fromWireShoppingList(json: string): ShoppingListFile {
     const wire = JSON.parse(json) as WireShoppingList;
-    return {
-        items: (wire.items ?? [])
-            .map(fromWireItem)
-            .filter((x): x is ShoppingListRecipeItem => x !== undefined)
-    };
+    return { items: (wire.items ?? []).map(fromWireItem) };
 }
 
-function fromWireItem(item: WireShoppingItem): ShoppingListRecipeItem | undefined {
+function fromWireItem(item: WireShoppingItem): ShoppingListEntry {
     if ('Recipe' in item) {
         const r = item.Recipe;
-        return {
+        const recipe: ShoppingListRecipeItem = {
             type: 'recipe',
             path: r.path,
             multiplier: r.multiplier ?? undefined,
-            children: (r.children ?? [])
-                .map(fromWireItem)
-                .filter((x): x is ShoppingListRecipeItem => x !== undefined)
+            children: (r.children ?? []).map(fromWireItem)
         };
+        if (r.optional) {
+            recipe.optional = true;
+        }
+        return recipe;
     }
-    // Ignore Ingredient entries — editor never authors them.
-    return undefined;
+    const i = item.Ingredient;
+    const ingredient: ShoppingListIngredientItem = { type: 'ingredient', name: i.name };
+    if (i.quantity !== null && i.quantity !== undefined) {
+        ingredient.quantity = i.quantity;
+    }
+    if (i.optional) {
+        ingredient.optional = true;
+    }
+    return ingredient;
 }
 
 /** Serialize internal shape to JSON for NAPI `writeShoppingList`. */
@@ -140,11 +167,15 @@ export function toWireShoppingList(file: ShoppingListFile): string {
     return JSON.stringify(wire);
 }
 
-function toWireItem(item: ShoppingListRecipeItem): WireShoppingItem {
+function toWireItem(item: ShoppingListEntry): WireShoppingItem {
+    if (item.type === 'ingredient') {
+        return { Ingredient: { name: item.name, quantity: item.quantity ?? null, optional: item.optional === true } };
+    }
     const r: WireRecipe = {
         path: item.path,
         multiplier: item.multiplier ?? null,
-        children: item.children.map(toWireItem)
+        children: item.children.map(toWireItem),
+        optional: item.optional === true
     };
     return { Recipe: r };
 }
