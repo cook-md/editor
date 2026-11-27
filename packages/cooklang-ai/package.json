@@ -5,7 +5,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.7",
     "@grpc/proto-loader": "^0.8.1",
-    "@theia/ai-chat": "1.70.0",
+    "@theia/ai-chat": "1.71.0",
     "@theia/ai-core": "1.70.0",
     "@theia/cooklang-account": "1.70.0",
     "@theia/cooklang-telemetry": "1.70.0",
