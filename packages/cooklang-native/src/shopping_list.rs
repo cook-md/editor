@@ -211,8 +211,10 @@ mod compact_tests {
 }
 
 /// Names the editor's plugin API accepts must survive a write and a parse.
-/// The API rejects the shapes that do not: `--` and `[-` (comments), `{`/`}`,
-/// a leading `./` or `? `, and surrounding whitespace.
+/// The API rejects the shapes that do not: `--` and `[-` (comments), a name
+/// ending in a `{...}` group, a quantity containing `{`, a leading `./` or
+/// `? `, and surrounding whitespace. Other braces read back fine, and the
+/// parser itself produces them (`milk{2%l` with no closing brace).
 #[cfg(test)]
 mod free_hand_name_tests {
     use super::*;
@@ -223,7 +225,8 @@ mod free_hand_name_tests {
         let cases = [
             ("/x", None), ("../x", None), ("?x", None), (".x", None), ("@milk", None),
             ("salt # sea", None), ("half-and-half", None), ("- milk", None), ("[x] milk", None),
-            ("x -]", None), ("milk %", Some("2%l")), ("olive oil", Some("1/2%cup")), ("salt", Some("a pinch")),
+            ("x -]", None), ("milk %", Some("2%l")), ("milk{2%l", None), ("a{", None), ("{a", None),
+            ("a}{b", None), ("a{b}c", None), ("a{b", Some("2")), ("milk", Some("2}%l")), ("olive oil", Some("1/2%cup")), ("salt", Some("a pinch")),
         ];
         for (name, quantity) in cases {
             let list = ShoppingList {

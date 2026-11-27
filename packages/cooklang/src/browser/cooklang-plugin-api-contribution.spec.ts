@@ -265,16 +265,19 @@ describe('CooklangPluginApiContribution', () => {
         expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', optional: true }] } })).to.match(/^Invalid arguments/);
         expect(await fixture.error(id, { list: { items: [{ type: 'recipe', path: 'a', optional: 'yes' }] } })).to.match(/^Invalid arguments/);
         // Shapes that would read back as a comment, a quantity, a recipe or a selection line.
-        for (const name of ['a--b', 'x [- y', 'a{b}', './x', '? x']) {
+        for (const name of ['a--b', 'x [- y', 'a{b}', 'a{}', './x', '? x']) {
             expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name }] } }), name).to.match(/^Invalid arguments/);
         }
-        for (const quantity of ['a -- b', '2}', '[- x']) {
+        for (const quantity of ['a -- b', '{2', '2{%l', '[- x']) {
             expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', quantity }] } }), quantity)
                 .to.match(/^Invalid arguments/);
         }
-        // Names that look odd but read back unchanged are fine.
-        expect(await fixture.run(id, { list: { items: [{ type: 'ingredient', name: 'half-and-half' }, { type: 'ingredient', name: '?x' }] } }))
-            .to.contain('half-and-half');
+        // Names that look odd but read back unchanged are fine, including what the
+        // parser makes of an unclosed brace: `milk{2%l` is a name.
+        expect(await fixture.run(id, { list: { items: [
+            { type: 'ingredient', name: 'half-and-half' }, { type: 'ingredient', name: '?x' },
+            { type: 'ingredient', name: 'milk{2%l' }, { type: 'ingredient', name: 'a{b', quantity: '2}' },
+        ] } })).to.contain('milk{2%l');
     });
 
     it('merges free-hand ingredients into the generated list', async () => {
@@ -288,7 +291,11 @@ describe('CooklangPluginApiContribution', () => {
         await fixture.run(id, { recipes: [{ path: 'a.cook' }] });
         expect(fixture.computeFreeHand[1]).to.deep.equal([]);
         expect(await fixture.error(id, { recipes: [], ingredients: 'milk' })).to.match(/^Invalid arguments/);
-        expect(await fixture.error(id, { recipes: [], ingredients: [{ name: 'a--b' }] })).to.match(/^Invalid arguments/);
+        // Nothing is written, so any parsed line is accepted; only shapes are checked.
+        await fixture.run(id, { recipes: [], ingredients: [{ name: 'a{b}', quantity: '{2' }] });
+        expect(fixture.computeFreeHand[2]).to.deep.equal([{ name: 'a{b}', quantity: '{2' }]);
+        expect(await fixture.error(id, { recipes: [], ingredients: [{ name: 'milk', quantity: 2 }] })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { recipes: [], ingredients: [{ name: '' }] })).to.match(/^Invalid arguments/);
     });
 
     it('parses, writes and compacts the checked log', async () => {

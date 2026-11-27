@@ -251,9 +251,18 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         if (!Array.isArray(ingredients)) {
             throw this.invalid('`ingredients` must be an array of { name, quantity? }.');
         }
+        // Nothing is written here, so any line the parser produced is accepted.
         const freeHand = ingredients.map(entry => {
-            const { name, quantity } = this.shoppingIngredient(this.object(entry));
-            return quantity === undefined ? { name } : { name, quantity };
+            const ingredient = this.object(entry);
+            const name = this.string(ingredient.name, 'ingredient `name`');
+            if (ingredient.quantity === undefined) {
+                return { name };
+            }
+            if (typeof ingredient.quantity !== 'string') {
+                throw this.invalid(`Ingredient quantity must be a string: ${name}`);
+            }
+            this.noControlCharacters(ingredient.quantity, 'ingredient `quantity`');
+            return { name, quantity: ingredient.quantity };
         });
         const items = recipes.map(entry => {
             const recipe = this.object(entry);
@@ -673,11 +682,13 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     /**
      * A free-hand line must read back as the same line, so names and
      * quantities that the format would take as a comment (`--`, `[-`), a
-     * quantity (`{`, `}`), a recipe (`./`) or a selection (`? `) are refused.
+     * quantity (a name ending in `{...}`, a quantity containing `{`), a recipe
+     * (`./`) or a selection (`? `) are refused. Other braces read back fine,
+     * and the parser produces them itself (`milk{2%l` with no closing brace).
      */
     protected shoppingIngredient(item: Record<string, unknown>): ShoppingListIngredientItem {
         const name = this.string(item.name, 'ingredient `name`');
-        if (/^(\.\/|\? )/.test(name) || /--|\[-|[{}]/.test(name)) {
+        if (/^(\.\/|\? )/.test(name) || /--|\[-|\{[^{}]*\}$/.test(name)) {
             throw this.invalid(`Ingredient name cannot be written to a shopping list: ${name}`);
         }
         const result: ShoppingListIngredientItem = { type: 'ingredient', name };
@@ -686,7 +697,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
                 throw this.invalid(`Ingredient quantity must be a string: ${result.name}`);
             }
             this.noControlCharacters(item.quantity, 'ingredient `quantity`');
-            if (/--|\[-|[{}]/.test(item.quantity)) {
+            if (/--|\[-|\{/.test(item.quantity)) {
                 throw this.invalid(`Ingredient quantity cannot be written to a shopping list: ${item.quantity}`);
             }
             result.quantity = item.quantity;
