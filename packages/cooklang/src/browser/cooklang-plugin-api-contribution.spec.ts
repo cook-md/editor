@@ -27,6 +27,8 @@ import URI from '@theia/core/lib/common/uri';
 import { ReportWidgetOptions } from './report-widget-types';
 import { ReportExportResult } from '../common/report-export-protocol';
 import { CooklangPluginApi, CooklangPluginApiContribution } from './cooklang-plugin-api-contribution';
+import { ShoppingListFile } from '../common/shopping-list-types';
+import { FREE_HAND_WIRE_JSON } from '../common/test/shopping-list-fixtures';
 
 interface Handler { execute: (...args: unknown[]) => unknown }
 
@@ -64,6 +66,7 @@ class Fixture {
     imageLookups: string[] = [];
     contentLookups: string[] = [];
     fileReads: string[] = [];
+    shoppingListJson = JSON.stringify({ items: [{ Recipe: { path: 'a.cook', multiplier: 2, children: [] } }] });
 
     create(): CooklangPluginApiContribution {
         const contribution = new CooklangPluginApiContribution();
@@ -84,7 +87,7 @@ class Fixture {
         };
         (contribution as any).languageService = {
             findRecipe: async (_baseDir: string, name: string) => this.recipes.get(name),
-            parseShoppingList: async () => JSON.stringify({ items: [{ Recipe: { path: 'a.cook', multiplier: 2, children: [] } }] }),
+            parseShoppingList: async () => this.shoppingListJson,
             writeShoppingList: async (json: string) => `wrote ${json}`,
             parseChecked: async () => JSON.stringify([{ Checked: 'flour' }, { Unchecked: 'milk' }]),
             writeCheckEntry: async (json: string) => `${json}\n`,
@@ -222,7 +225,43 @@ describe('CooklangPluginApiContribution', () => {
             .to.deep.equal({ items: [{ type: 'recipe', path: 'a.cook', multiplier: 2, children: [] }] });
         expect(await fixture.run(CooklangPluginApi.Commands.WRITE_SHOPPING_LIST, {
             list: { items: [{ type: 'recipe', path: 'a.cook', children: [] }] },
-        })).to.equal('wrote {"items":[{"Recipe":{"path":"a.cook","multiplier":null,"children":[]}}]}');
+        })).to.equal('wrote {"items":[{"Recipe":{"path":"a.cook","multiplier":null,"children":[],"optional":false}}]}');
+    });
+
+    it('passes free-hand ingredient lines through a parse and write unchanged', async () => {
+        const fixture = new Fixture();
+        fixture.shoppingListJson = FREE_HAND_WIRE_JSON;
+        fixture.create();
+        const list = await fixture.run(CooklangPluginApi.Commands.PARSE_SHOPPING_LIST, { text: 'x' }) as ShoppingListFile;
+        const write = async (): Promise<unknown> => {
+            const written = await fixture.run(CooklangPluginApi.Commands.WRITE_SHOPPING_LIST, { list }) as string;
+            return JSON.parse(written.replace(/^wrote /, ''));
+        };
+        expect(await write()).to.deep.equal(JSON.parse(FREE_HAND_WIRE_JSON));
+        // What the shopping list plugin does to remove a recipe: splice it out and write the rest back.
+        list.items.splice(0, 1);
+        const expected = JSON.parse(FREE_HAND_WIRE_JSON);
+        expected.items.splice(0, 1);
+        expect(await write()).to.deep.equal(expected);
+    });
+
+    it('validates free-hand ingredient items', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.WRITE_SHOPPING_LIST;
+        expect(await fixture.run(id, { list: { items: [{ type: 'ingredient', name: 'milk', quantity: '2%l' }] } }))
+            .to.equal('wrote {"items":[{"Ingredient":{"name":"milk","quantity":"2%l","optional":false}}]}');
+        expect(await fixture.run(id, {
+            list: { items: [{ type: 'recipe', path: 'a', children: [{ type: 'ingredient', name: 'salt', optional: true }] }] },
+        })).to.equal('wrote {"items":[{"Recipe":{"path":"a","multiplier":null,"children":'
+            + '[{"Ingredient":{"name":"salt","quantity":null,"optional":true}}],"optional":false}}]}');
+        expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: '' }] } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk\nbread' }] } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', quantity: 2 }] } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', quantity: '2\n' }] } })).to.match(/^Invalid arguments/);
+        // A top-level `? ` line does not parse back, so it must never be written.
+        expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', optional: true }] } })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { list: { items: [{ type: 'recipe', path: 'a', optional: 'yes' }] } })).to.match(/^Invalid arguments/);
     });
 
     it('parses, writes and compacts the checked log', async () => {
@@ -252,7 +291,7 @@ describe('CooklangPluginApiContribution', () => {
         fixture.create();
         const id = CooklangPluginApi.Commands.WRITE_SHOPPING_LIST;
         expect(await fixture.run(id, { list: { items: [{ type: 'menu', path: 'a.cook', multiplier: 2 }] } }))
-            .to.equal('wrote {"items":[{"Recipe":{"path":"a.cook","multiplier":2,"children":[]}}]}');
+            .to.equal('wrote {"items":[{"Recipe":{"path":"a.cook","multiplier":2,"children":[],"optional":false}}]}');
         expect(await fixture.error(id, { list: { items: [{ path: 'a.cook', multiplier: -1 }] } })).to.match(/^Invalid arguments/);
         expect(await fixture.error(id, { list: { items: [{ path: 'a.cook', children: [null] }] } })).to.match(/^Invalid arguments/); // eslint-disable-line no-null/no-null
         expect(await fixture.error(id, { list: { items: [null] } })).to.match(/^Invalid arguments/); // eslint-disable-line no-null/no-null
