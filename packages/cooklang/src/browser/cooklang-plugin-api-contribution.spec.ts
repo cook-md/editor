@@ -35,6 +35,7 @@ interface Handler { execute: (...args: unknown[]) => unknown }
 class Fixture {
     root: URI | undefined = new URI('file:///ws');
     computeCalls: unknown[] = [];
+    computeFreeHand: unknown[] = [];
     recipes = new Map<string, string>();
     resolveCalls: Array<{ content: string; baseDir: string }> = [];
     handlers = new Map<string, Handler>();
@@ -74,8 +75,9 @@ class Fixture {
         /* eslint-disable @typescript-eslint/no-explicit-any */
         (contribution as any).generator = {
             getWorkspaceRootUri: rootOf,
-            computeResult: async (items: unknown) => {
+            computeResult: async (items: unknown, freeHand: unknown) => {
                 this.computeCalls.push(items);
+                this.computeFreeHand.push(freeHand);
                 return { categories: [], other: { name: 'other', items: [] }, pantryItems: [] };
             },
         };
@@ -262,6 +264,31 @@ describe('CooklangPluginApiContribution', () => {
         // A top-level `? ` line does not parse back, so it must never be written.
         expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', optional: true }] } })).to.match(/^Invalid arguments/);
         expect(await fixture.error(id, { list: { items: [{ type: 'recipe', path: 'a', optional: 'yes' }] } })).to.match(/^Invalid arguments/);
+        // Shapes that would read back as a comment, a quantity, a recipe or a selection line.
+        for (const name of ['a--b', 'x [- y', 'a{b}', './x', '? x']) {
+            expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name }] } }), name).to.match(/^Invalid arguments/);
+        }
+        for (const quantity of ['a -- b', '2}', '[- x']) {
+            expect(await fixture.error(id, { list: { items: [{ type: 'ingredient', name: 'milk', quantity }] } }), quantity)
+                .to.match(/^Invalid arguments/);
+        }
+        // Names that look odd but read back unchanged are fine.
+        expect(await fixture.run(id, { list: { items: [{ type: 'ingredient', name: 'half-and-half' }, { type: 'ingredient', name: '?x' }] } }))
+            .to.contain('half-and-half');
+    });
+
+    it('merges free-hand ingredients into the generated list', async () => {
+        const fixture = new Fixture();
+        fixture.create();
+        const id = CooklangPluginApi.Commands.GENERATE_SHOPPING_LIST;
+        await fixture.run(id, { recipes: [], ingredients: [{ name: 'milk', quantity: '2%l' }, { name: ' bread ' }] });
+        expect(fixture.computeCalls).to.deep.equal([[]]);
+        expect(fixture.computeFreeHand).to.deep.equal([[{ name: 'milk', quantity: '2%l' }, { name: 'bread' }]]);
+        // Older plugins send no `ingredients`.
+        await fixture.run(id, { recipes: [{ path: 'a.cook' }] });
+        expect(fixture.computeFreeHand[1]).to.deep.equal([]);
+        expect(await fixture.error(id, { recipes: [], ingredients: 'milk' })).to.match(/^Invalid arguments/);
+        expect(await fixture.error(id, { recipes: [], ingredients: [{ name: 'a--b' }] })).to.match(/^Invalid arguments/);
     });
 
     it('parses, writes and compacts the checked log', async () => {

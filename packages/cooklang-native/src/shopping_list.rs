@@ -209,3 +209,32 @@ mod compact_tests {
         assert!(compacted.is_empty());
     }
 }
+
+/// Names the editor's plugin API accepts must survive a write and a parse.
+/// The API rejects the shapes that do not: `--` and `[-` (comments), `{`/`}`,
+/// a leading `./` or `? `, and surrounding whitespace.
+#[cfg(test)]
+mod free_hand_name_tests {
+    use super::*;
+    use cooklang::shopping_list::{IngredientItem, ShoppingListItem};
+
+    #[test]
+    fn accepted_free_hand_names_round_trip() {
+        let cases = [
+            ("/x", None), ("../x", None), ("?x", None), (".x", None), ("@milk", None),
+            ("salt # sea", None), ("half-and-half", None), ("- milk", None), ("[x] milk", None),
+            ("x -]", None), ("milk %", Some("2%l")), ("olive oil", Some("1/2%cup")), ("salt", Some("a pinch")),
+        ];
+        for (name, quantity) in cases {
+            let list = ShoppingList {
+                items: vec![ShoppingListItem::Ingredient(IngredientItem {
+                    name: name.into(),
+                    quantity: quantity.map(Into::into),
+                    optional: false,
+                })],
+            };
+            let text = write_list(&list).expect("write");
+            assert_eq!(parse_list(&text).expect("parse"), list, "{name:?} wrote {text:?}");
+        }
+    }
+}

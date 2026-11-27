@@ -45,7 +45,8 @@ export interface CooklangLanguageService {
     parseMenu(content: string, scale: number): Promise<string>;
 
     // Shopping list generation
-    generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string>;
+    /** `freeHandJson`: JSON array of `{ name, quantity? }` free-hand lines, merged in unscaled. */
+    generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null, freeHandJson?: string): Promise<string>;
 
     // Shopping list format (new in 2026-04)
     parseShoppingList(text: string): Promise<string>;
