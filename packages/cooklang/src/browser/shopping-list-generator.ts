@@ -44,10 +44,14 @@ export class ShoppingListGenerator {
     }
 
     /**
-     * Missing recipes are skipped with a warning. Throws when no workspace is
+     * Missing recipes are skipped with a warning. `freeHand` lines are merged
+     * in unscaled, like CookCLI's extra items. Throws when no workspace is
      * open or the native call fails.
      */
-    async computeResult(items: ReadonlyArray<{ path: string; scale: number }>): Promise<ShoppingListResult> {
+    async computeResult(
+        items: ReadonlyArray<{ path: string; scale: number }>,
+        freeHand: ReadonlyArray<{ name: string; quantity?: string }> = [],
+    ): Promise<ShoppingListResult> {
         const root = this.getWorkspaceRootUri();
         if (!root) {
             throw new Error('No workspace is open.');
@@ -75,6 +79,7 @@ export class ShoppingListGenerator {
             JSON.stringify(recipeInputs),
             aisleConf,
             pantryConf,
+            freeHand.length > 0 ? JSON.stringify(freeHand) : undefined,
         );
         return JSON.parse(json);
     }

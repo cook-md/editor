@@ -303,11 +303,21 @@ fn ingredient_list_to_category(
     ShoppingListCategory { name, items }
 }
 
+/// A free-hand line from `.shopping-list` (`milk{2%l}`, `bread`).
+#[derive(Deserialize)]
+pub struct FreeHandInput {
+    pub name: String,
+    /// Raw quantity text as in the file: `2%l`, `3`, `a pinch`.
+    pub quantity: Option<String>,
+}
+
 /// Generate a shopping list from one or more Cooklang recipes.
 ///
 /// - `recipes_json` – JSON array of `{ content: string, scale: number }` objects.
 /// - `aisle_conf` – optional aisle configuration text (cooklang shopping-list format).
 /// - `pantry_conf` – optional pantry configuration text (TOML format).
+/// - `free_hand_json` – optional JSON array of `{ name, quantity? }` free-hand
+///   lines, merged in unscaled like CookCLI's extra items.
 ///
 /// Returns a JSON-serialized `ShoppingListResult`.
 #[napi]
@@ -315,10 +325,79 @@ pub fn generate_shopping_list(
     recipes_json: String,
     aisle_conf: Option<String>,
     pantry_conf: Option<String>,
+    free_hand_json: Option<String>,
 ) -> napi::Result<String> {
     let recipe_inputs: Vec<RecipeInput> = serde_json::from_str(&recipes_json)
         .map_err(|e| napi::Error::from_reason(format!("Failed to parse recipes JSON: {e}")))?;
+    let free_hand: Vec<FreeHandInput> = match free_hand_json.as_deref() {
+        Some(json) => serde_json::from_str(json)
+            .map_err(|e| napi::Error::from_reason(format!("Failed to parse free-hand JSON: {e}")))?,
+        None => Vec::new(),
+    };
+    let result = build_shopping_list(
+        &recipe_inputs,
+        &free_hand,
+        aisle_conf.as_deref(),
+        pantry_conf.as_deref(),
+    );
+    serde_json::to_string(&result)
+        .map_err(|e| napi::Error::from_reason(e.to_string()))
+}
 
+/// Add one free-hand line the way CookCLI adds an extra item: parsed as the
+/// single ingredient `@name{quantity}`, so `2%l` and `1/2%cup` keep their
+/// units and merge with recipe amounts. Not scaled. A line the parser cannot
+/// read as one ingredient is still listed, by name, with no amount.
+fn add_free_hand(
+    list: &mut cooklang::ingredient_list::IngredientList,
+    parser: &cooklang::CooklangParser,
+    item: &FreeHandInput,
+) {
+    let name = item.name.trim();
+    let name = name.strip_prefix('@').unwrap_or(name).trim();
+    if name.is_empty() {
+        return;
+    }
+    let quantity = item.quantity.as_deref().unwrap_or("").trim();
+    let line = format!("@{name}{{{quantity}}}");
+    if let Some(recipe) = parser.parse(&line).into_output() {
+        if recipe.ingredients.len() == 1 && recipe.ingredients[0].name.trim() == name {
+            list.add_recipe(&recipe, parser.converter(), false);
+            return;
+        }
+    }
+    list.add_ingredient(
+        name.to_string(),
+        &cooklang::quantity::GroupedQuantity::empty(),
+        parser.converter(),
+    );
+}
+
+/// Merge entries whose names differ only in case (`Sugar`, `sugar`) under the
+/// first spelling seen, as CookCLI does (cooklang/cookcli#694).
+fn merge_case_variants(
+    list: cooklang::ingredient_list::IngredientList,
+    converter: &cooklang::Converter,
+) -> cooklang::ingredient_list::IngredientList {
+    let mut spellings: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut merged = cooklang::ingredient_list::IngredientList::new();
+    for (name, quantity) in list.iter() {
+        let name = spellings
+            .entry(name.to_lowercase())
+            .or_insert_with(|| name.clone());
+        merged.add_ingredient(name.clone(), quantity, converter);
+    }
+    merged
+}
+
+/// The aggregation behind `generate_shopping_list`, free of NAPI so it can be
+/// unit-tested.
+fn build_shopping_list(
+    recipe_inputs: &[RecipeInput],
+    free_hand: &[FreeHandInput],
+    aisle_conf: Option<&str>,
+    pantry_conf: Option<&str>,
+) -> ShoppingListResult {
     let parser = cooklang::CooklangParser::new(
         cooklang::Extensions::all(),
         Default::default(),
@@ -337,10 +416,13 @@ pub fn generate_shopping_list(
         }
         ingredient_list.add_recipe(&recipe, converter, false);
     }
+    for item in free_hand {
+        add_free_hand(&mut ingredient_list, &parser, item);
+    }
+    let mut ingredient_list = merge_case_variants(ingredient_list, converter);
 
     // Parse optional aisle configuration.
     let aisle = aisle_conf
-        .as_deref()
         .map(cooklang::aisle::parse_lenient)
         .and_then(|pass| pass.into_output());
 
@@ -351,7 +433,7 @@ pub fn generate_shopping_list(
 
     // Parse optional pantry configuration and collect the names of subtracted items.
     let mut pantry_item_names: Vec<String> = Vec::new();
-    if let Some(ref pantry_text) = pantry_conf {
+    if let Some(pantry_text) = pantry_conf {
         let pantry = cooklang::pantry::parse_lenient(pantry_text).into_output();
         if let Some(ref p) = pantry {
             // Record which ingredients are covered by the pantry before subtracting.
@@ -365,7 +447,7 @@ pub fn generate_shopping_list(
     }
 
     // Categorise by aisle (or leave everything in "other").
-    let result = if let Some(ref a) = aisle {
+    if let Some(ref a) = aisle {
         let categorized = ingredient_list.categorize(a);
         let categories: Vec<ShoppingListCategory> = categorized
             .categories
@@ -386,10 +468,63 @@ pub fn generate_shopping_list(
             other,
             pantry_items: pantry_item_names,
         }
-    };
+    }
+}
 
-    serde_json::to_string(&result)
-        .map_err(|e| napi::Error::from_reason(e.to_string()))
+#[cfg(test)]
+mod generate_shopping_list_tests {
+    use super::*;
+
+    fn free_hand(name: &str, quantity: Option<&str>) -> FreeHandInput {
+        FreeHandInput { name: name.to_string(), quantity: quantity.map(str::to_string) }
+    }
+
+    fn other(result: &ShoppingListResult) -> Vec<(String, String)> {
+        result.other.items.iter().map(|i| (i.name.clone(), i.quantities.clone())).collect()
+    }
+
+    #[test]
+    fn free_hand_lines_merge_with_recipe_ingredients_unscaled() {
+        let recipes = [RecipeInput { content: "Add @milk{500%ml} and @flour{200%g}.".into(), scale: 2.0 }];
+        let items = [
+            free_hand("Milk", Some("2%l")),
+            free_hand("lemons", Some("3")),
+            free_hand("bread", None),
+            free_hand("salt", Some("a pinch")),
+            free_hand("olive oil", Some("1/2%cup")),
+        ];
+        let result = build_shopping_list(&recipes, &items, None, None);
+        let mut rows = other(&result);
+        rows.sort();
+        assert_eq!(rows, vec![
+            ("bread".to_string(), "".to_string()),
+            ("flour".to_string(), "400 g".to_string()),
+            ("lemons".to_string(), "3".to_string()),
+            ("milk".to_string(), "3 l".to_string()),
+            ("olive oil".to_string(), "1/2 c".to_string()),
+            ("salt".to_string(), "a pinch".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn free_hand_only_list_is_categorised() {
+        let aisle = "[dairy]\nmilk\n";
+        let result = build_shopping_list(&[], &[free_hand("milk", Some("1%l")), free_hand("bread", None)], Some(aisle), None);
+        assert_eq!(result.categories.len(), 1);
+        assert_eq!(result.categories[0].name, "dairy");
+        assert_eq!(result.categories[0].items[0].name, "milk");
+        assert_eq!(other(&result), vec![("bread".to_string(), "".to_string())]);
+    }
+
+    #[test]
+    fn odd_names_are_listed_by_name() {
+        let items = [free_hand("@ salt # sea", None), free_hand("7up", Some("2")), free_hand("  ", None)];
+        let result = build_shopping_list(&[], &items, None, None);
+        let names: Vec<String> = result.other.items.iter().map(|i| i.name.clone()).collect();
+        assert!(names.contains(&"7up".to_string()), "{names:?}");
+        assert!(names.contains(&"salt # sea".to_string()), "{names:?}");
+        assert_eq!(names.len(), 2);
+    }
 }
 
 // ── Menu parsing ─────────────────────────────────────────────────────────────

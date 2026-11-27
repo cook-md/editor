@@ -242,10 +242,28 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
     }
 
     protected async generateShoppingList(args: unknown): Promise<ShoppingListResult> {
-        const recipes = this.object(args).recipes;
+        const request = this.object(args);
+        const recipes = request.recipes;
         if (!Array.isArray(recipes)) {
             throw this.invalid('`recipes` must be an array of { path, scale? }.');
         }
+        const ingredients = request.ingredients === undefined ? [] : request.ingredients;
+        if (!Array.isArray(ingredients)) {
+            throw this.invalid('`ingredients` must be an array of { name, quantity? }.');
+        }
+        // Nothing is written here, so any line the parser produced is accepted.
+        const freeHand = ingredients.map(entry => {
+            const ingredient = this.object(entry);
+            const name = this.string(ingredient.name, 'ingredient `name`');
+            if (ingredient.quantity === undefined) {
+                return { name };
+            }
+            if (typeof ingredient.quantity !== 'string') {
+                throw this.invalid(`Ingredient quantity must be a string: ${name}`);
+            }
+            this.noControlCharacters(ingredient.quantity, 'ingredient `quantity`');
+            return { name, quantity: ingredient.quantity };
+        });
         const items = recipes.map(entry => {
             const recipe = this.object(entry);
             const path = this.string(recipe.path, '`path`');
@@ -256,7 +274,7 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
             return { path, scale };
         });
         const normalised = items.map(item => ({ path: this.workspacePath(item.path), scale: item.scale }));
-        return this.generator.computeResult(normalised);
+        return this.generator.computeResult(normalised, freeHand);
     }
 
     protected async resolveRecipeReferences(args: unknown): Promise<ResolvedRecipeReference[]> {
@@ -661,13 +679,27 @@ export class CooklangPluginApiContribution implements CommandContribution, Front
         return result;
     }
 
+    /**
+     * A free-hand line must read back as the same line, so names and
+     * quantities that the format would take as a comment (`--`, `[-`), a
+     * quantity (a name ending in `{...}`, a quantity containing `{`), a recipe
+     * (`./`) or a selection (`? `) are refused. Other braces read back fine,
+     * and the parser produces them itself (`milk{2%l` with no closing brace).
+     */
     protected shoppingIngredient(item: Record<string, unknown>): ShoppingListIngredientItem {
-        const result: ShoppingListIngredientItem = { type: 'ingredient', name: this.string(item.name, 'ingredient `name`') };
+        const name = this.string(item.name, 'ingredient `name`');
+        if (/^(\.\/|\? )/.test(name) || /--|\[-|\{[^{}]*\}$/.test(name)) {
+            throw this.invalid(`Ingredient name cannot be written to a shopping list: ${name}`);
+        }
+        const result: ShoppingListIngredientItem = { type: 'ingredient', name };
         if (item.quantity !== undefined) {
             if (typeof item.quantity !== 'string') {
                 throw this.invalid(`Ingredient quantity must be a string: ${result.name}`);
             }
             this.noControlCharacters(item.quantity, 'ingredient `quantity`');
+            if (/--|\[-|\{/.test(item.quantity)) {
+                throw this.invalid(`Ingredient quantity cannot be written to a shopping list: ${item.quantity}`);
+            }
             result.quantity = item.quantity;
         }
         return result;

@@ -405,13 +405,14 @@ export class CooklangLanguageServiceImpl implements CooklangLanguageService {
         }
     }
 
-    async generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null): Promise<string> {
+    async generateShoppingList(recipesJson: string, aisleConf: string | null, pantryConf: string | null, freeHandJson?: string): Promise<string> {
         try {
             const native = require('@theia/cooklang-native');
             return native.generateShoppingList(
                 recipesJson,
                 aisleConf ?? undefined,
-                pantryConf ?? undefined
+                pantryConf ?? undefined,
+                freeHandJson
             );
         } catch (error) {
             console.error('[cooklang] Failed to generate shopping list:', error);

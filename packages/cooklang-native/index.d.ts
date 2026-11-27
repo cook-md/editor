@@ -11,10 +11,12 @@ export declare function parse(input: string): string
  * - `recipes_json` – JSON array of `{ content: string, scale: number }` objects.
  * - `aisle_conf` – optional aisle configuration text (cooklang shopping-list format).
  * - `pantry_conf` – optional pantry configuration text (TOML format).
+ * - `free_hand_json` – optional JSON array of `{ name, quantity? }` free-hand
+ *   lines, merged in unscaled like CookCLI's extra items.
  *
  * Returns a JSON-serialized `ShoppingListResult`.
  */
-export declare function generateShoppingList(recipesJson: string, aisleConf?: string | undefined | null, pantryConf?: string | undefined | null): string
+export declare function generateShoppingList(recipesJson: string, aisleConf?: string | undefined | null, pantryConf?: string | undefined | null, freeHandJson?: string | undefined | null): string
 /** Parse a Cooklang menu file and return a menu-specific JSON structure. */
 export declare function parseMenu(input: string, scale: number): string
 /**
