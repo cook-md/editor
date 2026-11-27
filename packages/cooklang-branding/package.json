@@ -5,7 +5,7 @@
   "dependencies": {
     "@theia/ai-chat": "1.70.0",
     "@theia/ai-chat-ui": "1.70.0",
-    "@theia/ai-core": "1.70.0",
+    "@theia/ai-core": "1.71.0",
     "@theia/cooklang-account": "1.70.0",
     "@theia/cooklang-ai": "1.70.0",
     "@theia/core": "1.70.0",
