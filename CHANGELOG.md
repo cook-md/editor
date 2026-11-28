@@ -13,6 +13,18 @@ Cook Editor is built on [Eclipse Theia](https://theia-ide.org/). For changes
 to the underlying Theia framework, see the
 [Theia changelog](https://github.com/eclipse-theia/theia/blob/master/CHANGELOG.md).
 
+## [0.1.0-alpha.61](https://github.com/cook-md/editor/compare/v0.1.0-alpha.60...v0.1.0-alpha.61) (2026-11-27)
+
+
+### Features
+
+* **shopping-list:** merge free-hand lines into the generated list ([#283](https://github.com/cook-md/editor/issues/283)) ([1fd61e1](https://github.com/cook-md/editor/commit/1fd61e1f9efef363c96a1363ec2e2104ff60c5dd))
+
+
+### Bug Fixes
+
+* **shopping-list:** keep free-hand lines through the plugin API ([#276](https://github.com/cook-md/editor/issues/276)) ([#277](https://github.com/cook-md/editor/issues/277)) ([2f62733](https://github.com/cook-md/editor/commit/2f6273316d81f67ce1b0481d9349254117497444))
+
 ## [0.1.0-alpha.60](https://github.com/cook-md/editor/compare/v0.1.0-alpha.59...v0.1.0-alpha.60) (2026-11-14)
 
 
